@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trilingual Blog Agent</title>
+<style>
+  :root { --line:#d0d7de; --muted:#57606a; --accent:#0969da; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; color:#1f2328; background:#f6f8fa; margin:0; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  p.sub { color: var(--muted); margin: 0 0 16px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:16px; }
+  textarea, input[type=text], select { font: inherit; border:1px solid var(--line); border-radius:6px; padding:8px 10px; background:#fff; }
+  textarea { width:100%; min-height:110px; resize:vertical; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+  label { color: var(--muted); font-size: 13px; }
+  button { font: inherit; border:1px solid var(--line); background:#f6f8fa; border-radius:6px; padding:7px 14px; cursor:pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color:#fff; font-weight:600; }
+  button.go { background: var(--ok); border-color: var(--ok); color:#fff; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  table { width:100%; border-collapse: collapse; }
+  th, td { text-align:left; padding:10px 8px; border-top:1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; border-top:none; }
+  td.title { font-weight:600; min-width: 200px; }
+  .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; border:1px solid var(--line); white-space:nowrap; }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.warn { color: var(--warn); border-color: var(--warn); }
+  .pill.muted { color: var(--muted); }
+  .files a, a { color: var(--accent); text-decoration:none; }
+  a:hover { text-decoration: underline; }
+  .files a { display:block; }
+  .action { display:flex; gap:6px; flex-wrap:wrap; }
+  .action input { width: 170px; padding:6px 8px; }
+  .banner { border-radius:6px; padding:10px 12px; margin-bottom:12px; }
+  .banner.err { background:#ffebe9; border:1px solid var(--bad); }
+  .banner.note { background:#fff8c5; border:1px solid var(--warn); }
+  .banner.ask { background:#ddf4ff; border:1px solid var(--accent); }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top-color: var(--accent); border-radius:50%; animation: spin 1s linear infinite; vertical-align:-2px; margin-right:6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  pre#log { background:#0d1117; color:#c9d1d9; padding:12px; border-radius:6px; max-height:320px; overflow:auto; white-space:pre-wrap; font: 12px/1.5 ui-monospace, monospace; margin:8px 0 0; }
+  details summary { cursor:pointer; color: var(--muted); }
+  .hidden { display:none; }
+  ul.extra { margin: 12px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Trilingual Blog Agent</h1>
+  <p class="sub">One article in, three languages, platform drafts and a talk plan out. Nothing is posted until you approve it.</p>
+
+  <section class="card">
+    <textarea id="text" placeholder="Paste the URL of a post on Qiita, DEV Community or Naver Blog, or paste a whole Markdown draft."></textarea>
+    <div class="row">
+      <label>Talk <select id="minutes">
+        <option value="0">none</option><option value="3">3 min</option><option value="5" selected>5 min</option>
+        <option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option>
+      </select></label>
+      <label>in <select id="talkLanguage">
+        <option value="en" selected>English</option><option value="ko">Korean</option><option value="ja">Japanese</option>
+      </select></label>
+      <label>for <input type="text" id="audience" value="software engineers" style="width:220px"></label>
+      <span style="flex:1"></span>
+      <button class="primary" id="run">Run all stages</button>
+    </div>
+  </section>
+
+  <section class="card hidden" id="result">
+    <div id="banners"></div>
+    <h2 id="articleTitle"></h2>
+    <div id="status" class="sub"></div>
+    <table id="table" class="hidden">
+      <thead><tr><th>Language</th><th>Title</th><th>Platform</th><th>Status</th><th>URL</th><th>Files</th><th>Next step</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <ul class="extra" id="extra"></ul>
+
+    <div class="row hidden" id="followup">
+      <input type="text" id="message" placeholder="Ask for a change, e.g. “shorten the English title”" style="flex:1">
+      <button id="send">Send</button>
+    </div>
+
+    <details style="margin-top:14px" open id="logBox">
+      <summary>Agent activity</summary>
+      <pre id="log"></pre>
+    </details>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const STATUS = {
+  not_posted: ["not posted", "muted"],
+  exported_for_manual_post: ["HTML exported · post by hand", "warn"],
+  draft: ["draft created", "ok"],
+  published: ["published", "ok"],
+  existing_source: ["original post", "ok"],
+};
+let jobId = null, timer = null, lastLogLength = 0;
+// Typed-in values survive re-rendering of the table.
+const inputs = {};
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
+  }
+  for (const child of children) node.append(child);
+  return node;
+}
+
+async function api(path, body) {
+  const response = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try { const data = await response.json(); detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail); } catch (e) {}
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+function fileLink(name) {
+  return el("a", {href: `/api/jobs/${jobId}/files/${encodeURIComponent(name)}`, target: "_blank", rel: "noopener"}, name);
+}
+
+function remembered(key, placeholder) {
+  const input = el("input", {type: "text", placeholder, value: inputs[key] || ""});
+  input.addEventListener("input", () => { inputs[key] = input.value; });
+  return input;
+}
+
+function nextStep(row, busy) {
+  const box = el("div", {class: "action"});
+  if (row.status === "existing_source" || !row.title) return box;
+  if (row.can_post_draft && row.status !== "draft" && row.status !== "published") {
+    const tags = remembered(`tags:${row.platform}`, "tags: ai, agents");
+    box.append(tags, el("button", {class: "go", disabled: busy, onclick: () => postDraft(row, tags.value)}, "Approve & create draft"));
+  } else if (row.status !== "published") {
+    const url = remembered(`url:${row.platform}`, "https://… posted URL");
+    box.append(url, el("button", {disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL"));
+  }
+  return box;
+}
+
+function render(data) {
+  const o = data.overview;
+  $("result").classList.remove("hidden");
+  $("articleTitle").textContent = o.title || "Working…";
+  $("status").replaceChildren();
+  if (data.busy) $("status").append(el("span", {class: "spinner"}), "The agent is working. A full run takes two to four minutes.");
+
+  const banners = $("banners");
+  banners.replaceChildren();
+  if (data.error) banners.append(el("div", {class: "banner err"}, "Stopped with an error: " + data.error));
+  if (data.notice) banners.append(el("div", {class: "banner note"}, data.notice));
+  if (!data.busy) for (const hint of data.approvals) {
+    banners.append(el("div", {class: "banner ask"}, hint + " ",
+      el("button", {class: "go", onclick: () => approve(true)}, "Approve"), " ",
+      el("button", {onclick: () => approve(false)}, "Decline")));
+  }
+
+  const hasRows = o.rows.some((r) => r.title);
+  $("table").classList.toggle("hidden", !hasRows);
+  $("followup").classList.toggle("hidden", !hasRows);
+  // Do not rebuild the table while someone is typing in it.
+  if (!$("rows").contains(document.activeElement)) {
+    $("rows").replaceChildren(...o.rows.filter((r) => r.title).map((row) => {
+      const [label, tone] = STATUS[row.status] || [row.status, "muted"];
+      return el("tr", {},
+        el("td", {}, row.language_name),
+        el("td", {class: "title"}, row.title),
+        el("td", {}, row.platform_name),
+        el("td", {}, el("span", {class: "pill " + tone}, label)),
+        el("td", {}, row.url ? el("a", {href: row.url, target: "_blank", rel: "noopener"}, "open") : "–"),
+        el("td", {class: "files"}, ...row.files.map(fileLink)),
+        el("td", {}, nextStep(row, data.busy)));
+    }));
+  }
+  const extra = [];
+  for (const name of o.slides) extra.push(el("li", {}, "Slides and speaker script: ", fileLink(name)));
+  if (o.manifest) extra.push(el("li", {}, "Artifact manifest: ", fileLink(o.manifest)));
+  $("extra").replaceChildren(...extra);
+
+  if (data.log.length !== lastLogLength) {
+    lastLogLength = data.log.length;
+    $("log").textContent = data.log.join("\n\n");
+    $("log").scrollTop = $("log").scrollHeight;
+  }
+  $("run").disabled = data.busy;
+  $("send").disabled = data.busy;
+}
+
+async function poll() {
+  if (!jobId) return;
+  try { render(await api(`/api/jobs/${jobId}`)); }
+  catch (error) { $("status").textContent = "Lost contact with the server: " + error.message; }
+}
+
+async function act(path, body) {
+  try { await api(`/api/jobs/${jobId}/${path}`, body); await poll(); }
+  catch (error) { alert(error.message); }
+}
+
+function postDraft(row, tagText) {
+  const tags = tagText.split(",").map((t) => t.trim()).filter(Boolean);
+  if (!tags.length) { alert("Enter one to five tags, separated by commas."); return; }
+  const ok = confirm(`Create a non-public draft on ${row.platform_name}?\n\nTitle: ${row.title}\nTags: ${tags.join(", ")}\n\nThis uses your account.`);
+  if (ok) act("draft", {platform: row.platform, tags, approved: true});
+}
+function recordUrl(row, url) {
+  if (!/^https:\/\/\S+$/.test(url.trim())) { alert("Enter the https URL of the post."); return; }
+  act("url", {platform: row.platform, url: url.trim()});
+}
+function approve(confirmed) { act("approval", {confirmed}); }
+
+$("send").addEventListener("click", () => {
+  const text = $("message").value.trim();
+  if (!text) return;
+  $("message").value = "";
+  act("message", {text});
+});
+$("message").addEventListener("keydown", (e) => { if (e.key === "Enter") $("send").click(); });
+
+$("run").addEventListener("click", async () => {
+  const text = $("text").value.trim();
+  if (text.length < 10) { alert("Paste a URL or a draft first."); return; }
+  $("run").disabled = true;
+  try {
+    const started = await api("/api/jobs", {
+      text, talk_minutes: Number($("minutes").value),
+      talk_language: $("talkLanguage").value, audience: $("audience").value || "software engineers",
+    });
+    jobId = started.job_id; lastLogLength = 0;
+    for (const key of Object.keys(inputs)) delete inputs[key];
+    $("rows").replaceChildren(); $("log").textContent = "";
+    clearInterval(timer); timer = setInterval(poll, 2000);
+    await poll();
+  } catch (error) { alert(error.message); $("run").disabled = false; }
+});
+</script>
+</body>
+</html>

@@ -98,6 +98,17 @@ agents-cli playground                                  # web UI
 agents-cli run "Hello, what can you help me with?"     # one-shot from the terminal
 ```
 
+Or use the web front end: paste a URL or a draft, press one button, and get a
+table with each language's title, status and links to the generated files and
+the slide plan. A draft on Qiita or DEV Community is created only when you press
+its approve button; a Naver Blog URL is registered after you post by hand.
+
+```bash
+uv run python -m app.web_ui                 # http://127.0.0.1:8502
+```
+
+The front end has no login, so it listens on localhost unless `--host` is given.
+
 Or run every stage for one article with a single command:
 
 ```bash
@@ -197,6 +208,7 @@ What has been run for real, and what has not:
 | Naver Blog publishing | Manual by design: Naver has no public write API. The agent exports HTML to paste and then verifies the URL the author gives it |
 | Naver Blog reading | Best effort from the public mobile page; heading levels are not recovered |
 | Speaking-time check | Estimated from script length with assumed rates (140 words/min English, 300 characters/min Korean, 330 characters/min Japanese), not measured |
+| Web front end | Full run, file views and the approval request with a decline were exercised through its HTTP API; creating a draft from it has not been run, and the page itself was not tested in a browser by automation |
 | CI/CD pipeline | Not set up |
 
 `ParallelAgent`, `SequentialAgent` and `LoopAgent` print deprecation warnings in
@@ -220,6 +232,8 @@ app/
   redaction.py          PII and credential redaction
   secrets.py            secret lookup
   persistence.py        article store (SQLite / Firestore)
+  pipeline.py           runs the stages in order for the script and the web UI
+  web_ui.py, static/    web front end
   memory.py             background memory consolidation
   app_utils/            scaffolded service wiring, A2A, telemetry
 deployment/terraform/   infrastructure
