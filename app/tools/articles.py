@@ -45,18 +45,54 @@ def write_workspace_file(project_id: str, name: str, content: str) -> str:
     return str(path)
 
 
+_FENCE = re.compile(r"^\s{0,3}(```|~~~)")
+_FRONT_MATTER = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n", re.S)
+_FRONT_MATTER_TITLE = re.compile(r"^title:[ \t]*(.+)$", re.M)
+
+
+def _prose_lines(markdown: str) -> list[str]:
+    """Lines of a draft outside front matter and fenced code blocks.
+
+    A ``# comment`` in a shell or Python block looks like a heading; it is
+    not one, and it must never become the title of an article.
+    """
+    body = _FRONT_MATTER.sub("", markdown, count=1)
+    lines, fence = [], None
+    for line in body.splitlines():
+        marker = _FENCE.match(line)
+        if marker and fence is None:
+            fence = marker.group(1)
+        elif marker and marker.group(1) == fence:
+            fence = None
+        elif fence is None:
+            lines.append(line)
+    return lines
+
+
+def _heading_title(markdown: str) -> str:
+    for line in _prose_lines(markdown):
+        heading = re.match(r"^#\s+(\S.*)$", line)
+        if heading:
+            return heading.group(1).strip()
+    return ""
+
+
 def has_title_line(markdown: str) -> bool:
     """Whether a Markdown draft names its own title with a level-1 heading."""
-    return bool(re.search(r"^#\s+\S", markdown, flags=re.MULTILINE))
+    return bool(_heading_title(markdown))
 
 
 def title_of_draft(markdown: str, fallback: str = "Untitled") -> str:
-    """Title of a Markdown draft: its first level-1 heading, else its first line."""
-    heading = re.search(r"^#\s+(.+)$", markdown, flags=re.MULTILINE)
-    if heading:
-        return heading.group(1).strip()[:200]
-    first = next((ln.strip() for ln in markdown.splitlines() if ln.strip()), "")
-    return first.lstrip("#").strip()[:200] or fallback
+    """Title of a draft: its level-1 heading, else its front-matter title, else its first line."""
+    title = _heading_title(markdown)
+    if not title:
+        front = _FRONT_MATTER.match(markdown)
+        named = _FRONT_MATTER_TITLE.search(front.group(1)) if front else None
+        title = named.group(1).strip().strip("\"'") if named else ""
+    if not title:
+        first = next((ln.strip() for ln in _prose_lines(markdown) if ln.strip()), "")
+        title = first.lstrip("#").strip()
+    return title[:200] or fallback
 
 
 def _discard_what_the_old_text_produced(
@@ -76,6 +112,16 @@ def _discard_what_the_old_text_produced(
     for language in LANGUAGES:
         if tool_context.state.get(state.localized_key(language)) is not None:
             tool_context.state[state.localized_key(language)] = None
+    if new_article:
+        return  # the new article gets a folder of its own
+    # The files made from the old text go too, so nothing stale is shown,
+    # pasted or saved back. The seed's own file is rewritten by the caller.
+    folder = workspace_dir() / str(tool_context.state.get(state.PROJECT_ID) or "")
+    stale = ["naver_blog.html", "manifest.md"]
+    stale += [f"{kind}.{code}.md" for kind in ("post", "slides") for code in LANGUAGES]
+    for name in stale:
+        if tool_context.state.get(state.PROJECT_ID):
+            (folder / name).unlink(missing_ok=True)
 
 
 def _register_seed(

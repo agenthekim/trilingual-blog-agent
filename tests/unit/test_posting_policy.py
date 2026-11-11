@@ -331,10 +331,19 @@ def test_the_finalize_tool_records_nothing_until_a_person_confirms(
     }
     assert not policy.is_finalized(finalized_project.state, "en")
 
+    assert "characters" in request["hint"]  # what is signed off has a size
+
     finalized_project.decline()
     assert tool("en", finalized_project)["status"] == "declined"
     assert not policy.is_finalized(finalized_project.state, "en")
 
+    # A yes that answers no open request is not a yes to anything.
+    finalized_project.approve()
+    assert tool("en", finalized_project)["error_code"] == "POST_CHANGED"
+    assert not policy.is_finalized(finalized_project.state, "en")
+
+    finalized_project.tool_confirmation = None
+    tool("en", finalized_project)  # asked again
     finalized_project.approve()
     done = tool("en", finalized_project)
     assert done["status"] == "success" and done["finalized"] is True
@@ -350,9 +359,14 @@ def test_a_plain_yes_does_not_accept_credential_findings(finalized_project) -> N
     assert "look like credentials" in finalized_project.confirmation_requests[0]["hint"]
 
     finalized_project.approve()  # yes, but nothing said about the findings
-    assert tool("en", finalized_project)["error_code"] == "SECRET_IN_ARTICLE"
+    refused = tool("en", finalized_project)
+    assert refused["error_code"] == "SECRET_IN_ARTICLE"
+    # In a chat nothing can say more than yes: the way out is named, not retried.
+    assert "web page" in refused["recovery_instruction"]
     assert not policy.is_finalized(finalized_project.state, "en")
 
+    finalized_project.tool_confirmation = None
+    tool("en", finalized_project)  # asked again
     finalized_project.approve({"acknowledge_findings": True})
     assert tool("en", finalized_project)["status"] == "success"
     mark = finalized_project.state[state.FINALIZED_POSTS]["en"]
@@ -471,3 +485,125 @@ def test_a_revised_seed_discards_what_was_made_from_the_old_text(
     assert not current.get(state.FINALIZED_POSTS)
     # The draft on the platform is still this article's: it is updated, not doubled.
     assert current[state.PUBLICATIONS]["devto"]["article_id"] == "42"
+
+
+def test_the_approval_names_the_draft_it_replaces(
+    finalized_project, monkeypatch
+) -> None:
+    """After a revision the draft on the platform can carry another title."""
+    _never(monkeypatch, "qiita_save_item")
+    finalized_project.state[state.LOCALIZED_TITLES] = {"ja": "新しい題"}
+    finalized_project.state[state.PUBLICATIONS] = {
+        "qiita": {
+            "platform": "qiita",
+            "state": "draft",
+            "article_id": "item-a",
+            "title": "前の題",
+        }
+    }
+    finalize(finalized_project, "ja")
+    asyncio.run(publish.publish_qiita_article_draft(["AI"], finalized_project))
+    (request,) = finalized_project.confirmation_requests
+    assert (
+        "update the existing draft on Qiita (now titled '前の題'): '新しい題'"
+        in (request["hint"])
+    )
+    assert request["payload"]["replaces_title"] == "前の題"
+
+
+def test_every_credential_finding_is_shown_not_only_the_first_few(
+    finalized_project,
+) -> None:
+    keys = "\n".join(f"key{n} = '{'AIza' + str(n) * 35}'" for n in range(1, 10))
+    finalized_project.state[state.localized_key("en")] += "\n" + keys + "\n"
+    found = policy.findings(finalized_project.state, "en")
+    assert len(found) >= 9
+    assert [item["line"] for item in found] == sorted(item["line"] for item in found)
+    sentence = policy.describe_findings(found)
+    assert sentence.startswith(f"{len(found)} in all") and "more" in sentence
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<svg><a><text>Read more</text><animate attributeName="href" '
+        'values="javascript:alert(1)"/></a></svg>',
+        '<math><maction actiontype="statusline" xlink:href="javascript:alert(1)">x'
+        "</maction></math>",
+    ],
+)
+def test_svg_and_math_are_dropped_with_what_they_hold(markup) -> None:
+    html = publish.markdown_to_inline_styled_html(f"Intro\n\n{markup}\n\nOutro")
+    assert "javascript:" not in html and "<svg" not in html and "<math" not in html
+    assert "Intro" in html and "Outro" in html
+
+
+def test_an_embed_tag_does_not_swallow_the_rest_of_the_article() -> None:
+    html = publish.markdown_to_inline_styled_html(
+        'before\n\n<embed src="https://example.com/y.swf">\n\nAFTER paragraph\n\n'
+        "## Heading after\n"
+    )
+    assert "<embed" not in html
+    assert "AFTER paragraph" in html and "Heading after" in html
+
+
+def test_an_aligned_table_cell_keeps_one_style_attribute() -> None:
+    html = publish.markdown_to_inline_styled_html(
+        "| a | b |\n| :--- | ---: |\n| 1 | 2 |\n"
+    )
+    cells = [tag for tag in html.split("<") if tag.startswith(("th ", "td "))]
+    assert cells and all(cell.count("style=") == 1 for cell in cells)
+    assert "border:1px solid" in html and "text-align: right" in html
+
+
+def test_a_revised_seed_leaves_no_file_of_the_old_text_behind(
+    finalized_project,
+) -> None:
+    from app.settings import workspace_dir
+    from app.tools.articles import write_workspace_file
+
+    project = finalized_project.state[state.PROJECT_ID]
+    for name in ("post.en.md", "naver_blog.html", "slides.en.md", "manifest.md"):
+        write_workspace_file(project, name, "made from the old text")
+    articles.save_seed_article_revision(
+        "제목",
+        SEED_KO + "\n새 문단입니다.\n",
+        "ko",
+        "none",
+        "",
+        True,
+        finalized_project,
+    )
+    folder = workspace_dir() / project
+    assert sorted(path.name for path in folder.iterdir()) == ["post.ko.md"]
+    assert "새 문단" in (folder / "post.ko.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("draft", "title", "names_itself"),
+    [
+        ("# 진짜 제목\n\n본문\n", "진짜 제목", True),
+        (
+            "My article about deployment\n\n```bash\n# install the dependencies\n"
+            "pip install foo\n```\n\n## Section\n",
+            "My article about deployment",
+            False,
+        ),
+        ("~~~python\n# a comment\n~~~\n\n# After the code\n", "After the code", True),
+        (
+            '---\ntitle: "From front matter"\ntags: [a]\n---\n\nBody text.\n',
+            "From front matter",
+            False,
+        ),
+        (
+            "---\ntags: [a]\n---\n\nFirst line of the body.\n",
+            "First line of the body.",
+            False,
+        ),
+    ],
+)
+def test_the_title_of_a_draft_is_never_a_comment_inside_code(
+    draft, title, names_itself
+) -> None:
+    assert articles.title_of_draft(draft) == title
+    assert articles.has_title_line(draft) is names_itself

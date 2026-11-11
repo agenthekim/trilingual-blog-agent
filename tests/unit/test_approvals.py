@@ -21,7 +21,7 @@ from pydantic import Field
 
 from app import platforms, policy, state
 from app.pipeline import ArticlePipeline
-from app.tools import publish
+from app.tools import articles, publish
 from tests.unit.conftest import SEED_KO
 
 
@@ -60,6 +60,7 @@ async def _pipeline(script: list[types.Content]) -> ArticlePipeline:
             publish.publish_qiita_article_draft,
             publish.publish_devto_article_draft,
             publish.finalize_localized_post,
+            articles.save_seed_article_revision,
         ],
     )
     app = App(
@@ -194,3 +195,45 @@ async def test_finalizing_in_a_chat_waits_for_the_person(isolated_workspace) -> 
     assert not policy.is_finalized(await pipeline.session_state(), "en")
     await pipeline.answer_approval(approval["id"], True)
     assert policy.is_finalized(await pipeline.session_state(), "en")
+
+
+@pytest.mark.asyncio
+async def test_a_yes_to_finalize_does_not_cover_a_text_swapped_while_it_was_asked(
+    isolated_workspace, monkeypatch
+) -> None:
+    """Calls of one model message all run before the pause for the person.
+
+    The model asks to finalize the Korean post and, in the same message,
+    replaces its text under the same title. The person's yes was asked for the
+    text as it was; it must not finalize the other one.
+    """
+    sent = _record(monkeypatch)
+    swapped = SEED_KO + "\n바꿔치기한 문단입니다.\n"
+    pipeline = await _pipeline(
+        [
+            _calls(
+                ("finalize_localized_post", {"language": "ko"}),
+                (
+                    "save_seed_article_revision",
+                    {
+                        "title": "제목",
+                        "markdown": swapped,
+                        "source_language": "ko",
+                        "code_mode": "none",
+                        "code_repo_url": "",
+                        "finalized": True,
+                    },
+                ),
+            )
+        ]
+    )
+    await pipeline._update_state({state.FINALIZED_POSTS: {}})
+    await pipeline.say("The Korean post is ready.")
+    current = await pipeline.session_state()
+    assert current[state.SEED_MARKDOWN] == swapped  # the swap happened
+    (approval,) = pipeline.approvals
+    assert approval["tool"] == "finalize_localized_post"
+
+    await pipeline.answer_approval(approval["id"], True)
+    assert not policy.is_finalized(await pipeline.session_state(), "ko")
+    assert sent == {"qiita": [], "devto": []}

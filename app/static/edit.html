@@ -146,6 +146,8 @@ async function load() {
 async function save() {
   if ($("save").disabled) return false;
   const body = {markdown: $("text").value};
+  // A post cannot be without a title: an emptied field goes back to the saved one.
+  if (hasTitle && !$("title").value.trim()) $("title").value = savedTitle;
   if (hasTitle) body.title = $("title").value;
   $("save").disabled = true; say("Saving…");
   let good = false;
@@ -201,11 +203,12 @@ function changeList(s) {
     s.notes && `speaker notes on ${plural(s.notes, "slide")}`].filter(Boolean).join(", ");
 }
 // One request to the deck at a time: the buttons wait while one is under way.
-async function syncDeck(direction, approved) {
+// ``changeId`` names the changes the person was shown; the server writes only those.
+async function syncDeck(direction, approved, changeId) {
   for (const id of ["push", "pull", "save"]) $(id).disabled = true;
   try {
     return await (await api(`/api/jobs/${job}/deck/sync`, {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify({language, direction, approved})})).json();
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({language, direction, approved, change_id: changeId})})).json();
   } finally { for (const id of ["push", "pull", "save"]) $(id).disabled = false; }
 }
 
@@ -223,7 +226,8 @@ async function pushToDeck(quietIfSame) {
       note: notes.join(" "), okLabel: "Approve and update"});
     if (!ok) { say("The deck was not changed."); return; }
     say("Updating the deck…");
-    const done = await syncDeck("push", true);
+    const done = await syncDeck("push", true, plan.change_id);
+    if (done.changed_since_preview) { say("The deck or the file changed after you were asked. Nothing was written; try again.", "warn"); return; }
     say(`Deck updated: ${plural(done.slides.length, "slide")}.`);
   } catch (error) { say(error.message, true); }
 }
@@ -241,7 +245,8 @@ async function pullFromDeck() {
       summary: [["Slides that change", slideList(plan.slides)], ["What changes", changeList(plan)], ["The deck", "is only read"]],
       note: notes.join(" "), okLabel: "Approve and replace"});
     if (!ok) return;
-    const done = await syncDeck("pull", true);
+    const done = await syncDeck("pull", true, plan.change_id);
+    if (done.changed_since_preview) { say("The deck or the file changed after you were asked. Nothing was written; try again.", "warn"); return; }
     await reloadText();
     say(`File updated from the deck: ${plural(done.slides.length, "slide")}.`);
   } catch (error) { say(error.message, true); }

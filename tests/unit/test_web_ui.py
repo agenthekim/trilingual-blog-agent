@@ -14,6 +14,11 @@ JOB_ID = "0123456789abcdef0123456789abcdef"
 PROJECT_ID = "demo-abc123"
 
 
+def _browser() -> TestClient:
+    """A client that reaches the server under its own local address."""
+    return TestClient(web_ui.web, base_url="http://127.0.0.1:8502")
+
+
 class FakePipeline:
     """Only what the file routes ask of a pipeline."""
 
@@ -44,10 +49,12 @@ class FakePipeline:
         self.saved.append((name, markdown, title))
         return {"saved": name, "check": None, "secrets": []}
 
-    async def sync_deck_text(self, language: str, direction: str, apply: bool):
+    async def sync_deck_text(
+        self, language: str, direction: str, apply: bool, change_id: str | None = None
+    ):
         if language == "en":
             raise ValueError("There is no Google Slides deck for this language yet.")
-        self.synced.append((language, direction, apply))
+        self.synced.append((language, direction, apply, change_id))
         return {"direction": direction, "slides": [2], "applied": apply}
 
 
@@ -59,7 +66,7 @@ def client():
         (folder / name).write_text(f"# {name}\n\n<script>alert(1)</script>\n", "utf-8")
     job = web_ui.Job(id=JOB_ID, pipeline=FakePipeline())
     web_ui.JOBS[JOB_ID] = job
-    yield TestClient(web_ui.web)
+    yield _browser()
     web_ui.JOBS.clear()
 
 
@@ -120,12 +127,26 @@ def test_deck_sync_writes_only_when_the_request_says_a_person_approved(client) -
     url = f"/api/jobs/{JOB_ID}/deck/sync"
     asked = client.post(url, json={"language": "ko", "direction": "push"})
     assert asked.json() == {"direction": "push", "slides": [2], "applied": False}
-    done = client.post(
+    # An approval must say which changes it approves.
+    blind = client.post(
         url, json={"language": "ko", "direction": "pull", "approved": True}
+    )
+    assert blind.status_code == 400
+    done = client.post(
+        url,
+        json={
+            "language": "ko",
+            "direction": "pull",
+            "approved": True,
+            "change_id": "c1",
+        },
     )
     assert done.json()["applied"] is True
     job = web_ui.JOBS[JOB_ID]
-    assert job.pipeline.synced == [("ko", "push", False), ("ko", "pull", True)]
+    assert job.pipeline.synced == [
+        ("ko", "push", False, None),
+        ("ko", "pull", True, "c1"),
+    ]
     assert job.busy is False
 
     assert (
@@ -139,7 +160,13 @@ def test_deck_sync_writes_only_when_the_request_says_a_person_approved(client) -
     job.busy = True  # the agent is working: the deck is not touched meanwhile
     for approved in (False, True):
         busy = client.post(
-            url, json={"language": "ko", "direction": "push", "approved": approved}
+            url,
+            json={
+                "language": "ko",
+                "direction": "push",
+                "approved": approved,
+                "change_id": "c1",
+            },
         )
         assert busy.status_code == 409 and busy.json()["detail"] == web_ui.BUSY
     # A request that was turned away must not clear a flag it did not set.
@@ -280,7 +307,7 @@ def real(monkeypatch):
             }
         )
     )
-    yield TestClient(web_ui.web), job
+    yield _browser(), job
     web_ui.JOBS.clear()
 
 
@@ -553,3 +580,45 @@ def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
     # No name of a secret is written into the page.
     for word in ("QIITA_", "DEVTO_", "OAUTH"):
         assert word not in page
+
+
+def test_the_server_answers_only_to_its_own_name(client, monkeypatch) -> None:
+    """With no login, a page that points its own name at this machine is refused."""
+    other = TestClient(web_ui.web, base_url="http://attacker.example")
+    for response in (
+        other.get("/"),
+        other.get(f"/api/jobs/{JOB_ID}"),
+        other.post(f"/api/jobs/{JOB_ID}/finalize", json={"language": "en"}),
+    ):
+        assert response.status_code == 400
+    assert client.get("/").status_code == 200
+    assert (
+        TestClient(web_ui.web, base_url="http://localhost:8502").get("/").status_code
+        == 200
+    )
+    # Bound to another address on purpose (--host): any name is then served.
+    monkeypatch.setattr(web_ui, "ALLOWED_HOSTS", None)
+    assert other.get("/").status_code == 200
+
+
+def test_settings_names_the_account_that_decks_go_to(client, monkeypatch) -> None:
+    from app import secrets
+
+    monkeypatch.setattr(secrets, "get_secret", lambda name: "configured")
+    monkeypatch.setattr(web_ui, "granted_account", lambda: "owner@example.com")
+    monkeypatch.setattr(web_ui, "_config_cache", None)
+    config = client.get("/api/config").json()
+    assert config["google_slides"] is True
+    assert config["slides_account"] == "owner@example.com"
+    monkeypatch.setattr(web_ui, "_config_cache", None)
+    page = client.get("/").text
+    assert "a new file in the Google Drive of ${account}" in page
+
+
+def test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone(client) -> None:
+    job = web_ui.JOBS[JOB_ID]
+    job.pipeline.approvals = [{"id": "a", "tool": "t", "hint": "Approve?"}]
+    client.post(f"/api/jobs/{JOB_ID}/message", json={"text": "do something else"})
+    status = _wait(client)
+    assert "1 request(s) the agent was waiting on" in status["notice"]
+    assert status["reply"] == "I shortened the English title."

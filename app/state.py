@@ -21,6 +21,9 @@ LOCALIZED_TITLES = "localized_titles"
 # Per language, what a person signed off: a digest of the title and text and
 # whether they acknowledged credential-looking findings (see app/policy.py).
 FINALIZED_POSTS = "finalized_posts"
+# Per pending request to finalize, the digest of what the person was asked
+# about, so a yes cannot be carried over to a text that changed meanwhile.
+FINALIZATIONS_ASKED = "finalizations_asked"
 
 # Slide planning works on one language at a time. These three keys are the
 # working area of the planning run in progress; nothing reads them afterwards.
@@ -44,6 +47,7 @@ DERIVED_FROM_SEED = (
     PUBLICATIONS,
     LOCALIZED_TITLES,
     FINALIZED_POSTS,
+    FINALIZATIONS_ASKED,
     PRESENTATION_BRIEF,
     SLIDE_DECK_PLAN,
     SLIDE_DRAFT_TIMING,

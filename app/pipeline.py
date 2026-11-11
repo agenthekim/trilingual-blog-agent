@@ -14,6 +14,7 @@ says so when it did not, instead of trusting that a reply meant success.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import re
 import uuid
@@ -42,6 +43,7 @@ from app.settings import (
     ALLOWED_ARTICLE_HOSTS,
     LANGUAGE_NAMES,
     LANGUAGES,
+    MAX_ARTICLE_CHARS,
     PLATFORM_FOR_LANGUAGE,
     workspace_dir,
 )
@@ -55,7 +57,6 @@ from app.tools.articles import (
 from app.tools.publish import (
     export_naver_blog_paste_ready_html,
     finalize_localized_post,
-    markdown_to_inline_styled_html,
     publish_devto_article_draft,
     publish_qiita_article_draft,
     record_manually_posted_url,
@@ -74,6 +75,7 @@ __all__ = ["API_PLATFORMS", "PLATFORM_NAMES", "ArticlePipeline"]
 
 _EDITABLE_FILE = re.compile(r"^(post|slides)\.(ko|en|ja)\.md$")
 MAX_TITLE_CHARS = 120
+MIN_DRAFT_CHARS = 50  # what the seed tool accepts as a whole article
 USER_ID = "pipeline"
 CONFIRMATION_CALL = "adk_request_confirmation"
 _POSTING_TOOL = {
@@ -102,17 +104,21 @@ def _host(url: str) -> str:
 
 
 def classify_source(text: str) -> tuple[str, str]:
-    """What a person handed in: ('url', url), ('request', text) or ('draft', text).
+    """What a person handed in, and the text to work with.
 
-    A bare address of a post on a supported site is read by code. A short
-    message that contains such an address but says more is a request in words
-    and goes to the agent. Everything else is the draft itself and is stored
-    exactly as given.
+    'url': a bare address of a post on a supported site, read by code.
+    'request': a short message that contains such an address but says more;
+    it goes to the agent. 'elsewhere': a bare address that cannot be read
+    (another site, or not https). 'draft': everything else, the article
+    itself, stored exactly as given.
     """
     stripped = text.strip()
     urls = [u for u in _URL.findall(stripped) if _host(u) in ALLOWED_ARTICLE_HOSTS]
+    if re.fullmatch(r"https?://\S+", stripped):
+        readable = bool(urls) and stripped.startswith("https://")
+        return ("url" if readable else "elsewhere"), stripped
     if urls and len(stripped) <= _MAX_URL_REQUEST_CHARS:
-        return ("url", stripped) if stripped == urls[0] else ("request", stripped)
+        return "request", stripped
     return "draft", text
 
 
@@ -340,23 +346,23 @@ class ArticlePipeline:
         self._pending: list[Approval] = []
         self.last_reply = ""
 
-    async def _session(self, *, events: bool = True) -> Any:
+    async def _session(self, *, events: bool = True) -> Any | None:
         config = None if events else GetSessionConfig(num_recent_events=0)
-        found = await self._sessions.get_session(
+        return await self._sessions.get_session(
             app_name=self._app.name,
             user_id=USER_ID,
             session_id=self.session_id,
             config=config,
         )
-        if found is None:
-            found = await self._sessions.create_session(
-                app_name=self._app.name, user_id=USER_ID, session_id=self.session_id
-            )
-        return found
 
     async def session_state(self) -> dict[str, Any]:
-        """The state alone; the events, which hold whole articles, are not loaded."""
-        return dict((await self._session(events=False)).state)
+        """The state alone; the events, which hold whole articles, are not loaded.
+
+        Reading never creates the session: a page that asks for the status
+        while the run takes its first step must not get in its way.
+        """
+        found = await self._session(events=False)
+        return dict(found.state) if found else {}
 
     async def overview(self) -> dict[str, Any]:
         return overview(await self.session_state())
@@ -502,6 +508,23 @@ class ArticlePipeline:
             if not current.get(state.SEED_FINALIZED):
                 await self.act(finalize_seed_article)
             return None
+        if kind == "elsewhere":
+            return (
+                "That address cannot be read: posts are read from Qiita, DEV "
+                "Community and Naver Blog, over https. Hand in a post from one "
+                "of them, or the Markdown text itself."
+            )
+        # Said in plain words here, before a validator says it in its own.
+        if len(text.strip()) < MIN_DRAFT_CHARS:
+            return (
+                "The draft could not be stored. It is shorter than "
+                f"{MIN_DRAFT_CHARS} characters; hand in the whole article."
+            )
+        if len(text) > MAX_ARTICLE_CHARS:
+            return (
+                f"The draft could not be stored. It has {len(text):,} characters; "
+                f"the limit for one article is {MAX_ARTICLE_CHARS:,}."
+            )
         # A draft is stored as it was handed in. No model retypes it.
         result = await self.act(
             save_seed_article_revision,
@@ -516,8 +539,8 @@ class ArticlePipeline:
             return f"The draft could not be stored. {failure}"
         if not has_title_line(text):
             notes.append(
-                "The draft has no '# Title' line, so its first line was taken as "
-                f"the title: '{title_of_draft(text)}'. If that is not the title, "
+                "The draft has no '# Title' line, so this was taken as the "
+                f"title: '{title_of_draft(text)}'. If that is not the title, "
                 "add a '# Title' line at the top and run again."
             )
         return None
@@ -717,8 +740,13 @@ class ArticlePipeline:
 
     async def _update_state(self, delta: dict[str, Any]) -> None:
         """Record a change made outside any agent turn."""
+        session = await self._session()
+        if session is None:
+            session = await self._sessions.create_session(
+                app_name=self._app.name, user_id=USER_ID, session_id=self.session_id
+            )
         await self._sessions.append_event(
-            await self._session(),
+            session,
             Event(
                 author="human_editor",
                 invocation_id=f"edit-{uuid.uuid4().hex[:8]}",
@@ -757,13 +785,16 @@ class ArticlePipeline:
         }
 
     async def sync_deck_text(
-        self, language: str, direction: str, apply: bool
+        self, language: str, direction: str, apply: bool, change_id: str | None = None
     ) -> dict[str, Any]:
         """Compare a deck with its Markdown plan and, if asked, bring one in line.
 
         ``direction`` is 'push' (file to deck) or 'pull' (deck to file). With
         ``apply`` false nothing is written anywhere; the result says what an
-        approval would change. With ``apply`` true a person has approved it.
+        approval would change and names that set of changes (``change_id``).
+        With ``apply`` true a person has approved the set named by
+        ``change_id``; if the file or the deck changed since they were shown
+        it, nothing is written and the result says so.
         Raises ValueError when there is no deck or no readable plan.
         """
         if direction not in ("push", "pull"):
@@ -787,8 +818,20 @@ class ArticlePipeline:
             deck_sync.differences(file_view, deck_view, baseline), direction
         )
         result = deck_sync.describe(direction, carried, file_view, deck_view, baseline)
-        result.update(language=language, deck_url=deck.get("url"), applied=False)
+        shown = hashlib.sha256(
+            repr(sorted((d.key, d.file, d.deck) for d in carried)).encode()
+        ).hexdigest()[:32]
+        result.update(
+            language=language,
+            deck_url=deck.get("url"),
+            applied=False,
+            change_id=shown,
+            changed_since_preview=False,
+        )
         if not apply or not carried:
+            return result
+        if change_id != shown:
+            result["changed_since_preview"] = True
             return result
 
         if direction == "push":
@@ -849,6 +892,14 @@ class ArticlePipeline:
         match = _EDITABLE_FILE.match(name)
         if not match or project_file(project_id, name) is None:
             raise ValueError("This file cannot be edited here.")
+        if (
+            match.group(1) == "post"
+            and match.group(2) != current.get(state.SOURCE_LANGUAGE)
+            and name not in overview(current)["editable"]
+        ):
+            # A file left from an earlier text, or a post that is already
+            # public: saving it would bring back or change what is settled.
+            raise ValueError("This post can no longer be edited here.")
         text = markdown.rstrip() + "\n"
         if not text.strip():
             raise ValueError("The text is empty.")
@@ -878,13 +929,19 @@ class ArticlePipeline:
         await self._update_state(delta)
         get_article_store().add_version(project_id, language, "edited", text)
         path.write_text(text, encoding="utf-8")
-        if language == "ko" and project_file(project_id, "naver_blog.html"):
-            (workspace_dir() / project_id / "naver_blog.html").write_text(
-                markdown_to_inline_styled_html(text), encoding="utf-8"
-            )
+        if PLATFORM_FOR_LANGUAGE[language] == "naver_blog":
+            # The paste file follows the text, by the same rules as any export:
+            # a text the export refuses (credential-looking values nobody
+            # accepted) leaves no file behind to be pasted by mistake.
+            if _failure(await self.act(export_naver_blog_paste_ready_html)):
+                (workspace_dir() / project_id / "naver_blog.html").unlink(
+                    missing_ok=True
+                )
         self.log(f">>> edited {name} by hand ({len(text)} characters)")
         return {
             "saved": name,
             "check": check,
-            "secrets": [str(finding) for finding in find_secrets(text)[:5]],
+            "secrets": sorted(
+                find_secrets(text), key=lambda item: (item["line"], item["type"])
+            ),
         }

@@ -325,13 +325,21 @@ async def test_saved_notes_reach_the_deck_only_after_approval(
     assert (preview["slides"], preview["notes"], preview["applied"]) == ([2], 1, False)
     assert written == []  # asking what would change writes nothing
 
-    done = await pipeline.sync_deck_text("ko", "push", apply=True)
+    # An approval for another set of changes than the one shown writes nothing.
+    stale = await pipeline.sync_deck_text("ko", "push", apply=True, change_id="other")
+    assert stale["changed_since_preview"] and not stale["applied"] and written == []
+    missing = await pipeline.sync_deck_text("ko", "push", apply=True)
+    assert missing["changed_since_preview"] and written == []
+
+    done = await pipeline.sync_deck_text(
+        "ko", "push", apply=True, change_id=preview["change_id"]
+    )
     assert done["applied"] and len(written) == 1
     assert deck_sync.deck_text(deck)[0]["2/notes"].startswith(
         "가드레일을 다시 설명합니다."
     )
     # Now they agree again: a second push has nothing to do and writes nothing.
-    again = await pipeline.sync_deck_text("ko", "push", apply=True)
+    again = await pipeline.sync_deck_text("ko", "push", apply=False)
     assert again["slides"] == [] and not again["applied"] and len(written) == 1
 
 
@@ -351,7 +359,9 @@ async def test_notes_edited_in_the_deck_are_pulled_into_the_file(
     assert (preview["slides"], preview["titles"], preview["notes"]) == ([1, 999], 1, 2)
     assert path.read_text(encoding="utf-8") == before
 
-    await pipeline.sync_deck_text("ko", "pull", apply=True)
+    await pipeline.sync_deck_text(
+        "ko", "pull", apply=True, change_id=preview["change_id"]
+    )
     pulled = parse_slide_plan_markdown(path.read_text(encoding="utf-8"), "ko")
     assert pulled.slides[0].title == "덱에서 고친 제목"
     assert pulled.slides[0].speaker_script == "덱에서 고친 대본"
@@ -362,7 +372,7 @@ async def test_notes_edited_in_the_deck_are_pulled_into_the_file(
     record = (await pipeline.session_state())[state.SLIDE_PLANS]["ko"]
     assert record["slides"][0]["title"] == "덱에서 고친 제목"
     # A push right after has nothing to carry: nothing is written back.
-    assert (await pipeline.sync_deck_text("ko", "push", apply=True))["slides"] == []
+    assert (await pipeline.sync_deck_text("ko", "push", apply=False))["slides"] == []
 
 
 @pytest.mark.asyncio

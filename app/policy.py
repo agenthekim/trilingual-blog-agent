@@ -27,7 +27,8 @@ PLATFORM_NAMES = {
 }
 # Platforms the system can write to. Naver Blog has no write API.
 API_PLATFORMS = ("qiita", "devto")
-MAX_FINDINGS_SHOWN = 5
+# In a sentence; lists (the page, the script) show every finding.
+MAX_FINDINGS_IN_A_SENTENCE = 8
 
 
 class Refusal(NamedTuple):
@@ -63,13 +64,20 @@ def is_finalized(session_state: Mapping[str, Any], language: str) -> bool:
 
 
 def findings(session_state: Mapping[str, Any], language: str) -> list[dict[str, Any]]:
-    """Credential-looking values in a post, as type and line; never the value."""
+    """Every credential-looking value in a post, as type and line; never the value.
+
+    All of them, in the order of the text: a person who is asked to accept
+    the findings must be able to see each one.
+    """
     text = state.article_markdown(session_state, language) or ""
-    return find_secrets(text)[:MAX_FINDINGS_SHOWN]
+    return sorted(find_secrets(text), key=lambda item: (item["line"], item["type"]))
 
 
 def describe_findings(found: list[dict[str, Any]]) -> str:
-    return ", ".join(f"{item['type']} on line {item['line']}" for item in found)
+    shown = found[:MAX_FINDINGS_IN_A_SENTENCE]
+    listed = ", ".join(f"{item['type']} on line {item['line']}" for item in shown)
+    more = len(found) - len(shown)
+    return f"{len(found)} in all: {listed}" + (f", and {more} more" if more else "")
 
 
 def finalize_refusal(

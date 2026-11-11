@@ -558,3 +558,79 @@ async def test_a_draft_without_a_title_line_says_which_title_was_taken(
     current = await pipeline.session_state()
     assert current[state.SEED_TITLE] == "들어가며"
     assert current[state.SEED_MARKDOWN] == draft
+
+
+def test_an_address_that_cannot_be_read_is_told_apart_from_a_draft() -> None:
+    for text in (
+        "https://medium.com/@someone/a-post-1a2b3c",
+        "http://qiita.com/someone/items/0123456789abcdef0123",  # not https
+    ):
+        assert classify_source(text) == ("elsewhere", text)
+
+
+@pytest.mark.asyncio
+async def test_what_cannot_be_used_as_a_source_is_said_in_plain_words(
+    isolated_workspace,
+) -> None:
+    pipeline = _new_pipeline()
+    said = _stand_in_agent(pipeline)
+    elsewhere = await pipeline.run_stages(
+        "https://medium.com/@a/post-1", talk_minutes=0
+    )
+    assert elsewhere.startswith("That address cannot be read")
+    assert "Qiita, DEV Community and Naver Blog" in elsewhere
+    short = await pipeline.run_stages("# 제목\n\n짧은 글", talk_minutes=0)
+    assert short == (
+        "The draft could not be stored. It is shorter than 50 characters; "
+        "hand in the whole article."
+    )
+    for message in (elsewhere, short):
+        assert "String should" not in message and "markdown:" not in message
+    assert said == [] and await pipeline.session_state() == {}
+
+
+@pytest.mark.asyncio
+async def test_reading_the_status_never_creates_the_session(isolated_workspace) -> None:
+    """A status request must not race the run's first step for the session."""
+    from app.agent import app
+    from app.pipeline import USER_ID
+
+    pipeline = _new_pipeline()
+    assert await pipeline.session_state() == {}
+    assert (await pipeline.overview())["project_id"] == ""
+    found = await pipeline._sessions.get_session(
+        app_name=app.name, user_id=USER_ID, session_id=pipeline.session_id
+    )
+    assert found is None
+    await pipeline._update_state({state.SEED_TITLE: "첫 단계"})  # the run's first step
+    assert (await pipeline.session_state())[state.SEED_TITLE] == "첫 단계"
+
+
+@pytest.mark.asyncio
+async def test_a_file_left_from_an_earlier_text_cannot_be_saved_back(
+    isolated_workspace,
+) -> None:
+    pipeline = await _pipeline_with_article()
+    # English has a file on disk but no text in the session: a leftover.
+    write_workspace_file("proj-3", "post.en.md", "# Old\n\nOld text.\n")
+    with pytest.raises(ValueError, match="no longer be edited"):
+        await pipeline.save_edit(
+            "post.en.md", "# Old\n\nOld text. [링크](https://example.com)"
+        )
+    assert not (await pipeline.session_state()).get(state.localized_key("en"))
+
+
+@pytest.mark.asyncio
+async def test_an_edit_the_export_refuses_leaves_no_naver_file_to_paste(
+    isolated_workspace,
+) -> None:
+    pipeline = await _pipeline_with_article()
+    key = "AIza" + "B" * 35
+    saved = await pipeline.save_edit(
+        "post.ko.md", f"# 제목\n\n키는 {key} 입니다. [링크](https://example.com)"
+    )
+    assert saved["secrets"] == [{"type": saved["secrets"][0]["type"], "line": 3}]
+    assert project_file("proj-3", "naver_blog.html") is None
+    # Once a person has accepted the findings, the file is written again.
+    await pipeline.finalize_post("ko", acknowledge_findings=True)
+    assert project_file("proj-3", "naver_blog.html") is not None

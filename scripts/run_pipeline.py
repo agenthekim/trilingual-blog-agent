@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         choices=["ko", "en", "ja"],
         default=[],
-        help="Language to plan the talk in (repeatable). Default: en.",
+        help="Language to plan the talk in (repeatable). Default: all three.",
     )
     parser.add_argument("--audience", default="software engineers")
     parser.add_argument(
@@ -127,7 +127,7 @@ async def main() -> int:
     notes = await pipeline.run_stages(
         source_text,
         args.talk_minutes,
-        args.talk_language or ["en"],
+        args.talk_language or ["en", "ko", "ja"],
         args.audience,
         args.create_deck,
     )

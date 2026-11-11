@@ -66,8 +66,19 @@ _INLINE_STYLES = {
 # Naver's editor is the last line of defence, not the first: what the export
 # hands a person to paste carries no script, no event handler and no link
 # that runs code, whatever the article's own HTML contained.
-_DROPPED_WITH_CONTENT = {"script", "style", "iframe", "object", "embed", "template"}
+# svg and math go with their content: both can carry links and animations
+# whose targets are set by attributes no list of URL attributes covers.
+_DROPPED_WITH_CONTENT = {
+    "script",
+    "style",
+    "iframe",
+    "object",
+    "template",
+    "svg",
+    "math",
+}
 _DROPPED_TAGS = _DROPPED_WITH_CONTENT | {
+    "embed",  # has no end tag, so there is no content to skip
     "form",
     "input",
     "button",
@@ -147,8 +158,29 @@ def markdown_to_inline_styled_html(markdown: str) -> str:
         )
     )
     for tag, style in _INLINE_STYLES.items():
-        html = re.sub(rf"<{tag}(\s[^>]*)?>", rf'<{tag}\1 style="{style}">', html)
+        html = re.sub(
+            rf"<{tag}(\s[^>]*)?>",
+            lambda match, tag=tag, style=style: _styled(tag, match.group(1), style),
+            html,
+        )
     return html
+
+
+_STYLE_ATTRIBUTE = re.compile(r'\sstyle="([^"]*)"')
+
+
+def _styled(tag: str, attributes: str | None, style: str) -> str:
+    """The opening tag with ``style`` added; an existing style is kept after it.
+
+    A table cell can already carry its alignment. Two style attributes would
+    lose one of them, so they are joined into one.
+    """
+    attributes = attributes or ""
+    existing = _STYLE_ATTRIBUTE.search(attributes)
+    if existing:
+        attributes = _STYLE_ATTRIBUTE.sub("", attributes, count=1)
+        style = f"{style}{existing.group(1)}"
+    return f'<{tag}{attributes} style="{style}">'
 
 
 def _refused(refusal: policy.Refusal) -> dict[str, Any]:
@@ -197,15 +229,23 @@ def _approval(
     title: str,
     tags: list[str],
     chars: int,
-    updating: bool,
+    existing: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Stop for human approval. Returns a result dict unless approval was given."""
     name = policy.PLATFORM_NAMES[platform]
+    updating = existing.get("state") == "draft" and bool(existing.get("article_id"))
     confirmation = tool_context.tool_confirmation
     if confirmation is None:
-        action = "update the existing draft on" if updating else "create a draft on"
+        action = f"create a draft on {name}"
+        if updating:
+            # Say whose draft is replaced: after a revision the title on the
+            # platform can be another than the one that is about to be sent.
+            was = existing.get("title")
+            action = f"update the existing draft on {name}" + (
+                f" (now titled '{was}')" if was and was != title else ""
+            )
         tool_context.request_confirmation(
-            hint=f"Approve to {action} {name}: '{title}' ({chars} characters, "
+            hint=f"Approve to {action}: '{title}' ({chars} characters, "
             f"tags: {', '.join(tags) or 'none'}). It will be saved as a "
             "non-public draft, unless the approval itself asks for a public post.",
             payload={
@@ -214,6 +254,7 @@ def _approval(
                 "title": title,
                 "tags": tags,
                 "updating": updating,
+                "replaces_title": existing.get("title") if updating else None,
             },
         )
         return PublishOutput(
@@ -244,9 +285,10 @@ def finalize_localized_post(language: str, tool_context: ToolContext) -> dict[st
 
     Posting to Qiita or DEV Community needs it. Use it when the user says a
     post is ready, on a surface without the web page's Finalize button. The
-    first call records nothing: it pauses and asks the user to confirm. Any
-    later change to the title or the text undoes the sign-off. You cannot
-    confirm for the user.
+    first call records nothing: it pauses and asks the user to confirm. The
+    confirmation holds for the title and text as they were when the user was
+    asked; if either changed meanwhile, nothing is recorded. Any later change
+    undoes the sign-off. You cannot confirm for the user.
 
     Args:
         language: Which post: 'ko', 'en' or 'ja'.
@@ -268,28 +310,52 @@ def finalize_localized_post(language: str, tool_context: ToolContext) -> dict[st
         payload.get("acknowledge_findings")
     )
     found = policy.findings(tool_context.state, language)
+    # Findings do not stop the request from being raised; whether they are
+    # accepted is decided below, from what the person answered.
     if refusal := policy.finalize_refusal(
         tool_context.state, language, acknowledge_findings=True
     ):
         return _refused(refusal)
     title = state.article_title(tool_context.state, language)
+    text = state.article_markdown(tool_context.state, language) or ""
+    digest = policy.post_digest(title, text)
     name = LANGUAGE_NAMES[language]
+    # None when a person started this from the page or the script: there the
+    # click is the answer, and there was no earlier request to compare with.
+    call_id = getattr(tool_context, "function_call_id", None)
+    asked = dict(tool_context.state.get(state.FINALIZATIONS_ASKED) or {})
     if confirmation is None:
         warning = (
             " It has values that look like credentials "
-            f"({policy.describe_findings(found)}); approving here does not accept them."
+            f"({policy.describe_findings(found)}). A yes here does not accept "
+            "them: remove them, or finalize on the web page or with the script, "
+            "where you can say that they are not real."
             if found
             else ""
         )
+        if call_id:
+            asked[call_id] = digest
+            tool_context.state[state.FINALIZATIONS_ASKED] = asked
         tool_context.request_confirmation(
-            hint=f"Finalize the {name} post '{title}' as reviewed and ready to "
-            f"send?{warning}",
+            hint=f"Finalize the {name} post '{title}' ({len(text)} characters) as "
+            f"reviewed and ready to send?{warning}",
             payload={"action": "finalize", "language": language, "title": title},
         )
         return {
             "status": "pending_human_approval",
             "message": f"Waiting for the user to confirm that the {name} post is final.",
         }
+    if call_id:
+        expected = asked.pop(call_id, None)
+        tool_context.state[state.FINALIZATIONS_ASKED] = asked
+        if confirmation.confirmed and expected != digest:
+            return tool_error(
+                "POST_CHANGED",
+                f"The {name} post changed after the user was asked to finalize it, "
+                "so their answer does not cover what it is now. Nothing was recorded.",
+                "Tell the user the post changed, ask them to review it again, and "
+                "call finalize_localized_post again when they say it is ready.",
+            )
     if not confirmation.confirmed:
         return {
             "status": "declined",
@@ -297,10 +363,15 @@ def finalize_localized_post(language: str, tool_context: ToolContext) -> dict[st
         }
     # Findings are accepted only by a person who was shown them and said so
     # in the approval itself; a plain yes is not enough.
-    if refusal := policy.finalize_refusal(
-        tool_context.state, language, acknowledge_findings=acknowledged
-    ):
-        return _refused(refusal)
+    if found and not acknowledged:
+        return tool_error(
+            "SECRET_IN_ARTICLE",
+            f"The {name} text has values that look like credentials: "
+            f"{policy.describe_findings(found)}. A yes in a chat cannot accept them.",
+            "Do not ask again here. Tell the user to remove the values, or to "
+            "finalize this post on the web page or with scripts/run_pipeline.py, "
+            "where they are shown the findings and can say they are not real.",
+        )
     marks = dict(tool_context.state.get(state.FINALIZED_POSTS) or {})
     marks[language] = policy.finalization(tool_context.state, language, acknowledged)
     tool_context.state[state.FINALIZED_POSTS] = marks
@@ -403,7 +474,7 @@ async def publish_qiita_article_draft(
         title=request.title,
         tags=request.tags,
         chars=len(markdown),
-        updating=bool(item_id),
+        existing=existing,
     )
     if pending:
         return pending
@@ -483,7 +554,7 @@ async def publish_devto_article_draft(
         title=request.title,
         tags=request.tags,
         chars=len(markdown),
-        updating=bool(article_id),
+        existing=existing,
     )
     if pending:
         return pending

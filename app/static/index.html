@@ -264,6 +264,7 @@ const STATUS = {
 const SETTINGS_KEY = "tba.settings", LAST_RUN_KEY = "tba.lastRun";
 const RUN_ID = /^[0-9a-f]{32}$/;
 let jobId = null, timer = null, state = null, missed = 0;
+let shownRows = "", shownNotices = "", config = null;
 let busySince = null, lastLogAt = Date.now(), lastLogLength = 0, liveKey = null;
 const typed = {};  // values typed into the table survive re-rendering
 
@@ -411,7 +412,10 @@ function render(data) {
       ? el("div", {class: "muted small"}, "The agent takes one answer at a time: answering this one declines the others.") : null),
     el("button", {type: "button", onclick: () => act("approval", {id: approval.id, confirmed: false})}, "Decline"),
     el("button", {type: "button", class: "primary", onclick: () => act("approval", {id: approval.id, confirmed: true})}, "Approve")));
-  $("notices").replaceChildren(...notices);
+  // Rebuilt only when something changed: a button replaced between a press
+  // and its release would swallow the click.
+  const noticesKey = JSON.stringify([data.error, data.notice, busy ? [] : data.approvals]);
+  if (noticesKey !== shownNotices) { shownNotices = noticesKey; $("notices").replaceChildren(...notices); }
 
   const rows = o.rows.filter((r) => r.title)
     .sort((a, b) => (b.language === o.source_language) - (a.language === o.source_language));
@@ -419,8 +423,11 @@ function render(data) {
   // Rebuilding a row would wipe what is being typed into it, so wait while a
   // text box in the table has the focus; a focused button does not hold it up.
   const active = document.activeElement;
-  if (!($("rows").contains(active) && active.tagName === "INPUT"))
+  const rowsKey = JSON.stringify([rows, busy]);
+  if (rowsKey !== shownRows && !($("rows").contains(active) && active.tagName === "INPUT")) {
+    shownRows = rowsKey;
     $("rows").replaceChildren(...rows.map((row) => languageRow(row, busy)));
+  }
 
   $("askCard").classList.toggle("hidden", !o.title);
   $("reply").classList.toggle("hidden", !data.reply);
@@ -492,8 +499,8 @@ async function finalize(row) {
       // Shown as type and line only; the values never leave the server.
       const accepted = await confirmAction({
         title: `The ${row.language_name} text has values that look like credentials`,
-        summary: done.findings.map((f) => [`Line ${f.line}`, f.type.replaceAll("_", " ").toLowerCase()]),
-        note: "Remove them in the editor if they are real. If they are examples, you can finalize anyway.",
+        summary: done.findings.slice(0, 40).map((f) => [`Line ${f.line}`, f.type.replaceAll("_", " ").toLowerCase()]),
+        note: `${done.findings.length} in all${done.findings.length > 40 ? ", the first 40 shown" : ""}. Remove them in the editor if they are real. If they are examples, you can finalize anyway.`,
         okLabel: "They are not real: finalize"});
       if (!accepted) return;
       done = await api(`/api/jobs/${jobId}/finalize`, {language: row.language, acknowledge_findings: true});
@@ -506,10 +513,17 @@ function recordUrl(row, url) {
   if (!/^https:\/\/\S+$/.test(url.trim())) { toast("Enter the https URL of the post."); return; }
   act("url", {platform: row.platform, url: url.trim()});
 }
+async function loadConfig() {
+  if (!config) config = await api("/api/config");
+  return config;
+}
 async function createDeck(row) {
+  // Name the account, so a deck never lands in a Drive nobody expected.
+  let account = null;
+  try { account = (await loadConfig()).slides_account; } catch (e) {}
   const ok = await confirmAction({
     title: `Create the ${row.language_name} Google Slides deck?`,
-    summary: [["From", "the speaker notes of this language"], ["Where", "a new file in your Google Drive"], ["Contains", "one slide per minute, script in the speaker notes"]],
+    summary: [["From", "the speaker notes of this language"], ["Where", account ? `a new file in the Google Drive of ${account}` : "a new file in your Google Drive"], ["Contains", "one slide per minute, script in the speaker notes"]],
     okLabel: "Approve and create"});
   if (ok) act("deck", {language: row.language, approved: true});
 }
@@ -533,7 +547,7 @@ async function openSettings() {
   $("settingsNote").textContent = "";
   $("settingsModal").showModal();
   try {
-    const config = await api("/api/config");
+    config = await api("/api/config");
     const tag = (text, tone) => el("span", {class: "platform-tag " + (tone || "")}, text);
     const row = (language, name, ...tags) => el("div", {class: "platform-row"},
       el("div", {class: "platform-meta"}, el("span", {class: "platform-lang"}, language), el("span", {class: "platform-name"}, name)),
@@ -542,7 +556,7 @@ async function openSettings() {
       ...config.platforms.map((p) => row(p.language, p.platform,
         tag(p.how === "api" ? "Posted through the API" : "Paste-ready HTML"),
         p.how === "api" ? tag(p.configured ? "Credential configured" : "No credential", p.configured ? "ok" : "warn") : null)),
-      row("Slides", "Google Slides", tag(config.google_slides ? "Access granted" : "Not set up", config.google_slides ? "ok" : "warn"),
+      row("Slides", config.slides_account ? `Google Slides · ${config.slides_account}` : "Google Slides", tag(config.google_slides ? "Access granted" : "Not set up", config.google_slides ? "ok" : "warn"),
         tag(config.diagrams ? "Diagrams drawn" : "Diagrams off")));
     $("settingsNote").textContent = "Credentials stay on the server; this page never sees them.";
   } catch (error) {
@@ -570,6 +584,7 @@ $("message").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.pre
 
 function watch(id) {
   jobId = id; lastLogLength = 0; lastLogAt = Date.now(); busySince = null; missed = 0; liveKey = null;
+  shownRows = shownNotices = "";
   history.replaceState(null, "", "#" + id);   // a reload comes back to the same run
   localStorage.setItem(LAST_RUN_KEY, id);     // and so does opening the page again
   clearInterval(timer); timer = setInterval(poll, 2000);

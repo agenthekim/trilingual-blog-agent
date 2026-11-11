@@ -137,8 +137,9 @@ back from it, only after an approval that lists the slides that change.
 uv run python -m app.web_ui                 # http://127.0.0.1:8502
 ```
 
-The front end has no login, so it listens on localhost unless `--host` is
-given. A run survives a restart of the server: its session is in a local
+The front end has no login, so it listens on localhost, and answers only
+requests addressed to localhost, unless `--host` is given; with `--host` it
+serves anyone who can reach it. A run survives a restart of the server: its session is in a local
 SQLite file (`.adk/sessions.sqlite3`) and its record and activity log are under
 `workspace/.jobs/`. Opening the run's address again, or just the page in the
 same browser, shows it as it was; a run that was working when the server
@@ -202,7 +203,8 @@ Cautions:
   add a work account as a test user to get past it.
 - The script names the account that granted access and stores nothing until
   it is confirmed (or matches `--account`); a refused grant is revoked. The
-  approval request for each deck names the account again.
+  approval request for a single deck names the account again, and Settings
+  on the web page shows it.
 - The grant covers only files the agent created (`drive.file`).
 - Images already in the article are placed on slides. Mermaid diagrams are
   placed only when `BLOG_AGENT_RENDER_MERMAID=true`: the diagram source is
@@ -301,6 +303,7 @@ What has been run for real, and what has not:
 | Web front end | A full run, file views, finalizing and editing were exercised through its HTTP API against the real model; creating a draft or a public post from it has not been run against the real platforms since posting was rebuilt. The page of that real run, the editor and a preview were rendered in headless Chrome and looked at. The approval dialogs (draft or public, credential findings, create deck) and the Settings dialog were not clicked through in a browser after the rebuild; their routes are unit-tested |
 | Google Slides deck creation after the per-language rebuild | The requests that build a deck were compared, request for request, with those recorded before the rebuild for two real plans and are identical. No new deck was created through the real API after the rebuild |
 | Platform clients: no redirects with credentials, unknown outcomes, guided errors | Unit-tested against a mock transport, including mutation checks. Not provoked against the real platforms |
+| Independent review of the rebuilt code | A second reviewer read the rebuilt code against the specification and reported 19 findings, two of them against invariants (a yes to finalize could be carried to a swapped text; titles reached the coordinator's instruction raw). All but two were fixed and each fix has a unit test; the two left as they are (the agent's API server checks no host name; a second draft in one chat is a revision of the first) are listed under known limits in the specification. The fixes were not reviewed a second time |
 | CI/CD pipeline | Not set up |
 
 `ParallelAgent`, `SequentialAgent` and `LoopAgent` print deprecation warnings in

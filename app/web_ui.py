@@ -40,12 +40,12 @@ except ImportError:  # the environment is then expected to be set already
 
 import httpx
 import markdown as markdown_lib
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app import policy, secrets
-from app.google_slides import SlidesError, mermaid_preview_url
+from app.google_slides import SlidesError, granted_account, mermaid_preview_url
 from app.observability import log_event
 from app.pipeline import ArticlePipeline, overview, progress, project_file
 from app.redaction import redact_credentials
@@ -79,6 +79,26 @@ max-height:80vh}}.diagram summary{{font-size:.85em;color:#57606a;cursor:pointer}
 <div class="bar">{title} &middot; {edit}<a href="?raw=1">raw text</a></div>{body}</body></html>"""
 
 web = FastAPI(title="Trilingual Blog Agent", docs_url=None, redoc_url=None)
+
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
+# Names this server answers to. With no login, a page in the author's browser
+# that points its own name at this machine would otherwise be served like the
+# author. None means any name: set by main() when the operator binds the
+# server to another address on purpose.
+ALLOWED_HOSTS: frozenset[str] | None = LOOPBACK_HOSTS
+
+
+@web.middleware("http")
+async def only_its_own_name(request: Request, call_next: Any) -> Response:
+    if ALLOWED_HOSTS is not None:
+        host = request.headers.get("host", "").lower()
+        name = host if host.endswith("]") else host.rsplit(":", 1)[0]
+        if name not in ALLOWED_HOSTS:
+            return PlainTextResponse(
+                "This server answers only to its own address.", status_code=400
+            )
+    return await call_next(request)
+
 
 BUSY = "The agent is still working. Try again when it has finished."
 INTERRUPTED = (
@@ -301,6 +321,8 @@ class DeckSyncRequest(BaseModel):
     # False asks what would change. True only when a person, having seen
     # that, pressed the approve button.
     approved: bool = False
+    # Names the set of changes the person was shown; sent back with the approval.
+    change_id: str | None = Field(default=None, max_length=64)
 
 
 class ApprovalRequest(BaseModel):
@@ -400,8 +422,9 @@ async def config() -> dict[str, Any]:
     """What the Settings dialog shows: the fixed mapping and what is set up.
 
     Only whether each credential is configured is reported, never its name or
-    value. Looking one up can mean a call to Secret Manager, so the answer is
-    kept for a minute.
+    value, and the address of the Google account that decks go to, so that a
+    person approving a deck knows whose Drive it lands in. Looking these up
+    can mean a call to Secret Manager, so the answer is kept for a minute.
     """
     global _config_cache
     if _config_cache and time.monotonic() - _config_cache[0] < _CONFIG_SECONDS:
@@ -434,6 +457,10 @@ async def config() -> dict[str, Any]:
             for language in LANGUAGES
         ],
         "google_slides": ready["google_slides"],
+        # Whose Drive receives the decks: shown before a deck is approved.
+        "slides_account": await asyncio.to_thread(granted_account)
+        if ready["google_slides"]
+        else None,
         "diagrams": render_mermaid_enabled(),
     }
     _config_cache = (time.monotonic(), answer)
@@ -547,7 +574,10 @@ async def sync_deck(job_id: str, request: DeckSyncRequest) -> dict[str, Any]:
     async def run() -> dict[str, Any]:
         try:
             return await job.pipeline.sync_deck_text(
-                request.language, request.direction, apply=request.approved
+                request.language,
+                request.direction,
+                apply=request.approved,
+                change_id=request.change_id,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -558,6 +588,8 @@ async def sync_deck(job_id: str, request: DeckSyncRequest) -> dict[str, Any]:
         if job.busy:
             raise HTTPException(409, BUSY)
         return await run()
+    if not request.change_id:
+        raise HTTPException(400, "Ask what would change before approving it.")
     log_event(
         "deck text sync approved in the web ui",
         event_phase="HUMAN_APPROVAL",
@@ -583,11 +615,18 @@ async def record_url(job_id: str, request: UrlRequest) -> dict[str, bool]:
 async def send_message(job_id: str, request: MessageRequest) -> dict[str, bool]:
     job = _job(job_id)
 
-    async def work() -> None:
+    async def work() -> str | None:
+        dropped = len(job.pipeline.approvals)
         await job.pipeline.say(request.text)
         job.reply = job.pipeline.last_reply[:2000] or (
             "The agent finished without a reply; see the activity log."
         )
+        if dropped:
+            return (
+                f"{dropped} request(s) the agent was waiting on were left "
+                "unanswered by this message and are gone. Ask again for those."
+            )
+        return None
 
     _start(job, work, "message")
     return {"accepted": True}
@@ -698,6 +737,11 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8502)
     args = parser.parse_args()
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        # Bound to another address on purpose: it is then reached under names
+        # this server cannot know, and anyone who reaches it can use it.
+        global ALLOWED_HOSTS
+        ALLOWED_HOSTS = None
     uvicorn.run(web, host=args.host, port=args.port, log_level="warning")
 
 
