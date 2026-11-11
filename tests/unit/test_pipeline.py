@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app import state
 from app.pipeline import overview, project_file, seed_message
 from app.settings import workspace_dir
@@ -81,3 +83,72 @@ def test_overview_of_an_empty_session() -> None:
     result = overview({})
     assert result["project_id"] == ""
     assert all(not row["title"] and not row["files"] for row in result["rows"])
+
+
+async def _pipeline_with_article():
+    from app.agent import app
+    from app.pipeline import USER_ID, ArticlePipeline
+
+    seed = "# 見出し\n\n本文です。[リンク](https://example.com)\n"
+    korean = "# 제목\n\n본문입니다. [링크](https://example.com)\n"
+    write_workspace_file("proj-3", "post.ko.md", korean)
+    write_workspace_file("proj-3", "post.ja.md", seed)
+    write_workspace_file("proj-3", "naver_blog.html", "<p>old</p>")
+    pipeline = ArticlePipeline(log=lambda _: None)
+    await pipeline._sessions.create_session(
+        app_name=app.name,
+        user_id=USER_ID,
+        session_id=pipeline.session_id,
+        state={
+            state.PROJECT_ID: "proj-3",
+            state.SEED_TITLE: "見出し",
+            state.SEED_MARKDOWN: seed,
+            state.SOURCE_LANGUAGE: "ja",
+            state.localized_key("ko"): korean,
+            state.LOCALIZED_TITLES: {"ko": "제목", "en": "Title", "ja": "見出し"},
+        },
+    )
+    return pipeline
+
+
+@pytest.mark.asyncio
+async def test_edit_replaces_what_the_agent_will_publish(isolated_workspace) -> None:
+    from app.persistence import get_article_store
+
+    pipeline = await _pipeline_with_article()
+    edited = "# 제목\n\n손으로 고친 본문입니다. [링크](https://example.com)"
+    result = await pipeline.save_edit("post.ko.md", edited, title="  새 제목 ")
+
+    assert result["check"]["passed"] is True
+    current = await pipeline.session_state()
+    assert current[state.localized_key("ko")] == edited + "\n"
+    assert current[state.LOCALIZED_TITLES]["ko"] == "새 제목"
+    assert current[state.LOCALIZED_TITLES]["en"] == "Title"  # untouched
+    stored = get_article_store().latest_version("proj-3", "ko")
+    assert stored["markdown"] == edited + "\n" and stored["kind"] == "edited"
+    folder = workspace_dir() / "proj-3"
+    assert (folder / "post.ko.md").read_text(encoding="utf-8") == edited + "\n"
+    assert "손으로 고친" in (folder / "naver_blog.html").read_text(encoding="utf-8")
+    assert (await pipeline.overview())["editable"] == ["post.ko.md"]
+
+
+@pytest.mark.asyncio
+async def test_edit_reports_a_broken_structure_but_still_saves(
+    isolated_workspace,
+) -> None:
+    pipeline = await _pipeline_with_article()
+    result = await pipeline.save_edit("post.ko.md", "# 제목\n\n링크를 지운 본문입니다.")
+    assert result["check"]["passed"] is False
+    assert "link" in result["check"]["errors"][0]
+    current = await pipeline.session_state()
+    assert current[state.FIDELITY_REPORT]["ko"]["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_source_and_unknown_files_cannot_be_edited(isolated_workspace) -> None:
+    pipeline = await _pipeline_with_article()
+    for name in ("post.ja.md", "manifest.md", "../post.ko.md", "post.en.md"):
+        with pytest.raises(ValueError):
+            await pipeline.save_edit(name, "text")
+    with pytest.raises(ValueError):
+        await pipeline.save_edit("post.ko.md", "   ")

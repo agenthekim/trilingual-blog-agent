@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from google.adk.events import Event, EventActions
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
@@ -24,6 +25,9 @@ from google.genai import types
 
 from app import state
 from app.agent import app
+from app.markdown_checks import check_fidelity
+from app.persistence import get_article_store
+from app.redaction import find_secrets
 from app.settings import (
     ALLOWED_ARTICLE_HOSTS,
     LANGUAGE_NAMES,
@@ -32,6 +36,8 @@ from app.settings import (
     workspace_dir,
 )
 
+_EDITABLE_FILE = re.compile(r"^(post|slides)\.(ko|en|ja)\.md$")
+MAX_TITLE_CHARS = 120
 USER_ID = "pipeline"
 CONFIRMATION_CALL = "adk_request_confirmation"
 PLATFORM_NAMES = {
@@ -126,12 +132,19 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
     slides = [
         name for language in LANGUAGES if (name := existing(f"slides.{language}.md"))
     ]
+    source = session_state.get(state.SOURCE_LANGUAGE)
+    editable = [
+        f"post.{row['language']}.md"
+        for row in rows
+        if row["language"] != source and f"post.{row['language']}.md" in row["files"]
+    ] + slides
     return {
         "project_id": project_id,
         "title": session_state.get(state.SEED_TITLE) or "",
         "source_language": session_state.get(state.SOURCE_LANGUAGE),
         "rows": rows,
         "slides": slides,
+        "editable": editable,
         "manifest": existing("manifest.md"),
     }
 
@@ -261,13 +274,13 @@ class ArticlePipeline:
         return None
 
     async def request_draft(self, platform: str, tags: list[str]) -> None:
-        """Ask the agent to create a draft; it stops at the approval request."""
+        """Ask the agent to create or update a draft; it stops at the approval request."""
         language = LANGUAGE_NAMES[
             next(lang for lang, p in PLATFORM_FOR_LANGUAGE.items() if p == platform)
         ]
         await self.say(
-            f"Create the {language} draft on {PLATFORM_NAMES[platform]}. "
-            f"Tags: {', '.join(tags)}."
+            f"Create the {language} draft on {PLATFORM_NAMES[platform]} from the "
+            f"current text, or update the draft if one exists. Tags: {', '.join(tags)}."
         )
 
     async def record_posted_url(self, platform: str, url: str) -> None:
@@ -276,3 +289,72 @@ class ArticlePipeline:
             f"URL and verify it: {url}"
         )
         await self.say("Compile the artifact manifest.")
+
+    async def save_edit(
+        self, name: str, markdown: str, title: str | None = None
+    ) -> dict[str, Any]:
+        """Save a person's edit of a generated file and make the agent use it.
+
+        A localized article is stored in the session state, the article store
+        and the file, so a later draft is created from the edited text. The
+        structure check is run again and returned; it does not block the save,
+        because the person editing has the final say. The seed itself is not
+        editable here: changing it would invalidate both localizations.
+        """
+        current = await self.session_state()
+        project_id = current.get(state.PROJECT_ID) or ""
+        match = _EDITABLE_FILE.match(name)
+        if not match or project_file(project_id, name) is None:
+            raise ValueError("This file cannot be edited here.")
+        text = markdown.rstrip() + "\n"
+        if not text.strip():
+            raise ValueError("The text is empty.")
+        kind, language = match.groups()
+        path = workspace_dir() / project_id / name
+        if kind == "slides":
+            path.write_text(text, encoding="utf-8")
+            return {"saved": name, "check": None, "secrets": []}
+        if language == current.get(state.SOURCE_LANGUAGE):
+            raise ValueError(
+                "This is the source article. Edit it where it was written and "
+                "run the stages again."
+            )
+
+        check = check_fidelity(current.get(state.SEED_MARKDOWN) or "", text)
+        delta: dict[str, Any] = {
+            state.localized_key(language): text,
+            state.FIDELITY_REPORT: {
+                **(current.get(state.FIDELITY_REPORT) or {}),
+                language: check,
+            },
+        }
+        if title and title.strip():
+            delta[state.LOCALIZED_TITLES] = {
+                **(current.get(state.LOCALIZED_TITLES) or {}),
+                language: title.strip()[:MAX_TITLE_CHARS],
+            }
+        session = await self._sessions.get_session(
+            app_name=app.name, user_id=USER_ID, session_id=self.session_id
+        )
+        await self._sessions.append_event(
+            session,
+            Event(
+                author="human_editor",
+                invocation_id=f"edit-{uuid.uuid4().hex[:8]}",
+                actions=EventActions(state_delta=delta),
+            ),
+        )
+        get_article_store().add_version(project_id, language, "edited", text)
+        path.write_text(text, encoding="utf-8")
+        if language == "ko" and project_file(project_id, "naver_blog.html"):
+            from app.tools.publish import markdown_to_inline_styled_html
+
+            (workspace_dir() / project_id / "naver_blog.html").write_text(
+                markdown_to_inline_styled_html(text), encoding="utf-8"
+            )
+        self.log(f">>> edited {name} by hand ({len(text)} characters)")
+        return {
+            "saved": name,
+            "check": check,
+            "secrets": [str(finding) for finding in find_secrets(text)[:5]],
+        }

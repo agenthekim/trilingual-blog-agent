@@ -99,6 +99,11 @@ class MessageRequest(BaseModel):
     text: str = Field(min_length=1, max_length=80_000)
 
 
+class EditRequest(BaseModel):
+    markdown: str = Field(min_length=1, max_length=200_000)
+    title: str | None = Field(default=None, max_length=200)
+
+
 class ApprovalRequest(BaseModel):
     confirmed: bool
 
@@ -234,6 +239,17 @@ async def view_file(job_id: str, name: str, raw: int = 0) -> Any:
     return HTMLResponse(
         _PAGE.format(title=html.escape(name), body=body), headers=_VIEW_HEADERS
     )
+
+
+@web.put("/api/jobs/{job_id}/files/{name}")
+async def save_file(job_id: str, name: str, request: EditRequest) -> dict[str, Any]:
+    job = _job(job_id)
+    if job.busy:
+        raise HTTPException(409, "Wait until the agent has finished, then save again.")
+    try:
+        return await job.pipeline.save_edit(name, request.markdown, request.title)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def main() -> None:
