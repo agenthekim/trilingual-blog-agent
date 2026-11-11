@@ -133,8 +133,8 @@
     </div>
 
     <fieldset>
-      <legend>Talk slides</legend>
-      <p class="muted small" style="margin:0 0 10px">A slide plan with a script to read aloud, one slide per minute. Choose “No slides” to skip it.</p>
+      <legend>Slide options</legend>
+      <p class="muted small" style="margin:0 0 10px">Choose the slide length. Choose “No slides” to skip it.</p>
       <div class="grid3">
         <label class="field">Length
           <select id="minutes">
@@ -156,7 +156,7 @@
         </label>
       </div>
       <label class="check"><input type="checkbox" id="createDeck" checked>
-        <span>Also create the Google Slides deck in my Google Drive <span class="muted">(a new file; the script goes into the speaker notes)</span></span></label>
+        <span>Create Google Slides and PDFs in your configured Google Drive <span class="muted">(speaker script included in speaker notes)</span></span></label>
     </fieldset>
 
     <div class="formfoot">
@@ -381,14 +381,22 @@ function render(data) {
     for (const [lang, deck] of Object.entries(o.decks)) {
       if (deck && deck.url) {
         const langName = {en: "English", ko: "Korean", ja: "Japanese"}[lang] || lang;
+        const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
         items.push(el("li", {},
-          el("span", {}, `Google Slides deck (${langName}) · `, el("a", {href: deck.url, target: "_blank", rel: "noopener"}, (deck.title || "Open") + " ↗"),
+          el("span", {}, `Google Slides (${langName}) · `,
+            el("a", {href: deck.url, target: "_blank", rel: "noopener"}, (deck.title || "Open deck") + " ↗"),
+            " · ",
+            el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗"),
             el("span", {class: "muted small"}, `  ${deck.slide_count} slides` + (deck.images_inserted ? `, ${deck.images_inserted} images` : "")))));
       }
     }
   } else if (o.deck && o.deck.url) {
+    const pdfUrl = o.deck.url.replace(/\/edit.*$/, "/export/pdf");
     items.push(el("li", {},
-      el("span", {}, "Google Slides deck · ", el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, (o.deck.title || "Open") + " ↗"),
+      el("span", {}, "Google Slides · ",
+        el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, (o.deck.title || "Open deck") + " ↗"),
+        " · ",
+        el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗"),
         el("span", {class: "muted small"}, `  ${o.deck.slide_count} slides` + (o.deck.images_inserted ? `, ${o.deck.images_inserted} images` : "")))));
   } else if (o.can_create_deck && !busy) {
     items.push(el("li", {},
