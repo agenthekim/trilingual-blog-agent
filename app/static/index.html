@@ -295,6 +295,16 @@ function render(data) {
   }
   const extra = [];
   for (const name of o.slides) extra.push(el("li", {}, "Slides and speaker script: ", fileLink(name)));
+  if (o.deck && o.deck.url) {
+    extra.push(el("li", {}, "Google Slides deck: ",
+      el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, o.deck.title || "open"),
+      ` (${o.deck.slide_count} slides, script in the speaker notes)`));
+  }
+  if (o.can_create_deck) {
+    extra.push(el("li", {}, el("button", {class: o.deck ? "" : "go", disabled: data.busy, onclick: createDeck},
+      o.deck ? "Approve & create another Google Slides deck" : "Approve & create Google Slides deck"),
+      el("span", {class: "help"}, " Creates a new file in your Google Drive from the current slide plan.")));
+  }
   if (o.manifest) extra.push(el("li", {}, "Artifact manifest: ", fileLink(o.manifest)));
   $("extra").replaceChildren(...extra);
 
@@ -323,6 +333,9 @@ function postDraft(row, tagText, update) {
   if (!tags.length) { alert("Enter one to five tags, separated by commas."); return; }
   const ok = confirm(`${update ? "Update the existing draft" : "Create a non-public draft"} on ${row.platform_name}?\n\nTitle: ${row.title}\nTags: ${tags.join(", ")}\n\nThis uses your account.`);
   if (ok) act("draft", {platform: row.platform, tags, approved: true});
+}
+function createDeck() {
+  if (confirm("Create a new Google Slides deck in your Google Drive from the slide plan?")) act("deck", {approved: true});
 }
 function recordUrl(row, url) {
   if (!/^https:\/\/\S+$/.test(url.trim())) { alert("Enter the https URL of the post."); return; }

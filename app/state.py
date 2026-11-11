@@ -20,6 +20,7 @@ PUBLICATIONS = "publications"
 PRESENTATION_BRIEF = "presentation_brief"
 SLIDE_DECK_PLAN = "slide_deck_plan"
 LOCALIZED_TITLES = "localized_titles"
+GOOGLE_SLIDES_DECK = "google_slides_deck"
 
 
 def localized_key(language: str) -> str:

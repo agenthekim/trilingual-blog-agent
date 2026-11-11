@@ -323,3 +323,97 @@ def test_naver_export_reports_the_title_to_type(finalized_project) -> None:
     result = publish.export_naver_blog_paste_ready_html(finalized_project)
     assert result["title"] == "제목"
     assert result["publication"]["title"] == "제목"
+
+
+def _deck_plan() -> dict:
+    return {
+        "language": "en",
+        "deck_title": "Deck",
+        "audience": "developers",
+        "slides": [
+            {
+                "number": n,
+                "title": f"Slide {n}",
+                "bullets": ["first point", "second point"],
+                "visual_note": "text only" if n == 1 else "architecture diagram",
+                "speaker_script": f"Script for slide {n}.",
+            }
+            for n in (1, 2)
+        ],
+    }
+
+
+def test_slide_requests_build_one_titled_slide_per_plan_entry() -> None:
+    from app.google_slides import notes_requests, slide_requests
+    from app.schemas import SlideDeckPlan
+
+    plan = SlideDeckPlan.model_validate(_deck_plan())
+    requests = slide_requests(plan, "p")
+    created = [r["createSlide"] for r in requests if "createSlide" in r]
+    assert [c["objectId"] for c in created] == ["slide_001", "slide_002"]
+    assert [c["insertionIndex"] for c in created] == [1, 2]
+    texts = [r["insertText"] for r in requests if "insertText" in r]
+    assert {"objectId": "slide_001_title", "text": "Slide 1"} in texts
+    assert {"objectId": "slide_002_body", "text": "first point\nsecond point"} in texts
+    assert requests[-1] == {"deleteObject": {"objectId": "p"}}  # placeholder slide
+
+    presentation = {
+        "slides": [
+            {
+                "objectId": f"slide_00{n}",
+                "slideProperties": {
+                    "notesPage": {"notesProperties": {"speakerNotesObjectId": f"n{n}"}}
+                },
+            }
+            for n in (1, 2)
+        ]
+    }
+    notes = [r["insertText"] for r in notes_requests(plan, presentation)]
+    assert notes[0] == {"objectId": "n1", "text": "Script for slide 1."}
+    assert notes[1]["text"] == "Script for slide 2.\n\n[Visual] architecture diagram"
+
+
+@pytest.mark.asyncio
+async def test_google_slides_deck_needs_plan_and_human_approval(
+    tool_context, monkeypatch
+) -> None:
+    from app import google_slides, state
+
+    tool = slides.create_google_slides_deck_with_speaker_notes
+    assert (await tool(tool_context))["error_code"] == "NO_SLIDE_PLAN"
+
+    calls = []
+
+    async def fake_create(plan):
+        calls.append(plan.deck_title)
+        return {"presentation_id": "abc", "url": google_slides.deck_url("abc")}
+
+    monkeypatch.setattr(google_slides, "create_deck", fake_create)
+    tool_context.state[state.SLIDE_DECK_PLAN] = _deck_plan()
+
+    assert (await tool(tool_context))["status"] == "pending_human_approval"
+    assert "2 slides" in tool_context.confirmation_requests[0]["hint"]
+    tool_context.decline()
+    assert (await tool(tool_context))["status"] == "declined"
+    assert calls == [] and state.GOOGLE_SLIDES_DECK not in tool_context.state
+
+    tool_context.approve()
+    result = await tool(tool_context)
+    assert result["status"] == "success" and calls == ["Deck"]
+    assert tool_context.state[state.GOOGLE_SLIDES_DECK]["url"].endswith("/d/abc/edit")
+
+
+@pytest.mark.asyncio
+async def test_google_slides_without_a_grant_gives_guidance(
+    tool_context, monkeypatch
+) -> None:
+    from app import secrets, state
+
+    monkeypatch.delenv("GOOGLE_SLIDES_OAUTH", raising=False)
+    monkeypatch.setattr(secrets, "_from_secret_manager", lambda name: None)
+    secrets.get_secret.cache_clear()
+    tool_context.state[state.SLIDE_DECK_PLAN] = _deck_plan()
+    tool_context.approve()
+    result = await slides.create_google_slides_deck_with_speaker_notes(tool_context)
+    assert result["error_code"] == "SLIDES_NOT_AUTHORIZED"
+    assert "authorize_google_slides.py" in result["recovery_instruction"]

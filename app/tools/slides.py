@@ -1,4 +1,4 @@
-"""Stage 4 tools: presentation brief, timing check, slide export, artifact manifest."""
+"""Stage 4 tools: presentation brief, timing check, slide export, Google Slides deck, manifest."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
-from app import state
+from app import google_slides, state
 from app.markdown_checks import SPEECH_UNITS_PER_MINUTE, estimate_speaking_seconds
 from app.persistence import get_article_store
 from app.schemas import (
@@ -241,6 +241,61 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
             "- Slides and speaker script: "
             + project["slide_plan_file"].rsplit("/", 1)[-1]
         ]
+    deck = tool_context.state.get(state.GOOGLE_SLIDES_DECK) or {}
+    if deck.get("url"):
+        lines += [f"- Google Slides deck: {deck['url']}"]
     manifest = "\n".join(lines) + "\n"
     file = write_workspace_file(project_id, "manifest.md", manifest)
     return {"status": "success", "file": file, "manifest": manifest}
+
+
+async def create_google_slides_deck_with_speaker_notes(
+    tool_context: ToolContext,
+) -> dict[str, Any]:
+    """Create a Google Slides deck from the slide plan, after human approval.
+
+    Makes one title-and-bullets slide per planned slide and puts each slide's
+    speaker script (and the note on what to show) into its speaker notes. The
+    deck is a new file in the Drive of the Google account that granted access;
+    no existing file is changed. The first call does not create anything: it
+    pauses and asks the user to approve. Calling it again later creates another
+    new deck from the current plan.
+
+    Returns:
+        status 'pending_human_approval' while waiting, 'declined' if refused,
+        or 'success' with deck (presentation_id, url, title, slide_count,
+        slides_with_notes). On failure: status 'error' with error_code, message
+        and recovery_instruction.
+    """
+    plan = _load_plan(tool_context)
+    if isinstance(plan, dict):
+        return plan
+    confirmation = tool_context.tool_confirmation
+    if confirmation is None:
+        tool_context.request_confirmation(
+            hint=f"Approve to create a Google Slides deck '{plan.deck_title}' "
+            f"({len(plan.slides)} slides with speaker notes) in your Google Drive.",
+            payload={"deck_title": plan.deck_title, "slides": len(plan.slides)},
+        )
+        return {
+            "status": "pending_human_approval",
+            "message": "Waiting for the user's approval before creating the deck.",
+        }
+    if not confirmation.confirmed:
+        return {
+            "status": "declined",
+            "message": "The user declined. No Google Slides deck was created.",
+        }
+    try:
+        deck = await google_slides.create_deck(plan)
+    except google_slides.SlidesError as exc:
+        return tool_error(exc.code, exc.message, exc.recovery)
+    tool_context.state[state.GOOGLE_SLIDES_DECK] = deck
+    project_id = tool_context.state.get(state.PROJECT_ID)
+    if project_id:
+        get_article_store().save_project(project_id, {"google_slides_url": deck["url"]})
+    return {
+        "status": "success",
+        "deck": deck,
+        "message": "The deck was created. Give the user its URL to review.",
+    }

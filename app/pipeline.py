@@ -144,6 +144,8 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
         "source_language": session_state.get(state.SOURCE_LANGUAGE),
         "rows": rows,
         "slides": slides,
+        "deck": session_state.get(state.GOOGLE_SLIDES_DECK),
+        "can_create_deck": bool(session_state.get(state.SLIDE_DECK_PLAN)),
         "editable": editable,
         "manifest": existing("manifest.md"),
     }
@@ -282,6 +284,10 @@ class ArticlePipeline:
             f"Create the {language} draft on {PLATFORM_NAMES[platform]} from the "
             f"current text, or update the draft if one exists. Tags: {', '.join(tags)}."
         )
+
+    async def request_slides_deck(self) -> None:
+        """Ask for a Google Slides deck; the agent stops at the approval request."""
+        await self.say("Create the Google Slides deck from the slide plan.")
 
     async def record_posted_url(self, platform: str, url: str) -> None:
         await self.say(

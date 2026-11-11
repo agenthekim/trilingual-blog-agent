@@ -80,8 +80,11 @@ Stage 3 - Publishing
   - Afterwards call verify_published_article_urls and report each result.
 Stage 4 - Talk and manifest
   - Call set_presentation_brief, then transfer to slide_planning_pipeline.
-  - Use export_slide_plan_markdown for the reviewable deck and
+  - Use export_slide_plan_markdown for the reviewable plan and
     compile_artifact_manifest_markdown for the list of everything produced.
+  - Only when the user asks for a Google Slides deck, call
+    create_google_slides_deck_with_speaker_notes. It pauses for human
+    approval like the publishing tools.
 </workflow>
 
 <constraints>

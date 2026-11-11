@@ -90,6 +90,11 @@ class DraftRequest(BaseModel):
     approved: bool = False
 
 
+class DeckRequest(BaseModel):
+    # True only when a person pressed the approve button for this deck.
+    approved: bool = False
+
+
 class UrlRequest(BaseModel):
     platform: Literal["naver_blog", "qiita", "devto"]
     url: str = Field(pattern=r"^https://\S+$", max_length=500)
@@ -188,6 +193,27 @@ async def post_draft(job_id: str, request: DraftRequest) -> dict[str, bool]:
         return None
 
     _start(job, work, "post_draft")
+    return {"accepted": True}
+
+
+@web.post("/api/jobs/{job_id}/deck")
+async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
+    job = _job(job_id)
+
+    async def work() -> str | None:
+        await job.pipeline.request_slides_deck()
+        if not job.pipeline.approval_hints:
+            return "The agent did not ask for approval; see its reply in the log."
+        if not request.approved:
+            return None
+        log_event("slides deck approved in the web ui", event_phase="HUMAN_APPROVAL")
+        await job.pipeline.answer_approvals(True)
+        if not (await job.pipeline.overview())["deck"]:
+            return "No deck was created; see the agent's reply in the log."
+        await job.pipeline.say("Compile the artifact manifest.")
+        return None
+
+    _start(job, work, "create_deck")
     return {"accepted": True}
 
 
