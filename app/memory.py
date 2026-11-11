@@ -5,9 +5,13 @@ is slow compared with a chat turn. ``schedule_memory_consolidation`` therefore
 only *schedules* the work as a background task and returns immediately, so the
 user's reply is never held up by it.
 
-Only the turn that just finished is sent, and only its conversational text:
-tool calls and tool results (which carry whole articles) are left out, and the
-text is redacted first. Recall happens through ``PreloadMemoryTool`` on the
+Only the turn that just finished is sent, and only what the author and the
+coordinator said in it. Tool calls, tool results and the output of every other
+agent are left out, because that is where whole articles travel, and a memory
+is later put into the coordinator's prompt as something the user said. What is
+kept is redacted, cut to a fixed length and limited to the latest few events,
+so of a draft pasted into a chat message no more than its opening lines can
+become a memory. Recall happens through ``PreloadMemoryTool`` on the
 coordinator.
 """
 
@@ -23,29 +27,55 @@ from google.genai import types
 from app.observability import log_event
 from app.redaction import redact_text
 
+# Name of the root agent in app/agent.py. Repeated here because that module
+# imports this one.
+COORDINATOR_AGENT_NAME = "trilingual_blog_agent"
+_REMEMBERED_AUTHORS = frozenset({"user", COORDINATOR_AGENT_NAME})
+
+# Long enough for a preference or a decision, far too short for an article.
+MAX_MEMORY_TEXT_CHARS = 1000
+# One turn rarely has more than a few author and coordinator messages; the cap
+# bounds what a single runaway turn can add.
+MAX_MEMORY_EVENTS = 20
+
 # Strong references so pending tasks are not garbage-collected mid-flight.
 _background_tasks: set[asyncio.Task[Any]] = set()
 
 
 def _memory_events(callback_context: CallbackContext) -> list[Event]:
-    """Redacted, text-only copies of the events of the current invocation."""
+    """Redacted, shortened copies of what author and coordinator said this turn."""
     events: list[Event] = []
     for event in callback_context.session.events:
         if event.invocation_id != callback_context.invocation_id:
             continue
+        if event.author not in _REMEMBERED_AUTHORS:
+            continue
         if not event.content or not event.content.parts:
             continue
-        texts = [
-            types.Part.from_text(text=redact_text(part.text))
-            for part in event.content.parts
-            if part.text and not part.thought
-        ]
-        if not texts:
+        said = "\n".join(
+            part.text for part in event.content.parts if part.text and not part.thought
+        )
+        if not said.strip():
             continue
-        copy = event.model_copy(deep=True)
-        copy.content = types.Content(role=event.content.role, parts=texts)
-        events.append(copy)
-    return events
+        # Redact before cutting: a credential cut in half no longer matches its
+        # pattern and would be stored as it is.
+        text = redact_text(said)
+        if len(text) > MAX_MEMORY_TEXT_CHARS:
+            text = text[:MAX_MEMORY_TEXT_CHARS] + "..."
+        # A new event rather than a copy: a copy would carry the state changes
+        # and function calls of the original, which can hold article text.
+        events.append(
+            Event(
+                id=event.id,
+                invocation_id=event.invocation_id,
+                author=event.author,
+                timestamp=event.timestamp,
+                content=types.Content(
+                    role=event.content.role, parts=[types.Part.from_text(text=text)]
+                ),
+            )
+        )
+    return events[-MAX_MEMORY_EVENTS:]
 
 
 async def _consolidate(callback_context: CallbackContext, events: list[Event]) -> None:

@@ -38,6 +38,21 @@ otel_to_cloud = os.environ.get(
 
 AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# This server has no login: whoever reaches the port can run the agent and
+# answer an approval. Started by hand it therefore listens on this machine
+# only. A container starts it through the uvicorn command line with an explicit
+# --host and is not affected.
+DEFAULT_HOST = "127.0.0.1"
+
+
+def listen_host() -> str:
+    """Address to bind when this module is run directly.
+
+    Set ``BLOG_AGENT_API_HOST`` (for example to ``0.0.0.0``) to accept
+    connections from other machines.
+    """
+    return os.environ.get("BLOG_AGENT_API_HOST", "").strip() or DEFAULT_HOST
+
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -85,4 +100,4 @@ attach_reasoning_engine_routes(app)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=listen_host(), port=8000)

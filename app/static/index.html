@@ -5,61 +5,114 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trilingual Blog Agent</title>
 <style>
-  :root { --line:#d0d7de; --muted:#57606a; --accent:#0969da; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; }
-  * { box-sizing: border-box; }
-  body { font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; color:#1f2328; background:#f6f8fa; margin:0; }
-  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  h2 { font-size: 18px; margin: 0 0 12px; }
-  p.sub { color: var(--muted); margin: 0 0 16px; }
-  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:16px; }
-  textarea, input[type=text], select { font: inherit; border:1px solid var(--line); border-radius:6px; padding:8px 10px; background:#fff; }
-  textarea { width:100%; min-height:110px; resize:vertical; }
-  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:10px; }
-  label { color: var(--muted); font-size: 13px; }
-  button { font: inherit; font-size:13px; height:32px; border:1px solid var(--line); background:#f6f8fa; border-radius:6px; padding:0 12px; cursor:pointer; white-space:nowrap; }
-  button.primary { background: var(--accent); border-color: var(--accent); color:#fff; font-weight:600; }
-  button.go { background: var(--ok); border-color: var(--ok); color:#fff; }
+  :root {
+    --bg:#f6f7f9; --surface:#fff; --text:#1c2128; --muted:#636c76; --line:#d8dee4;
+    --accent:#0969da; --accent-ink:#fff; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e;
+    --soft:#f0f3f6; --radius:8px; --control:32px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --surface:#161b22; --text:#e6edf3; --muted:#9198a1; --line:#30363d;
+      --accent:#4493f8; --accent-ink:#0d1117; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --soft:#21262d; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:28px 16px 72px; display:grid; gap:16px; }
+  header h1 { font-size:20px; margin:0; }
+  header p { margin:2px 0 0; color:var(--muted); }
+  h2 { font-size:15px; margin:0; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
+  .muted { color:var(--muted); }
+  .small { font-size:12.5px; }
+  .hidden { display:none !important; }
+
+  /* Controls: one height, one radius, three weights. */
+  button, .btn { height:var(--control); padding:0 12px; border-radius:6px; border:1px solid var(--line);
+    background:var(--surface); color:var(--text); font:inherit; font-weight:500; cursor:pointer; white-space:nowrap;
+    display:inline-flex; align-items:center; gap:6px; }
+  button:hover:not(:disabled) { background:var(--soft); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  button.primary:hover:not(:disabled) { filter:brightness(1.08); background:var(--accent); }
+  button.ghost { border-color:transparent; background:transparent; color:var(--accent); padding:0 6px; height:24px; }
   button:disabled { opacity:.5; cursor:not-allowed; }
-  table { width:100%; border-collapse: collapse; }
-  th, td { text-align:left; padding:10px 8px; border-top:1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; border-top:none; }
-  td.title { font-weight:600; min-width: 200px; }
-  .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; border:1px solid var(--line); white-space:nowrap; }
-  .pill.ok { color: var(--ok); border-color: var(--ok); }
-  .pill.warn { color: var(--warn); border-color: var(--warn); }
-  .pill.muted { color: var(--muted); }
-  .files a, a { color: var(--accent); text-decoration:none; }
-  a:hover { text-decoration: underline; }
-  .files a { display:block; }
-  .action { display:grid; gap:6px; min-width:190px; }
-  .action input { width:100%; height:32px; padding:0 8px; font-size:13px; }
-  .banner { border-radius:6px; padding:10px 12px; margin-bottom:12px; }
-  .banner.err { background:#ffebe9; border:1px solid var(--bad); }
-  .banner.note { background:#fff8c5; border:1px solid var(--warn); }
-  .banner.ask { background:#ddf4ff; border:1px solid var(--accent); }
-  .spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top-color: var(--accent); border-radius:50%; animation: spin 1s linear infinite; vertical-align:-2px; margin-right:6px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  pre#log { background:#0d1117; color:#c9d1d9; padding:12px; border-radius:6px; max-height:320px; overflow:auto; white-space:pre-wrap; font: 12px/1.5 ui-monospace, monospace; margin:8px 0 0; }
-  details summary { cursor:pointer; color: var(--muted); }
-  .hidden { display:none; }
-  .progress { margin-top:10px; font-weight:600; min-height:24px; }
-  .progress .quiet { font-weight:400; color: var(--muted); }
-  .entry { display:inline-flex; gap:8px; align-items:baseline; }
-  .entry a.edit { font-size:12px; color: var(--muted); }
-  .files .entry { display:flex; }
-  #editor textarea { min-height: 420px; font: 13px/1.5 ui-monospace, monospace; }
-  #editor input[type=text] { width:100%; margin-bottom:8px; }
-  h3 { font-size:15px; margin:0 0 4px; }
-  p.help, span.help { color: var(--muted); font-size:13px; margin:0 0 10px; }
-  .fields { display:flex; gap:16px; flex-wrap:wrap; }
-  .fields label { display:flex; flex-direction:column; gap:4px; font-weight:600; color:#1f2328; }
-  .fields small { font-weight:400; color: var(--muted); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  input[type=text], select, textarea { font:inherit; color:var(--text); background:var(--surface);
+    border:1px solid var(--line); border-radius:6px; padding:0 10px; height:var(--control); width:100%; }
+  textarea { height:auto; padding:10px; resize:vertical; line-height:1.5; }
+  label.field { display:grid; gap:4px; font-weight:600; font-size:13px; }
+  label.field span.hint { font-weight:400; color:var(--muted); font-size:12.5px; }
+
+  /* Input form */
+  #source { min-height:96px; }
+  .under { display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+  fieldset { border:0; border-top:1px solid var(--line); margin:16px 0 0; padding:14px 0 0; }
+  legend { padding:0 8px 0 0; font-weight:600; font-size:13px; }
+  .grid3 { display:grid; grid-template-columns: 170px auto 1fr; gap:16px; align-items:start; }
+  @media (max-width:640px) { .grid3 { grid-template-columns:1fr; } }
+  .lang-checks { display:flex; gap:12px; align-items:center; height:32px; }
+  .check-inline { display:inline-flex; align-items:center; gap:5px; font-size:13px; cursor:pointer; user-select:none; }
+  .check-inline input { margin:0; cursor:pointer; }
+  .formfoot { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; }
   #dropZone.over { outline:2px dashed var(--accent); outline-offset:-6px; }
-  ul.extra { margin: 14px 0 0; padding:0; list-style:none; display:grid; gap:6px; }
-  ul.extra li { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  footer { color: var(--muted); font-size:12.5px; text-align:center; margin-top:8px; }
-  dialog.modal { border:1px solid #d0d7de; border-radius:12px; padding:0; background:#ffffff; box-shadow:0 20px 40px rgba(15,23,42,.2); max-width:480px; width:92%; color:var(--text); }
+
+  /* Progress */
+  .runhead { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .runhead h2 { font-size:17px; }
+  ol.steps { list-style:none; display:flex; gap:6px; padding:0; margin:14px 0 0; flex-wrap:wrap; }
+  ol.steps li { flex:1 1 120px; border-top:3px solid var(--line); padding-top:6px; font-size:12.5px; color:var(--muted); }
+  ol.steps li.done { border-color:var(--ok); color:var(--text); }
+  ol.steps li.now { border-color:var(--accent); color:var(--text); font-weight:600; }
+  .live { display:flex; gap:8px; align-items:center; margin-top:12px; min-height:22px; }
+  .live .last { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; }
+  .spinner { width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%;
+    animation:spin 1s linear infinite; flex:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .notice { border-radius:6px; padding:8px 12px; margin-top:12px; border:1px solid; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .notice.err { border-color:var(--bad); } .notice.note { border-color:var(--warn); } .notice.ask { border-color:var(--accent); }
+  .notice .grow { flex:1; min-width:200px; }
+
+  /* Results table */
+  table.results { width:100%; border-collapse:collapse; }
+  table.results th { text-align:left; font-size:12px; font-weight:600; color:var(--muted); padding:0 10px 8px 0; white-space:nowrap; }
+  table.results td { padding:12px 10px 12px 0; border-top:1px solid var(--line); vertical-align:top; }
+  table.results td:last-child, table.results th:last-child { padding-right:0; }
+  table.results .who { font-weight:600; white-space:nowrap; }
+  table.results .lang .badge { display:inline-block; margin-top:6px; }
+  table.results .title { font-weight:600; min-width:180px; }
+  table.results .files a { display:inline-block; }
+  table.results .files div { display:flex; align-items:center; gap:4px; min-height:24px; white-space:nowrap; }
+  table.results .slides-col { min-width:140px; }
+  table.results .slides-col div { display:flex; align-items:center; gap:4px; min-height:24px; white-space:nowrap; }
+  .badge { font-size:12px; padding:1px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.warn { color:var(--warn); border-color:var(--warn); }
+  .next { display:grid; gap:6px; min-width:250px; }
+  .next .inline { display:flex; gap:6px; }
+  .next .inline input { flex:1; min-width:0; }
+  .tablewrap { overflow-x:auto; }
+  label.check { display:flex; gap:8px; align-items:center; margin-top:12px; font-size:13px; }
+  label.check input { width:16px; height:16px; }
+  .askrow { display:flex; gap:8px; }
+
+  details summary { cursor:pointer; color:var(--muted); font-weight:500; }
+  pre#log { background:#0d1117; color:#c9d1d9; padding:12px; border-radius:6px; max-height:300px; overflow:auto;
+    white-space:pre-wrap; font:12px/1.5 ui-monospace,monospace; margin:10px 0 0; }
+
+  dialog { border:1px solid var(--line); border-radius:var(--radius); padding:0; background:var(--surface); color:var(--text);
+    width:min(560px,92vw); }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  dialog .body { padding:16px; display:grid; gap:10px; }
+  dialog .foot { padding:12px 16px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; align-items:center; }
+  dialog h2 { font-size:16px; }
+  dl.summary { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; }
+  dl.summary dt { color:var(--muted); } dl.summary dd { margin:0; font-weight:500; overflow-wrap:anywhere; }
+  #confirmChoices { display:grid; gap:6px; }
+  #confirmChoices:empty { display:none; }
+  label.choice { display:flex; gap:8px; align-items:baseline; cursor:pointer; }
+  #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--text); color:var(--bg);
+    padding:8px 14px; border-radius:6px; max-width:90vw; z-index:10; }
+  footer { color:var(--muted); font-size:12.5px; text-align:center; }
+  dialog.modal { border:1px solid #d0d7de; border-radius:12px; padding:0; background:#ffffff; box-shadow:0 20px 40px rgba(15,23,42,.2), 0 0 0 1px rgba(0,0,0,.04); max-width:480px; width:92%; color:var(--text); }
   dialog.modal::backdrop { background:rgba(15,23,42,.5); backdrop-filter:blur(4px); }
   .modal-card { padding:22px 24px; }
   .modal-head { display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid #edf2f7; }
@@ -82,7 +135,7 @@
   <header style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px">
     <div>
       <h1>Trilingual Blog Agent</h1>
-      <p class="sub">Automatically transform an article in one language into blog posts and presentation slides across three languages.</p>
+      <p>Automatically transform an article in one language into blog posts and presentation slides across three languages.</p>
     </div>
     <button type="button" id="openSettings" class="btn-settings" style="margin-top:4px">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -93,87 +146,102 @@
     </button>
   </header>
 
-  <section class="card" id="dropZone">
-    <h3>1. Source document</h3>
-    <p class="help">Share a post URL, a .md file, or your document.</p>
-    <textarea id="text" placeholder="Share a post URL, a .md file, or your document..."></textarea>
-    <div class="row">
-      <button id="attach" type="button">Attach a .md file</button>
+  <form class="card" id="dropZone" novalidate>
+    <label class="field" for="source">Source document
+      <span class="hint">Share a post URL, a .md file, or your document.</span>
+    </label>
+    <textarea id="source" required placeholder="https://qiita.com/you/items/…   or   # My draft …"></textarea>
+    <div class="under">
+      <button type="button" id="attach">Attach .md file</button>
       <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" class="hidden">
-      <span class="help" id="fileInfo">or drop the file onto this box</span>
+      <span class="muted small" id="fileInfo">or drop a file anywhere on this card</span>
     </div>
 
-    <h3 style="margin-top:20px">2. Slide options</h3>
-    <p class="help">Choose the slide length to create Google Slides in your configured Google Drive.</p>
-    <div class="fields">
-      <label>Talk length
-        <select id="minutes">
-          <option value="0">No slides</option><option value="3">3 min · 3 slides</option>
-          <option value="5" selected>5 min · 5 slides</option><option value="10">10 min · 10 slides</option>
-          <option value="15">15 min · 15 slides</option><option value="20">20 min · 20 slides</option>
-          <option value="30">30 min · 30 slides</option><option value="45">45 min · 45 slides</option>
-          <option value="60">60 min · 60 slides</option>
-        </select>
-        <small>How long you will speak</small>
-      </label>
-      <div>
-        <label style="display:block;margin-bottom:4px">Slide languages</label>
-        <div style="display:flex;gap:12px;align-items:center;height:38px">
-          <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="slideLangEn" value="en" checked> English</label>
-          <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="slideLangKo" value="ko" checked> Korean</label>
-          <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="slideLangJa" value="ja" checked> Japanese</label>
+    <fieldset>
+      <legend>Slide options</legend>
+      <p class="muted small" style="margin:0 0 10px">Choose the slide length to create Google Slides in your configured Google Drive.</p>
+      <div class="grid3">
+        <label class="field">Length
+          <select id="minutes">
+            <option value="0">No slides</option><option value="3">3 min · 3 slides</option><option value="5">5 min · 5 slides</option>
+            <option value="10">10 min · 10 slides</option><option value="15">15 min · 15 slides</option><option value="20">20 min · 20 slides</option>
+            <option value="30">30 min · 30 slides</option><option value="45">45 min · 45 slides</option><option value="60">60 min · 60 slides</option>
+          </select>
+        </label>
+        <div class="field">
+          <span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px">Languages</span>
+          <div class="lang-checks">
+            <label class="check-inline"><input type="checkbox" id="slideLangEn" value="en" checked><span>English</span></label>
+            <label class="check-inline"><input type="checkbox" id="slideLangKo" value="ko" checked><span>Korean</span></label>
+            <label class="check-inline"><input type="checkbox" id="slideLangJa" value="ja" checked><span>Japanese</span></label>
+          </div>
         </div>
+        <label class="field">Audience
+          <select id="audience">
+            <option value="software engineers" selected>Developers</option>
+            <option value="technical experts and specialists">Experts</option>
+            <option value="students and beginners">Students</option>
+            <option value="executives and leadership">Executives</option>
+            <option value="general and non-technical audience">Non-technical</option>
+          </select>
+        </label>
       </div>
-      <label style="flex:1; min-width:220px">Audience
-        <select id="audience">
-          <option value="software engineers" selected>Developers</option>
-          <option value="technical experts and specialists">Experts</option>
-          <option value="students and beginners">Students</option>
-          <option value="executives and leadership">Executives</option>
-          <option value="general and non-technical audience">Non-technical</option>
-        </select>
-        <small>Who will listen; sets the level of explanation</small>
-      </label>
+    </fieldset>
+
+    <div class="formfoot">
+      <span class="muted small">Takes a few minutes. You review everything before anything is posted.</span>
+      <button class="primary" id="run" type="submit">Run</button>
     </div>
-    <div class="row">
-      <span style="flex:1"></span>
-      <button class="primary" id="run">Run all stages</button>
+  </form>
+
+  <section class="card hidden" id="progress" aria-live="polite">
+    <div class="runhead">
+      <h2 id="articleTitle">Starting…</h2>
+      <span class="muted small" id="elapsed"></span>
+    </div>
+    <ol class="steps" id="steps"></ol>
+    <div class="live" id="live"></div>
+    <div id="notices"></div>
+  </section>
+
+  <section class="card hidden" id="langs">
+    <div class="tablewrap">
+      <table class="results">
+        <thead><tr><th>Language</th><th>Title</th><th>Files</th><th>Slides</th><th>Next step</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
     </div>
   </section>
 
-  <section class="card hidden" id="result">
-    <div id="banners"></div>
-    <h2 id="articleTitle"></h2>
-    <table id="table" class="hidden">
-      <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Slides</th><th>Next step</th></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-    <ul class="extra" id="extra"></ul>
-
-    <div class="row hidden" id="followup">
-      <input type="text" id="message" placeholder="Ask for a change, e.g. “shorten the English title”" style="flex:1">
-      <button id="send" class="primary">Send</button>
+  <section class="card hidden" id="askCard">
+    <label class="field" for="message">Ask the agent for a change
+      <span class="hint">For example “shorten the English title” or “make the Korean intro less formal”.</span>
+    </label>
+    <div class="askrow" style="margin-top:6px">
+      <input type="text" id="message" placeholder="Ask the agent for a change (e.g. replace examples, adjust tone)...">
+      <button id="send" type="button" class="primary">Send</button>
     </div>
-
-    <div id="editor" class="hidden" style="margin-top:16px; border-top:1px solid var(--line); padding-top:14px">
-      <h3>Edit <span id="editorName"></span></h3>
-      <input type="text" id="editorTitle" placeholder="Title">
-      <textarea id="editorText" spellcheck="false"></textarea>
-      <div class="row">
-        <button class="primary" id="editorSave" type="button">Save</button>
-        <button id="editorClose" type="button">Close</button>
-        <span class="help" id="editorResult" style="margin:0"></span>
-      </div>
-    </div>
-
-    <details style="margin-top:14px" open id="logBox">
-      <summary>Agent activity</summary>
+    <details style="margin-top:14px" id="logBox">
+      <summary>Agent activity log</summary>
       <pre id="log"></pre>
     </details>
-    <div id="status" class="progress"></div>
   </section>
-  <footer>Classic layout · <a href="/v2">switch to the new layout</a></footer>
+
+  <footer>New layout · <a href="/v1">switch to the classic layout</a></footer>
 </main>
+
+<dialog id="confirmDialog">
+  <div class="body">
+    <h2 id="confirmTitle"></h2>
+    <dl class="summary" id="confirmSummary"></dl>
+    <div id="confirmChoices"></div>
+    <p class="muted small" id="confirmNote" style="margin:0"></p>
+  </div>
+  <div class="foot">
+    <button type="button" id="confirmCancel">Cancel</button>
+    <button type="button" class="primary" id="confirmOk"></button>
+  </div>
+</dialog>
 
 <dialog id="settingsModal" class="modal" aria-labelledby="settingsTitle">
   <div class="modal-card">
@@ -223,244 +291,261 @@
   </div>
 </dialog>
 
+<div id="toast" class="hidden" role="status"></div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const STATUS = {
-  not_posted: ["not posted", "muted"],
-  exported_for_manual_post: ["HTML exported · post by hand", "warn"],
-  draft: ["draft created", "ok"],
-  published: ["published", "ok"],
-  existing_source: ["original post", "ok"],
+  not_posted: ["Not posted", ""], exported_for_manual_post: ["Ready to paste", "warn"],
+  draft: ["Draft created", "ok"], published: ["Published", "ok"], existing_source: ["Original", "ok"],
 };
-let jobId = null, timer = null, lastLogLength = 0;
-let busySince = null, lastLogChange = Date.now(), wasBusy = false, hadError = false, editing = null;
-
-function clock(ms) {
-  const s = Math.max(0, Math.round(ms / 1000));
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-}
-// Shown right under the activity log, where the eyes are while it runs.
-function drawProgress() {
-  const box = $("status");
-  if (!jobId) { box.replaceChildren(); return; }
-  if (wasBusy) {
-    box.replaceChildren(el("span", {class: "spinner"}),
-      `Working… ${clock(Date.now() - busySince)} elapsed `,
-      el("span", {class: "quiet"}, `· last activity ${clock(Date.now() - lastLogChange)} ago · writing long text shows nothing until it is done`));
-  } else {
-    box.replaceChildren(el("span", {class: "quiet"}, hadError ? "Stopped. See the message at the top of this card." : "Finished. Nothing is running."));
-  }
-}
-setInterval(drawProgress, 1000);
-// Typed-in values survive re-rendering of the table.
-const inputs = {};
+const SETTINGS_KEY = "tba.settings";
+let jobId = null, timer = null, state = null;
+let busySince = null, lastLogAt = Date.now(), lastLogLength = 0, liveKey = null;
+const typed = {};  // values typed into cards survive re-rendering
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === "class") node.className = v;
     else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
+    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v === true ? "" : v);
   }
-  for (const child of children) node.append(child);
+  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
   return node;
 }
-
-async function api(path, body) {
+function toast(text, ms = 4000) {
+  $("toast").textContent = text; $("toast").classList.remove("hidden");
+  clearTimeout(toast.t); toast.t = setTimeout(() => $("toast").classList.add("hidden"), ms);
+}
+function clock(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+async function api(path, body, method) {
   const response = await fetch(path, body === undefined ? {} : {
-    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
-  });
+    method: method || "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  let data = null;
+  try { data = await response.json(); } catch (e) {}
   if (!response.ok) {
-    let detail = response.statusText;
-    try { const data = await response.json(); detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail); } catch (e) {}
-    throw new Error(detail);
+    const detail = data && data.detail;
+    throw new Error(typeof detail === "string" ? detail : detail ? detail.map((d) => d.msg).join("; ") : response.statusText);
   }
-  return response.json();
+  return data;
+}
+const fileUrl = (name) => `/api/jobs/${jobId}/files/${encodeURIComponent(name)}`;
+
+// One dialog for every action that writes outside this machine.
+// Resolves to true or false; with ``choices`` to the chosen value, or null when cancelled.
+function confirmAction({title, summary, note, okLabel, choices}) {
+  return new Promise((resolve) => {
+    $("confirmTitle").textContent = title;
+    $("confirmSummary").replaceChildren(...summary.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+    $("confirmChoices").replaceChildren(...(choices || []).map((choice, i) => el("label", {class: "choice"},
+      el("input", {type: "radio", name: "confirmChoice", value: choice.value, checked: i === 0}),
+      el("span", {}, el("strong", {}, choice.label), el("span", {class: "muted"}, " · " + choice.hint)))));
+    $("confirmNote").textContent = note || "";
+    $("confirmOk").textContent = okLabel;
+    const dialog = $("confirmDialog");
+    const done = (ok) => {
+      const picked = dialog.querySelector("input[name=confirmChoice]:checked");
+      dialog.close(); $("confirmOk").onclick = $("confirmCancel").onclick = dialog.oncancel = null;
+      resolve(choices ? (ok && picked ? picked.value : null) : ok);
+    };
+    $("confirmOk").onclick = () => done(true);
+    $("confirmCancel").onclick = () => done(false);
+    dialog.oncancel = () => done(false);
+    dialog.showModal();
+  });
 }
 
-let editable = [], lastOverview = {rows: []};
-function fileLink(name) {
-  const link = el("a", {href: `/api/jobs/${jobId}/files/${encodeURIComponent(name)}`, target: "_blank", rel: "noopener"}, name);
-  if (!editable.includes(name)) return link;
-  return el("span", {class: "entry"}, link, el("a", {class: "edit", href: "#editor", onclick: (e) => { e.preventDefault(); openEditor(name); }}, "edit"));
+async function act(path, body) {
+  try { await api(`/api/jobs/${jobId}/${path}`, body); busySince = Date.now(); await poll(); }
+  catch (error) { toast(error.message); }
 }
 
-async function openEditor(name) {
-  try {
-    const response = await fetch(`/api/jobs/${jobId}/files/${encodeURIComponent(name)}?raw=1`);
-    if (!response.ok) throw new Error("The file could not be loaded.");
-    const row = lastOverview.rows.find((r) => `post.${r.language}.md` === name);
-    editing = name;
-    $("editorName").textContent = name;
-    $("editorTitle").classList.toggle("hidden", !row);
-    $("editorTitle").value = row ? row.title : "";
-    $("editorText").value = await response.text();
-    $("editorResult").textContent = row
-      ? "Saving replaces the text the agent will post. Create the draft after saving."
-      : "Saving changes this file only.";
-    $("editor").classList.remove("hidden");
-    $("editor").scrollIntoView({behavior: "smooth"});
-  } catch (error) { alert(error.message); }
-}
-async function saveEditor() {
-  if (!editing) return;
-  const body = {markdown: $("editorText").value};
-  if (!$("editorTitle").classList.contains("hidden")) body.title = $("editorTitle").value;
-  try {
-    const response = await fetch(`/api/jobs/${jobId}/files/${encodeURIComponent(editing)}`, {
-      method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
-    const data = await response.json();
-    if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail));
-    const notes = [`Saved ${data.saved}.`];
-    if (data.check && !data.check.passed) notes.push("Structure check found differences from the source: " + data.check.errors.join(" "));
-    if (data.check && data.check.passed) notes.push("Structure check against the source passed.");
-    if (data.secrets && data.secrets.length) notes.push("Credential-looking text found; the agent will refuse to post it.");
-    $("editorResult").textContent = notes.join(" ");
-    await poll();
-  } catch (error) { alert(error.message); }
+function steps(o) {
+  const targets = o.rows.filter((r) => r.language !== o.source_language);
+  const localized = targets.length > 0 && targets.every((r) => r.title);
+  const wantsSlides = o.can_create_deck || o.slides.length > 0 || Number(state.requestedMinutes || 0) > 0;
+  const list = [
+    ["Source document", Boolean(o.title)],
+    ["Transform", localized],
+    ["Prepare posts", localized && Boolean(o.manifest || o.slides.length || o.rows.some((r) => r.files.includes("naver_blog.html")))],
+  ];
+  if (wantsSlides) list.push(["Prepare slides", o.slides.length > 0 && (!state.wantsDeck || Boolean(o.deck) || Boolean(o.manifest))]);
+  list.push(["Summarize", Boolean(o.manifest)]);
+  return list;
 }
 
-function remembered(key, placeholder) {
-  const input = el("input", {type: "text", placeholder, value: inputs[key] || ""});
-  input.addEventListener("input", () => { inputs[key] = input.value; });
+function keep(key, attrs) {
+  const input = el("input", {type: "text", value: typed[key] || "", ...attrs});
+  input.addEventListener("input", () => { typed[key] = input.value; });
   return input;
 }
 
-function nextStep(row, busy) {
-  const box = el("div", {class: "action"});
-  if (row.status === "existing_source" || !row.title) return box;
-  if (row.status !== "published" && !row.finalized) {
-    // Nothing is posted from text nobody signed off: review it, then finalize.
-    box.append(el("button", {class: "go", disabled: busy, onclick: () => act("finalize", {language: row.language})}, "Finalize"));
-  } else if (row.can_post_draft && row.status !== "published") {
-    const update = row.status === "draft";
-    const tags = remembered(`tags:${row.platform}`, "tags: ai, agents");
-    box.append(tags, el("button", {class: update ? "" : "go", disabled: busy, onclick: () => postDraft(row, tags.value, update)},
-      update ? "Approve & update draft" : "Approve & create draft"));
-  } else if (row.status !== "published") {
-    const url = remembered(`url:${row.platform}`, "https://… posted URL");
-    box.append(url, el("button", {disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL"));
+function languageRow(row, o, busy) {
+  const [label, tone] = STATUS[row.status] || [row.status, ""];
+
+  // 1. Blog files only. Editing starts from the preview a link opens.
+  const fileItems = row.files.map((name) => el("div", {},
+    el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name)));
+  const files = el("td", {class: "files"}, ...fileItems);
+
+  // 2. Slides column
+  const slideItems = [];
+  const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
+  if (deck && deck.url) {
+    slideItems.push(el("div", {},
+      el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
   }
-  return box;
+  const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
+  if (slideFile) {
+    slideItems.push(el("div", {class: "muted small"},
+      el("a", {href: fileUrl(slideFile), target: "_blank", rel: "noopener", title: slideFile}, "Speaker notes")));
+  }
+  const slidesCol = el("td", {class: "slides-col"}, ...(slideItems.length > 0 ? slideItems : [el("span", {class: "muted"}, "–")]));
+
+  // 3. Next step: review, finalize, approve, post. Each step shows only when it is the next one.
+  const next = el("div", {class: "next"});
+  const link = (text) => el("a", {href: row.url, target: "_blank", rel: "noopener"}, text);
+  if (row.status === "existing_source") next.append(link("Open original"));
+  else if (row.status === "published") next.append(link("Open post"));
+  else {
+    const drafted = row.status === "draft";
+    if (row.url) next.append(link(drafted ? "Open draft" : "Open post"));
+    if (!row.finalized) {
+      next.append(el("span", {class: "muted small"}, drafted
+          ? "The text changed after the draft was made. Finalize it to update the post."
+          : `Review post.${row.language}.md and edit it if needed. Finalize it when it is ready.`),
+        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy, onclick: () => finalize(row)}, "Finalize")));
+    } else if (row.can_post_draft) {
+      const tags = keep(`tags:${row.platform}`, {placeholder: "Tags: ai, agents", "aria-label": `Tags for ${row.platform_name}`});
+      next.append(el("div", {class: "inline"}, tags, el("button", {class: "primary", type: "button", disabled: busy,
+        onclick: () => postDraft(row, tags.value, drafted)}, drafted ? "Update post…" : "Post…")),
+        el("span", {class: "muted small"}, "Finalized. You choose draft or public when you approve."));
+    } else {
+      const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
+      next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL")),
+        el("span", {class: "muted small"}, "Finalized. Paste naver_blog.html into the Naver editor, post, then register the URL."));
+    }
+  }
+  return el("tr", {},
+    el("td", {class: "lang"}, el("div", {class: "who"}, row.language_name), el("span", {class: "badge " + tone}, label)),
+    el("td", {class: "title"}, row.title),
+    files,
+    slidesCol,
+    el("td", {}, next));
 }
 
 function render(data) {
-  const o = data.overview;
-  lastOverview = o; editable = data.busy ? [] : (o.editable || []);
-  $("result").classList.remove("hidden");
-  $("articleTitle").textContent = o.title || "Working…";
-  if (data.busy && !busySince) busySince = Date.now();
-  if (!data.busy) busySince = null;
-  wasBusy = data.busy; hadError = Boolean(data.error);
-  drawProgress();
+  state = {...state, ...data};
+  const o = data.overview, busy = data.busy;
+  if (busy && !busySince) busySince = Date.now();
+  if (!busy) busySince = null;
+  if (data.log.length !== lastLogLength) { lastLogLength = data.log.length; lastLogAt = Date.now(); $("log").textContent = data.log.join("\n\n"); $("log").scrollTop = $("log").scrollHeight; }
 
-  const banners = $("banners");
-  banners.replaceChildren();
-  if (data.error) banners.append(el("div", {class: "banner err"}, "Stopped with an error: " + data.error));
-  if (data.notice) banners.append(el("div", {class: "banner note"}, data.notice));
-  if (!data.busy) for (const hint of data.approvals) {
-    banners.append(el("div", {class: "banner ask"}, hint + " ",
-      el("button", {class: "go", onclick: () => approve(true)}, "Approve"), " ",
-      el("button", {onclick: () => approve(false)}, "Decline")));
-  }
+  $("progress").classList.remove("hidden");
+  $("articleTitle").textContent = o.title || "Reading the article…";
+  const list = steps(o);
+  const firstOpen = list.findIndex(([, done]) => !done);
+  $("steps").replaceChildren(...list.map(([name, done], i) =>
+    el("li", {class: done ? "done" : (busy && i === firstOpen ? "now" : "")}, (done ? "✓ " : "") + name)));
+  drawLive();
 
-  const hasRows = o.rows.some((r) => r.title);
-  $("table").classList.toggle("hidden", !hasRows);
-  $("followup").classList.toggle("hidden", !hasRows);
-  // Do not rebuild the table while someone is typing in it.
-  if (!$("rows").contains(document.activeElement)) {
-    $("rows").replaceChildren(...o.rows.filter((r) => r.title).map((row) => {
-      const [label, tone] = STATUS[row.status] || [row.status, "muted"];
-      const fileLinks = row.files.map(fileLink);
-      const slideLinks = [];
-      const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
-      if (deck && deck.url) {
-        slideLinks.push(el("div", {},
-          el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
-      }
-      const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
-      if (slideFile) slideLinks.push(fileLink(slideFile));
+  const notices = [];
+  if (data.error) notices.push(el("div", {class: "notice err"}, el("span", {class: "grow"}, "Stopped with an error: " + data.error)));
+  if (data.notice) notices.push(el("div", {class: "notice note"}, el("span", {class: "grow"}, data.notice)));
+  if (!busy) for (const hint of data.approvals) notices.push(el("div", {class: "notice ask"},
+    el("span", {class: "grow"}, hint),
+    el("button", {type: "button", onclick: () => act("approval", {confirmed: false})}, "Decline"),
+    el("button", {type: "button", class: "primary", onclick: () => act("approval", {confirmed: true})}, "Approve")));
+  const hasDeck = Boolean(o.deck) || Object.keys(o.decks || {}).length > 0;
+  if (!busy && o.can_create_deck && !hasDeck && data.approvals.length === 0) notices.push(el("div", {class: "notice note"},
+    el("span", {class: "grow"}, "No Google Slides deck was created in this run."),
+    el("button", {type: "button", onclick: createDeck}, "Create it now…")));
+  $("notices").replaceChildren(...notices);
 
-      return el("tr", {},
-        el("td", {}, row.language_name),
-        el("td", {class: "title"}, row.title),
-        el("td", {}, el("span", {class: "pill " + tone}, label)),
-        el("td", {class: "files"}, ...fileLinks),
-        el("td", {class: "files"}, ...(slideLinks.length > 0 ? slideLinks : [el("span", {class: "muted"}, "–")])),
-        el("td", {}, nextStep(row, data.busy)));
-    }));
-  }
-  const extra = [];
-  for (const name of o.slides) extra.push(el("li", {}, "Slides and speaker script: ", fileLink(name)));
-  if (o.decks && Object.keys(o.decks).length > 0) {
-    for (const [lang, deck] of Object.entries(o.decks)) {
-      if (deck && deck.url) {
-        const langName = {en: "English", ko: "Korean", ja: "Japanese"}[lang] || lang;
-        extra.push(el("li", {}, `Google Slides (${langName}): `,
-          el("a", {href: deck.url, target: "_blank", rel: "noopener"}, deck.title || "open"),
-          ` (${deck.slide_count} slides, script in the speaker notes)`));
-      }
-    }
-  } else if (o.deck && o.deck.url) {
-    extra.push(el("li", {}, "Google Slides: ",
-      el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, o.deck.title || "open"),
-      ` (${o.deck.slide_count} slides, script in the speaker notes)`));
-  }
-  if (o.can_create_deck) {
-    extra.push(el("li", {}, el("button", {class: o.deck ? "" : "go", disabled: data.busy, onclick: createDeck},
-      o.deck ? "Approve & create another Google Slides deck" : "Approve & create Google Slides deck"),
-      el("span", {class: "help"}, " Creates a new file in your Google Drive from the current slide plan.")));
-  }
-  if (o.manifest) extra.push(el("li", {}, "Artifact manifest: ", fileLink(o.manifest)));
-  $("extra").replaceChildren(...extra);
+  const rows = o.rows.filter((r) => r.title)
+    .sort((a, b) => (b.language === o.source_language) - (a.language === o.source_language));
+  $("langs").classList.toggle("hidden", rows.length === 0);
+  if (!$("rows").contains(document.activeElement)) $("rows").replaceChildren(...rows.map((row) => languageRow(row, o, busy)));
 
-  if (data.log.length !== lastLogLength) {
-    lastLogLength = data.log.length; lastLogChange = Date.now();
-    $("log").textContent = data.log.join("\n\n");
-    $("log").scrollTop = $("log").scrollHeight;
-  }
-  $("run").disabled = data.busy;
-  $("send").disabled = data.busy;
+  $("askCard").classList.toggle("hidden", !o.title);
+  $("run").disabled = busy;
+  $("send").disabled = busy;
+  $("send").title = busy ? "Agent is busy processing. Please wait..." : "Send modification request to the agent";
 }
+
+function drawLive() {
+  if (!state || !jobId) return;
+  const lastLine = (state.log && state.log.length ? state.log[state.log.length - 1] : "").split("\n")[0];
+  if (state.busy) {
+    liveKey = null;
+    $("elapsed").textContent = `${clock(Date.now() - (busySince || Date.now()))} elapsed`;
+    $("live").replaceChildren(el("span", {class: "spinner"}), el("span", {}, "Working"),
+      el("span", {class: "last"}, `· ${lastLine || "starting"} · quiet for ${clock(Date.now() - lastLogAt)} (long text shows up only when it is finished)`));
+  } else {
+    const manifest = state.overview && state.overview.manifest;
+    const key = `${jobId}|${state.error ? "stopped" : "finished"}|${manifest || ""}`;
+    if (key === liveKey) return;   // keep the link in place; a rebuilt link can swallow a click
+    liveKey = key;
+    $("elapsed").textContent = "";
+    const done = [el("span", {class: "muted"}, state.error ? "Stopped." : "Finished. Review the results below.")];
+    if (manifest) done.push(el("span", {class: "muted"}, "· Summary of this run: ", el("a", {href: fileUrl(manifest), target: "_blank", rel: "noopener"}, manifest)));
+    $("live").replaceChildren(...done);
+  }
+}
+setInterval(drawLive, 1000);
 
 async function poll() {
   if (!jobId) return;
   try { render(await api(`/api/jobs/${jobId}`)); }
-  catch (error) { $("status").textContent = "Lost contact with the server: " + error.message; }
+  catch (error) {
+    if (/Unknown job/.test(error.message)) { clearInterval(timer); history.replaceState(null, "", location.pathname); toast("That run is gone: the server was restarted. Files remain in the workspace folder.", 8000); jobId = null; }
+  }
 }
 
-async function act(path, body) {
-  try { await api(`/api/jobs/${jobId}/${path}`, body); await poll(); }
-  catch (error) { alert(error.message); }
-}
-
-function postDraft(row, tagText, update) {
+async function postDraft(row, tagText, update) {
   const tags = tagText.split(",").map((t) => t.trim()).filter(Boolean);
-  if (!tags.length) { alert("Enter one to five tags, separated by commas."); return; }
-  const ok = confirm(`${update ? "Update the existing draft" : "Create a non-public draft"} on ${row.platform_name}?\n\nTitle: ${row.title}\nTags: ${tags.join(", ")}\n\nThis uses your account.`);
-  if (ok) act("draft", {platform: row.platform, tags, approved: true});
+  if (!tags.length || tags.length > 5) { toast("Enter one to five tags, separated by commas."); return; }
+  // The person approving decides how far the post goes; the agent cannot.
+  const visibility = await confirmAction({
+    title: `${update ? "Update the post" : "Post"} on ${row.platform_name}?`,
+    summary: [["Title", row.title], ["Tags", tags.join(", ")]],
+    choices: [
+      {value: "draft", label: "Draft", hint: "Not public. You publish it yourself on the site."},
+      {value: "public", label: "Public", hint: "Visible to everyone as soon as you approve."}],
+    note: "This uses your account on that platform.", okLabel: "Approve and post"});
+  if (visibility) act("draft", {platform: row.platform, tags, approved: true, public: visibility === "public"});
 }
-function createDeck() {
-  if (confirm("Create a new Google Slides deck in your Google Drive from the slide plan?")) act("deck", {approved: true});
+async function finalize(row) {
+  try {
+    const done = await api(`/api/jobs/${jobId}/finalize`, {language: row.language});
+    if (done.check && !done.check.passed) toast(`Finalized. Note: its structure differs from the source: ${done.check.errors.join(" ")}`, 9000);
+    await poll();
+  } catch (error) { toast(error.message); }
 }
 function recordUrl(row, url) {
-  if (!/^https:\/\/\S+$/.test(url.trim())) { alert("Enter the https URL of the post."); return; }
+  if (!/^https:\/\/\S+$/.test(url.trim())) { toast("Enter the https URL of the post."); return; }
   act("url", {platform: row.platform, url: url.trim()});
 }
-function approve(confirmed) { act("approval", {confirmed}); }
+async function createDeck() {
+  const ok = await confirmAction({
+    title: "Create a Google Slides deck?",
+    summary: [["From", "the current slide plan"], ["Where", "a new file in your Google Drive"], ["Contains", "one slide per minute, script in the speaker notes"]],
+    okLabel: "Approve and create"});
+  if (ok) act("deck", {approved: true});
+}
 
 const MAX_FILE_BYTES = 80000;
 function loadFile(file) {
   if (!file) return;
-  if (!/\.(md|markdown|txt)$/i.test(file.name)) { alert("Attach a Markdown (.md) or text file."); return; }
-  if (file.size > MAX_FILE_BYTES) { alert("The file is larger than 80 KB, the limit for one article."); return; }
-  if ($("text").value.trim() && !confirm("Replace the text in the box with this file?")) return;
+  if (!/\.(md|markdown|txt)$/i.test(file.name)) { toast("Attach a Markdown (.md) or text file."); return; }
+  if (file.size > MAX_FILE_BYTES) { toast("The file is larger than 80 KB, the limit for one article."); return; }
   const reader = new FileReader();
-  reader.onload = () => {
-    $("text").value = reader.result;
-    $("fileInfo").textContent = `Loaded ${file.name} (${reader.result.length.toLocaleString()} characters). You can still edit it above.`;
-  };
-  reader.onerror = () => alert("The file could not be read.");
+  reader.onload = () => { $("source").value = reader.result; $("fileInfo").textContent = `${file.name} loaded (${reader.result.length.toLocaleString()} characters). You can edit it above.`; };
+  reader.onerror = () => toast("The file could not be read.");
   reader.readAsText(file, "utf-8");
 }
 $("openSettings").addEventListener("click", () => $("settingsModal").showModal());
@@ -471,41 +556,63 @@ zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.ad
 zone.addEventListener("dragleave", () => zone.classList.remove("over"));
 zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
 
-$("editorSave").addEventListener("click", saveEditor);
-$("editorClose").addEventListener("click", () => { editing = null; $("editor").classList.add("hidden"); });
-
-$("send").addEventListener("click", () => {
+function submitMessage() {
   const text = $("message").value.trim();
   if (!text) return;
+  if (state && state.busy) {
+    toast("The agent is currently busy processing. Please wait until the current task finishes.");
+    return;
+  }
   $("message").value = "";
   act("message", {text});
-});
-$("message").addEventListener("keydown", (e) => { if (e.key === "Enter") $("send").click(); });
+}
+$("send").addEventListener("click", submitMessage);
+$("message").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submitMessage(); } });
 
-$("run").addEventListener("click", async () => {
-  const text = $("text").value.trim();
-  if (text.length < 10) { alert("Paste a URL or a draft first."); return; }
-  $("run").disabled = true;
+function watch(id) {
+  jobId = id; lastLogLength = 0; lastLogAt = Date.now(); busySince = null;
+  history.replaceState(null, "", "#" + id);   // a reload comes back to the same run
+  clearInterval(timer); timer = setInterval(poll, 2000);
+  return poll();
+}
+zone.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("source").value.trim();
+  if (text.length < 10) { toast("Paste a URL or a draft first."); $("source").focus(); return; }
   const slideLangs = [];
   if ($("slideLangEn").checked) slideLangs.push("en");
   if ($("slideLangKo").checked) slideLangs.push("ko");
   if ($("slideLangJa").checked) slideLangs.push("ja");
+  const settings = {
+    talk_minutes: Number($("minutes").value),
+    talk_language: slideLangs[0] || "en",
+    talk_languages: slideLangs,
+    audience: $("audience").value || "software engineers",
+    create_deck: Number($("minutes").value) > 0 && slideLangs.length > 0,
+  };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  $("run").disabled = true;
   try {
-    const started = await api("/api/jobs", {
-      text, talk_minutes: Number($("minutes").value),
-      talk_language: slideLangs[0] || "en",
-      talk_languages: slideLangs,
-      audience: $("audience").value || "software engineers",
-      create_deck: Number($("minutes").value) > 0 && slideLangs.length > 0,
-    });
-    jobId = started.job_id; lastLogLength = 0; busySince = Date.now(); lastLogChange = Date.now();
-    editing = null; $("editor").classList.add("hidden");
-    for (const key of Object.keys(inputs)) delete inputs[key];
+    const started = await api("/api/jobs", {text, ...settings});
+    for (const key of Object.keys(typed)) delete typed[key];
+    state = {requestedMinutes: settings.talk_minutes, wantsDeck: settings.create_deck, log: []};
     $("rows").replaceChildren(); $("log").textContent = "";
-    clearInterval(timer); timer = setInterval(poll, 2000);
-    await poll();
-  } catch (error) { alert(error.message); $("run").disabled = false; }
+    await watch(started.job_id);
+    $("progress").scrollIntoView({behavior: "smooth", block: "start"});
+  } catch (error) { toast(error.message); $("run").disabled = false; }
 });
+
+// Restore the last settings and, after a reload, the run in the address bar.
+try {
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+  $("minutes").value = String(saved.talk_minutes ?? 5);
+  const savedLangs = Array.isArray(saved.talk_languages) ? saved.talk_languages : (saved.talk_language ? [saved.talk_language] : ["en", "ko", "ja"]);
+  $("slideLangEn").checked = savedLangs.includes("en");
+  $("slideLangKo").checked = savedLangs.includes("ko");
+  $("slideLangJa").checked = savedLangs.includes("ja");
+  if (saved.audience) $("audience").value = saved.audience;
+} catch (e) { $("minutes").value = "5"; }
+if (location.hash.length > 1) { state = {log: []}; watch(location.hash.slice(1)); }
 </script>
 </body>
 </html>

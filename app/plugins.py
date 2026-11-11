@@ -8,8 +8,13 @@ Rules enforced:
 1. Outbound URL allowlist. Any tool argument that carries a URL must point at
    one of the supported blog platforms over https. This holds even if a tool's
    own validation is changed or a new tool is added.
-2. No credentials in model output. Credential-looking strings are removed from
-   model responses before they are shown, logged, or stored in the session.
+2. No credentials in what the coordinator says. Credential-looking strings are
+   removed from model responses before they are shown, logged, or stored in
+   the session. Agents that write article text, or documents derived from it,
+   are exempt: their output is the author's article in another form, and a
+   pattern that also matches ordinary tutorial code (``API_KEY=...`` in a shell
+   example) would silently damage it. Credentials in article text are searched
+   for, and shown to the person, when a post is finalized or sent.
 
 Quality self-evaluation (does the translation preserve the source?) is handled
 separately by the localization review loop in ``app/agent.py``.
@@ -33,6 +38,23 @@ from app.schemas import tool_error
 from app.settings import ALLOWED_ARTICLE_HOSTS
 
 _URL_ARGUMENT_NAMES = ("url", "urls", "source_url")
+
+# Agents whose model output is article text or a structured document built from
+# it (titles, review verdicts quoting the text, slide plans). Matched by prefix
+# so the per-language agents (localizer_ko_agent, ...) are covered.
+_ARTICLE_WRITER_PREFIXES = (
+    "localizer_",
+    "refiner_",
+    "title_localizer",
+    "slide_plan",
+    "localization_critic",
+    "seed_editor",
+)
+
+
+def writes_article_text(agent_name: str | None) -> bool:
+    """Whether this agent's output must be stored exactly as the model wrote it."""
+    return bool(agent_name) and agent_name.startswith(_ARTICLE_WRITER_PREFIXES)
 
 
 def _disallowed_urls(tool_args: dict[str, Any]) -> list[str]:
@@ -82,6 +104,8 @@ class ContentPolicyPlugin(BasePlugin):
     async def after_model_callback(
         self, *, callback_context: CallbackContext, llm_response: LlmResponse
     ) -> LlmResponse | None:
+        if writes_article_text(callback_context.agent_name):
+            return None
         content = llm_response.content
         if not content or not content.parts:
             return None

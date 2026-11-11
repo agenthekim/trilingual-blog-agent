@@ -11,6 +11,20 @@ What each platform actually allows (verified against the live services):
 
 Every outbound call runs inside a tracing span named after the platform and
 operation, and none of them log request or response bodies.
+
+Two rules hold for every request made here:
+
+* A request that carries a credential is never redirected. A redirect would
+  hand the credential to whatever address the response names.
+* A request without a credential follows at most ``MAX_PUBLIC_REDIRECTS``
+  redirects, and every address on the way, the first one included, must be
+  https on one of the supported hosts. The allowlist that tools apply to the
+  URL a person typed would otherwise stop at the first hop.
+
+The public functions raise ``PlatformError`` for every failure that can be
+foreseen: a refused address, an HTTP error status, a timeout or a broken
+connection, and a response that is not the JSON the caller needs. Tools turn
+that one exception type into a guided error for the agent.
 """
 
 from __future__ import annotations
@@ -24,7 +38,7 @@ import httpx
 
 from app import secrets
 from app.observability import traced_span
-from app.settings import HTTP_TIMEOUT_SECONDS
+from app.settings import ALLOWED_ARTICLE_HOSTS, HTTP_TIMEOUT_SECONDS
 
 QIITA_API = "https://qiita.com/api/v2"
 DEVTO_API = "https://dev.to/api"
@@ -41,12 +55,269 @@ class PlatformError(Exception):
         self.recovery = recovery
 
 
+# Redirects a fetch without a credential may follow before it gives up.
+MAX_PUBLIC_REDIRECTS = 3
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+# Hosts this module may contact: the blog hosts plus the two API hosts (today
+# the APIs live on the blog hosts, so the union adds nothing; it is spelled out
+# so that moving an API constant does not silently widen or break the check).
+_FETCHABLE_HOSTS = frozenset(ALLOWED_ARTICLE_HOSTS) | {
+    httpx.URL(QIITA_API).host,
+    httpx.URL(DEVTO_API).host,
+}
+
+# Failures that happen before any byte of the request leaves this process, so
+# a create or update that hits one of them certainly did not reach the platform.
+_NOT_SENT_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+    httpx.ProxyError,
+    httpx.UnsupportedProtocol,
+    httpx.InvalidURL,
+)
+
+_RETRY_ONCE = (
+    "Retry once. If it fails again, tell the user the platform cannot be "
+    "reached right now and continue with the other platforms."
+)
+
+
 def _client(headers: dict[str, str] | None = None) -> httpx.AsyncClient:
+    # Redirects are never followed by httpx itself: requests with a credential
+    # must not be redirected at all, and requests without one are followed hop
+    # by hop in _get_public so each address can be checked first.
     return httpx.AsyncClient(
         timeout=HTTP_TIMEOUT_SECONDS,
-        follow_redirects=True,
+        follow_redirects=False,
         headers={"User-Agent": _USER_AGENT, **(headers or {})},
     )
+
+
+def _allowed_public_url(url: str | httpx.URL) -> httpx.URL | None:
+    """Return ``url`` parsed if it is https on a fetchable host, else ``None``.
+
+    The address is parsed with httpx, the library that then connects to it, so
+    the host that is checked is the host that is contacted. A port or a user
+    name in the address is refused: neither occurs in a real post URL.
+    """
+    try:
+        parsed = httpx.URL(url)
+    except (httpx.InvalidURL, TypeError):
+        return None
+    host = parsed.host.lower().removeprefix("www.")
+    if parsed.scheme != "https" or host not in _FETCHABLE_HOSTS:
+        return None
+    if parsed.port is not None or parsed.userinfo:
+        return None
+    return parsed
+
+
+def _platform_of(url: httpx.URL) -> str:
+    return ALLOWED_ARTICLE_HOSTS.get(url.host.lower().removeprefix("www."), "url")
+
+
+def _url_not_allowed() -> PlatformError:
+    allowed = ", ".join(sorted(_FETCHABLE_HOSTS))
+    return PlatformError(
+        "URL_NOT_ALLOWED",
+        "The address is not an https address on a supported blog host, so it "
+        "was not fetched.",
+        f"Only https URLs on these hosts may be fetched: {allowed}. Ask the user "
+        "for a supported URL; do not retry with the same one.",
+    )
+
+
+def _redirect_not_allowed(platform: str, location: str) -> PlatformError:
+    try:
+        target = httpx.URL(location)
+        where = f"{target.scheme}://{target.host}"[:120]
+    except (httpx.InvalidURL, TypeError):
+        where = "an address that could not be read"
+    return PlatformError(
+        f"{platform.upper()}_REDIRECT_NOT_ALLOWED",
+        f"{platform} redirected the request to {where}, which is not an https "
+        "address on a supported blog host. The redirect was not followed.",
+        "Do not retry with the same URL. Tell the user the page redirects "
+        "elsewhere (a moved, private or login-only post does this) and ask for "
+        "the current public URL of the post.",
+    )
+
+
+def _unknown_outcome(platform: str, what_happened: str) -> PlatformError:
+    """The error for a create or update that may or may not have been applied."""
+    return PlatformError(
+        f"{platform.upper()}_OUTCOME_UNKNOWN",
+        f"The outcome is unknown: {what_happened}, so {platform} may or may not "
+        "have saved the article.",
+        "Do not retry yet: a retry could create a duplicate. Ask the user to "
+        "check their drafts and posts on the platform. Retry only after the user "
+        "confirms the article is not there; if it is there, do not send it again.",
+    )
+
+
+def _transport_error(
+    platform: str, exc: Exception, *, saving: bool = False
+) -> PlatformError:
+    """Turn an httpx failure into a guided error.
+
+    Only the exception class is reported: the exception text can repeat the
+    request address and adds nothing the agent can act on.
+    """
+    name = type(exc).__name__
+    if saving and not isinstance(exc, _NOT_SENT_ERRORS):
+        return _unknown_outcome(
+            platform, f"the connection failed once the request was on its way ({name})"
+        )
+    not_sent = " Nothing was sent." if saving else ""
+    if isinstance(exc, httpx.TimeoutException):
+        return PlatformError(
+            f"{platform.upper()}_TIMEOUT",
+            f"{platform} did not answer within {HTTP_TIMEOUT_SECONDS:g} seconds "
+            f"({name}).{not_sent}",
+            _RETRY_ONCE,
+        )
+    return PlatformError(
+        f"{platform.upper()}_NETWORK_ERROR",
+        f"{platform} could not be reached ({name}).{not_sent}",
+        _RETRY_ONCE,
+    )
+
+
+async def _get_public(
+    url: str | httpx.URL, *, accept: str | None = None
+) -> httpx.Response:
+    """GET without a credential, following redirects by hand.
+
+    There is deliberately no way to pass arbitrary headers: whatever is sent
+    here is also sent to every address a redirect names.
+    """
+    target = _allowed_public_url(url)
+    if target is None:
+        raise _url_not_allowed()
+    platform = _platform_of(target)
+    try:
+        async with _client({"Accept": accept} if accept else None) as client:
+            for followed in range(MAX_PUBLIC_REDIRECTS + 1):
+                response = await client.get(target)
+                location = response.headers.get("location")
+                if response.status_code not in _REDIRECT_STATUSES or not location:
+                    return response
+                if followed == MAX_PUBLIC_REDIRECTS:
+                    break
+                try:
+                    target = _allowed_public_url(response.url.join(location))
+                except httpx.InvalidURL:
+                    target = None
+                if target is None:
+                    raise _redirect_not_allowed(platform, location)
+    except httpx.HTTPError as exc:
+        raise _transport_error(platform, exc) from exc
+    raise PlatformError(
+        f"{platform.upper()}_TOO_MANY_REDIRECTS",
+        f"{platform} redirected the request more than {MAX_PUBLIC_REDIRECTS} "
+        "times; it was given up.",
+        "Do not retry with the same URL. Ask the user for the current public "
+        "URL of the post.",
+    )
+
+
+async def _send_with_credential(
+    platform: str,
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    *,
+    json: Any = None,
+    params: dict[str, Any] | None = None,
+    saving: bool = False,
+) -> httpx.Response:
+    """Send one request that carries a credential; a redirect is an error.
+
+    ``saving`` marks a create or update, where a failure after the request
+    left must be reported as an unknown outcome rather than as a plain error.
+    """
+    try:
+        async with _client(headers) as client:
+            response = await client.request(method, url, json=json, params=params)
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        raise _transport_error(platform, exc, saving=saving) from exc
+    if 300 <= response.status_code < 400:
+        answered = (
+            f"{platform} answered with a redirect (HTTP {response.status_code}), "
+            "which is never followed for a request that carries a credential"
+        )
+        if saving:
+            raise _unknown_outcome(platform, answered)
+        raise PlatformError(
+            f"{platform.upper()}_REDIRECT_NOT_FOLLOWED",
+            f"{answered}.",
+            "Do not retry. Report this to the user: the address of the "
+            "platform's API may have changed.",
+        )
+    return response
+
+
+def _bad_response(platform: str, status: int, problem: str) -> PlatformError:
+    return PlatformError(
+        f"{platform.upper()}_BAD_RESPONSE",
+        f"{platform} answered HTTP {status} but {problem}.",
+        "Retry once. If it happens again, tell the user the platform's answer "
+        "could not be read; do not guess the missing content.",
+    )
+
+
+def _is_identifier(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int) or (isinstance(value, str) and bool(value.strip()))
+
+
+def _record_problem(
+    response: httpx.Response, identifiers: tuple[str, ...], texts: tuple[str, ...]
+) -> tuple[Any, str | None]:
+    """Return (parsed body, what is wrong with it or ``None``)."""
+    try:
+        data = response.json()
+    except ValueError:
+        return None, "the response was not JSON"
+    if not isinstance(data, dict):
+        return data, "the response was not a JSON object"
+    for name in identifiers:
+        if not _is_identifier(data.get(name)):
+            return data, f"the response had no usable '{name}'"
+    for name in texts:
+        if not isinstance(data.get(name), str):
+            return data, f"the response had no usable '{name}'"
+    return data, None
+
+
+def _json_record(
+    platform: str,
+    response: httpx.Response,
+    *,
+    identifiers: tuple[str, ...] = (),
+    texts: tuple[str, ...] = (),
+    saving: bool = False,
+) -> dict[str, Any]:
+    """Return the JSON object of ``response`` after checking what callers read.
+
+    ``identifiers`` must be non-empty strings or numbers and ``texts`` must be
+    strings. Checking here keeps a changed or truncated payload from surfacing
+    as a ``KeyError`` in a tool, and, for a create, from being mistaken for a
+    failure that is safe to retry: the platform answered with a success status,
+    so the article was most likely saved.
+    """
+    data, problem = _record_problem(response, identifiers, texts)
+    if problem is None:
+        return data
+    status = response.status_code
+    if saving:
+        raise _unknown_outcome(
+            platform, f"{platform} answered HTTP {status} but {problem}"
+        )
+    raise _bad_response(platform, status, problem)
 
 
 def _raise_for_status(platform: str, response: httpx.Response) -> None:
@@ -96,8 +367,17 @@ def guess_language(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Qiita
 # ---------------------------------------------------------------------------
+def _split_url(url: str) -> tuple[str, str]:
+    """Return (path, query) of ``url``; both empty when it cannot be parsed."""
+    try:
+        parsed = urlparse(url)
+        return parsed.path, parsed.query
+    except (ValueError, TypeError, AttributeError):
+        return "", ""
+
+
 def parse_qiita_item_id(url: str) -> str:
-    match = re.search(r"/(?:items|private)/([0-9a-f]{20})", urlparse(url).path)
+    match = re.search(r"/(?:items|private)/([0-9a-f]{20})", _split_url(url)[0])
     if not match:
         raise PlatformError(
             "QIITA_URL_FORMAT",
@@ -124,11 +404,24 @@ def _qiita_headers(required: bool) -> dict[str, str]:
 
 
 async def qiita_get_item(item_id: str) -> dict[str, Any]:
+    """Read one Qiita item; the result has ``id``, ``title``, ``body``, ``tags``."""
+    url = f"{QIITA_API}/items/{item_id}"
+    headers = _qiita_headers(required=False)
     with traced_span("qiita.get_item", item_id=item_id):
-        async with _client(_qiita_headers(required=False)) as client:
-            response = await client.get(f"{QIITA_API}/items/{item_id}")
+        if headers:
+            response = await _send_with_credential("qiita", "GET", url, headers)
+        else:
+            response = await _get_public(url)
     _raise_for_status("qiita", response)
-    return response.json()
+    item = _json_record("qiita", response, identifiers=("id",), texts=("title", "body"))
+    tags = item.get("tags", [])
+    if not isinstance(tags, list) or not all(
+        isinstance(tag, dict) and isinstance(tag.get("name"), str) for tag in tags
+    ):
+        raise _bad_response(
+            "qiita", response.status_code, "the response had no usable 'tags'"
+        )
+    return item
 
 
 async def qiita_save_item(
@@ -143,24 +436,28 @@ async def qiita_save_item(
         "tweet": False,
     }
     operation = "qiita.update_item" if item_id else "qiita.create_item"
+    headers = _qiita_headers(required=True)
+    if item_id:
+        payload.pop("tweet")
+        method, url = "PATCH", f"{QIITA_API}/items/{item_id}"
+    else:
+        method, url = "POST", f"{QIITA_API}/items"
     with traced_span(operation, private=private, body_chars=len(body)):
-        async with _client(_qiita_headers(required=True)) as client:
-            if item_id:
-                payload.pop("tweet")
-                response = await client.patch(
-                    f"{QIITA_API}/items/{item_id}", json=payload
-                )
-            else:
-                response = await client.post(f"{QIITA_API}/items", json=payload)
+        response = await _send_with_credential(
+            "qiita", method, url, headers, json=payload, saving=True
+        )
     _raise_for_status("qiita", response)
-    return response.json()
+    return _json_record("qiita", response, identifiers=("id", "url"), saving=True)
 
 
 # ---------------------------------------------------------------------------
 # DEV Community
 # ---------------------------------------------------------------------------
+_DEVTO_ACCEPT = "application/vnd.forem.api-v1+json"
+
+
 def _devto_headers(required: bool) -> dict[str, str]:
-    headers = {"Accept": "application/vnd.forem.api-v1+json"}
+    headers = {"Accept": _DEVTO_ACCEPT}
     try:
         headers["api-key"] = secrets.get_secret(secrets.DEVTO_API_KEY)
     except secrets.MissingSecretError as exc:
@@ -175,7 +472,7 @@ def _devto_headers(required: bool) -> dict[str, str]:
 
 
 def parse_devto_path(url: str) -> tuple[str, str]:
-    parts = [p for p in urlparse(url).path.split("/") if p]
+    parts = [p for p in _split_url(url)[0].split("/") if p]
     if len(parts) != 2:
         raise PlatformError(
             "DEVTO_URL_FORMAT",
@@ -186,11 +483,23 @@ def parse_devto_path(url: str) -> tuple[str, str]:
 
 
 async def devto_get_article(username: str, slug: str) -> dict[str, Any]:
+    url = f"{DEVTO_API}/articles/{username}/{slug}"
+    headers = _devto_headers(required=False)
     with traced_span("devto.get_article", slug=slug):
-        async with _client(_devto_headers(required=False)) as client:
-            response = await client.get(f"{DEVTO_API}/articles/{username}/{slug}")
+        if "api-key" in headers:
+            response = await _send_with_credential("devto", "GET", url, headers)
+        else:
+            response = await _get_public(url, accept=_DEVTO_ACCEPT)
     _raise_for_status("devto", response)
-    return response.json()
+    article = _json_record(
+        "devto", response, identifiers=("id",), texts=("title", "body_markdown")
+    )
+    tags = article.get("tags")
+    if tags is not None and not isinstance(tags, (list, str)):
+        raise _bad_response(
+            "devto", response.status_code, "the response had no usable 'tags'"
+        )
+    return article
 
 
 async def devto_save_article(
@@ -206,28 +515,43 @@ async def devto_save_article(
         }
     }
     operation = "devto.update_article" if article_id else "devto.create_article"
+    headers = _devto_headers(required=True)
+    if article_id:
+        method, url = "PUT", f"{DEVTO_API}/articles/{article_id}"
+    else:
+        method, url = "POST", f"{DEVTO_API}/articles"
     with traced_span(operation, published=published, body_chars=len(body)):
-        async with _client(_devto_headers(required=True)) as client:
-            if article_id:
-                response = await client.put(
-                    f"{DEVTO_API}/articles/{article_id}", json=payload
-                )
-            else:
-                response = await client.post(f"{DEVTO_API}/articles", json=payload)
+        response = await _send_with_credential(
+            "devto", method, url, headers, json=payload, saving=True
+        )
     _raise_for_status("devto", response)
-    return response.json()
+    return _json_record("devto", response, identifiers=("id",), saving=True)
 
 
 async def devto_find_own_article(article_id: str) -> dict[str, Any] | None:
     """Look an article up among the key owner's posts, including unpublished drafts."""
+    headers = _devto_headers(required=True)
     with traced_span("devto.list_own_articles"):
-        async with _client(_devto_headers(required=True)) as client:
-            response = await client.get(
-                f"{DEVTO_API}/articles/me/all", params={"per_page": 100}
-            )
+        response = await _send_with_credential(
+            "devto",
+            "GET",
+            f"{DEVTO_API}/articles/me/all",
+            headers,
+            params={"per_page": 100},
+        )
     _raise_for_status("devto", response)
-    for article in response.json():
-        if str(article.get("id")) == str(article_id):
+    try:
+        articles = response.json()
+    except ValueError:
+        articles = None
+    if not isinstance(articles, list):
+        raise _bad_response(
+            "devto",
+            response.status_code,
+            "the response was not a JSON list of articles",
+        )
+    for article in articles:
+        if isinstance(article, dict) and str(article.get("id")) == str(article_id):
             return article
     return None
 
@@ -236,11 +560,11 @@ async def devto_find_own_article(article_id: str) -> dict[str, Any] | None:
 # Naver Blog (read-only, best effort)
 # ---------------------------------------------------------------------------
 def parse_naver_post(url: str) -> tuple[str, str]:
-    parsed = urlparse(url)
-    query = parse_qs(parsed.query)
+    path, raw_query = _split_url(url)
+    query = parse_qs(raw_query)
     if query.get("blogId") and query.get("logNo"):
         return query["blogId"][0], query["logNo"][0]
-    parts = [p for p in parsed.path.split("/") if p]
+    parts = [p for p in path.split("/") if p]
     if len(parts) >= 2 and parts[-1].isdigit():
         return parts[-2], parts[-1]
     raise PlatformError(
@@ -317,8 +641,7 @@ def naver_html_to_markdown(html: str) -> tuple[str, str]:
 async def naver_get_post(blog_id: str, log_no: str) -> tuple[str, str]:
     url = f"https://m.blog.naver.com/{blog_id}/{log_no}"
     with traced_span("naver.get_post", log_no=log_no):
-        async with _client() as client:
-            response = await client.get(url)
+        response = await _get_public(url)
     _raise_for_status("naver_blog", response)
     title, markdown = naver_html_to_markdown(response.text)
     if not markdown:
@@ -331,10 +654,16 @@ async def naver_get_post(blog_id: str, log_no: str) -> tuple[str, str]:
 
 
 async def fetch_status_and_title(url: str) -> tuple[int, str | None]:
-    """GET a public page and return its HTTP status and <title> / og:title."""
-    with traced_span("http.verify_url", host=urlparse(url).hostname or ""):
-        async with _client() as client:
-            response = await client.get(url)
+    """GET a public page and return its HTTP status and <title> / og:title.
+
+    Only https addresses on the supported blog hosts are fetched; anything
+    else, and any network failure, raises ``PlatformError``.
+    """
+    target = _allowed_public_url(url)
+    if target is None:
+        raise _url_not_allowed()
+    with traced_span("http.verify_url", host=target.host):
+        response = await _get_public(target)
     title = None
     match = re.search(
         r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)',
