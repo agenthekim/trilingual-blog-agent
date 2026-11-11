@@ -343,19 +343,46 @@ def _deck_plan() -> dict:
     }
 
 
-def test_slide_requests_build_one_titled_slide_per_plan_entry() -> None:
-    from app.google_slides import notes_requests, slide_requests
+def test_slide_requests_build_a_cover_and_one_slide_per_plan_entry() -> None:
+    from app.google_slides import (
+        image_request,
+        notes_requests,
+        slide_images,
+        slide_requests,
+    )
     from app.schemas import SlideDeckPlan
 
-    plan = SlideDeckPlan.model_validate(_deck_plan())
-    requests = slide_requests(plan, "p")
+    raw = _deck_plan()
+    raw["slides"][0]["image_url"] = "https://img.example.com/invented.png"
+    raw["slides"][1]["image_url"] = "https://img.example.com/real.png"
+    plan = SlideDeckPlan.model_validate(raw)
+
+    # A URL the model made up is dropped; only article images are placed.
+    images = slide_images(plan, {"https://img.example.com/real.png"})
+    assert images == {2: "https://img.example.com/real.png"}
+
+    requests = slide_requests(plan, "p", images)
     created = [r["createSlide"] for r in requests if "createSlide" in r]
-    assert [c["objectId"] for c in created] == ["slide_001", "slide_002"]
-    assert [c["insertionIndex"] for c in created] == [1, 2]
+    assert [c["objectId"] for c in created] == ["slide_000", "slide_001", "slide_002"]
+    assert [c["insertionIndex"] for c in created] == [1, 2, 3]
     texts = [r["insertText"] for r in requests if "insertText" in r]
+    assert {"objectId": "slide_000_title", "text": "Deck"} in texts
     assert {"objectId": "slide_001_title", "text": "Slide 1"} in texts
     assert {"objectId": "slide_002_body", "text": "first point\nsecond point"} in texts
     assert requests[-1] == {"deleteObject": {"objectId": "p"}}  # placeholder slide
+
+    widths = {
+        r["createShape"]["objectId"]: r["createShape"]["elementProperties"]["size"][
+            "width"
+        ]["magnitude"]
+        for r in requests
+        if "createShape" in r and r["createShape"]["shapeType"] == "TEXT_BOX"
+    }
+    assert widths["slide_002_body"] < widths["slide_001_body"]  # room for the image
+
+    picture = image_request(2, images[2])["createImage"]
+    assert picture["url"] == "https://img.example.com/real.png"
+    assert picture["elementProperties"]["pageObjectId"] == "slide_002"
 
     presentation = {
         "slides": [
@@ -365,12 +392,41 @@ def test_slide_requests_build_one_titled_slide_per_plan_entry() -> None:
                     "notesPage": {"notesProperties": {"speakerNotesObjectId": f"n{n}"}}
                 },
             }
-            for n in (1, 2)
+            for n in (0, 1, 2)
         ]
     }
     notes = [r["insertText"] for r in notes_requests(plan, presentation)]
     assert notes[0] == {"objectId": "n1", "text": "Script for slide 1."}
     assert notes[1]["text"] == "Script for slide 2.\n\n[Visual] architecture diagram"
+
+
+def test_long_titles_get_a_smaller_font() -> None:
+    from app.google_slides import body_points, title_points
+
+    assert title_points("Short title") == 30
+    assert (
+        title_points("Moving Beyond Monolithic Agents to Multi-Agent Coordination")
+        == 26
+    )
+    assert title_points("한국어 제목은 글자 폭이 두 배라서 더 빨리 줄어든다") < 30
+    assert body_points(["a", "b", "c"], beside_image=False) == 20
+    assert body_points(["a", "b", "c"], beside_image=True) == 18
+    assert body_points(["a fairly long bullet point " * 3] * 5, beside_image=True) == 14
+
+
+def test_images_are_found_in_markdown_and_html_but_not_in_code() -> None:
+    from app.markdown_checks import extract_images
+
+    article = (
+        "![Agent loop](https://img.example.com/a.png)\n\n"
+        '<img width="600" alt="Runtime" src="https://img.example.com/b.jpeg">\n\n'
+        "![again](https://img.example.com/a.png) ![local](./c.png)\n\n"
+        "```md\n![in code](https://img.example.com/x.png)\n```\n"
+    )
+    assert extract_images(article) == [
+        ("Agent loop", "https://img.example.com/a.png"),
+        ("Runtime", "https://img.example.com/b.jpeg"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -384,7 +440,7 @@ async def test_google_slides_deck_needs_plan_and_human_approval(
 
     calls = []
 
-    async def fake_create(plan):
+    async def fake_create(plan, allowed_images):
         calls.append(plan.deck_title)
         return {"presentation_id": "abc", "url": google_slides.deck_url("abc")}
 

@@ -63,6 +63,31 @@ def extract_urls(markdown: str) -> set[str]:
     return {u.rstrip(".,;:") for u in urls}
 
 
+_MD_IMAGE = re.compile(r"!\[([^\]]*)\]\(\s*<?(https://[^\s)>]+)>?")
+_HTML_IMAGE = re.compile(r"<img\b[^>]*?\bsrc=[\"'](https://[^\"']+)[\"'][^>]*>", re.I)
+_HTML_ALT = re.compile(r"\balt=[\"']([^\"']*)[\"']", re.I)
+
+
+def extract_images(markdown: str) -> list[tuple[str, str]]:
+    """Return (description, https URL) of each image outside code blocks, in order."""
+    _, prose, _ = split_code_blocks(markdown)
+    found: list[tuple[int, str, str]] = [
+        (m.start(), m.group(1).strip(), m.group(2)) for m in _MD_IMAGE.finditer(prose)
+    ]
+    for match in _HTML_IMAGE.finditer(prose):
+        alt = _HTML_ALT.search(match.group(0))
+        found.append(
+            (match.start(), alt.group(1).strip() if alt else "", match.group(1))
+        )
+    seen: set[str] = set()
+    images = []
+    for _, description, url in sorted(found):
+        if url not in seen:
+            seen.add(url)
+            images.append((description, url))
+    return images
+
+
 def heading_levels(markdown: str) -> list[int]:
     _, prose, _ = split_code_blocks(markdown)
     return [

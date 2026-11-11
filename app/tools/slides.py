@@ -8,7 +8,11 @@ from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
 from app import google_slides, state
-from app.markdown_checks import SPEECH_UNITS_PER_MINUTE, estimate_speaking_seconds
+from app.markdown_checks import (
+    SPEECH_UNITS_PER_MINUTE,
+    estimate_speaking_seconds,
+    extract_images,
+)
 from app.persistence import get_article_store
 from app.schemas import (
     PresentationBriefInput,
@@ -160,6 +164,7 @@ def render_slide_plan_markdown(plan: SlideDeckPlan) -> str:
         lines += [
             "",
             f"Visual: {slide.visual_note}",
+            *([f"Image: {slide.image_url}"] if slide.image_url else []),
             "",
             f"Speaker script (about {seconds:.0f}s):",
             "",
@@ -254,7 +259,8 @@ async def create_google_slides_deck_with_speaker_notes(
 ) -> dict[str, Any]:
     """Create a Google Slides deck from the slide plan, after human approval.
 
-    Makes one title-and-bullets slide per planned slide and puts each slide's
+    Makes a title slide and one slide per planned slide, places the article
+    image chosen for a slide next to its bullets, and puts each slide's
     speaker script (and the note on what to show) into its speaker notes. The
     deck is a new file in the Drive of the Google account that granted access;
     no existing file is changed. The first call does not create anything: it
@@ -264,7 +270,7 @@ async def create_google_slides_deck_with_speaker_notes(
     Returns:
         status 'pending_human_approval' while waiting, 'declined' if refused,
         or 'success' with deck (presentation_id, url, title, slide_count,
-        slides_with_notes). On failure: status 'error' with error_code, message
+        slides_with_notes, images_inserted, images_failed). On failure: status 'error' with error_code, message
         and recovery_instruction.
     """
     plan = _load_plan(tool_context)
@@ -289,8 +295,16 @@ async def create_google_slides_deck_with_speaker_notes(
             "status": "declined",
             "message": "The user declined. No Google Slides deck was created.",
         }
+    # Only images that really appear in the article may go on a slide.
+    article_images = {
+        url
+        for language in LANGUAGES
+        for _, url in extract_images(
+            state.article_markdown(tool_context.state, language) or ""
+        )
+    }
     try:
-        deck = await google_slides.create_deck(plan)
+        deck = await google_slides.create_deck(plan, article_images)
     except google_slides.SlidesError as exc:
         return tool_error(exc.code, exc.message, exc.recovery)
     tool_context.state[state.GOOGLE_SLIDES_DECK] = deck

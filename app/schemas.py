@@ -254,6 +254,12 @@ class SlideSpec(BaseModel):
         description="What the presenter says for this slide, written to be read "
         "aloud in about one minute."
     )
+    image_url: str = Field(
+        default="",
+        description="URL of one image from the article that illustrates this "
+        "slide, copied exactly from the list of article images; empty when no "
+        "image fits.",
+    )
 
 
 class SlideDeckPlan(BaseModel):
