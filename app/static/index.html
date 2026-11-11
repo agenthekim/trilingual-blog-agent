@@ -118,7 +118,7 @@
     <div id="banners"></div>
     <h2 id="articleTitle"></h2>
     <table id="table" class="hidden">
-      <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Next step</th></tr></thead>
+      <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Slides</th><th>Next step</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <ul class="extra" id="extra"></ul>
@@ -294,21 +294,24 @@ function render(data) {
     $("rows").replaceChildren(...o.rows.filter((r) => r.title).map((row) => {
       const [label, tone] = STATUS[row.status] || [row.status, "muted"];
       const fileLinks = row.files.map(fileLink);
-      const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
-      if (slideFile) fileLinks.push(fileLink(slideFile));
+      const slideLinks = [];
       const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
       if (deck && deck.url) {
         const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
-        fileLinks.push(el("div", {style: "margin-top:4px"},
-          el("a", {href: deck.url, target: "_blank", rel: "noopener"}, "Google Slides ↗"),
+        slideLinks.push(el("div", {},
+          el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides"),
           " · ",
-          el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗")));
+          el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF")));
       }
+      const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
+      if (slideFile) slideLinks.push(fileLink(slideFile));
+
       return el("tr", {},
         el("td", {}, row.language_name),
         el("td", {class: "title"}, row.title),
         el("td", {}, el("span", {class: "pill " + tone}, label)),
         el("td", {class: "files"}, ...fileLinks),
+        el("td", {class: "files"}, ...(slideLinks.length > 0 ? slideLinks : [el("span", {class: "muted"}, "–")])),
         el("td", {}, nextStep(row, data.busy)));
     }));
   }
@@ -322,7 +325,7 @@ function render(data) {
         extra.push(el("li", {}, `Google Slides (${langName}): `,
           el("a", {href: deck.url, target: "_blank", rel: "noopener"}, deck.title || "open"),
           " · ",
-          el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗"),
+          el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF"),
           ` (${deck.slide_count} slides, script in the speaker notes)`));
       }
     }
@@ -331,7 +334,7 @@ function render(data) {
     extra.push(el("li", {}, "Google Slides: ",
       el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, o.deck.title || "open"),
       " · ",
-      el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗"),
+      el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF"),
       ` (${o.deck.slide_count} slides, script in the speaker notes)`));
   }
   if (o.can_create_deck) {

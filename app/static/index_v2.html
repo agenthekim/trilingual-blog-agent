@@ -81,6 +81,8 @@
   table.results .title { font-weight:600; min-width:180px; }
   table.results .files a { display:inline-block; }
   table.results .files div { display:flex; align-items:center; gap:4px; min-height:24px; white-space:nowrap; }
+  table.results .slides-col { min-width:140px; }
+  table.results .slides-col div { display:flex; align-items:center; gap:4px; min-height:24px; white-space:nowrap; }
   .badge { font-size:12px; padding:1px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
   .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.warn { color:var(--warn); border-color:var(--warn); }
   .next { display:grid; gap:6px; min-width:250px; }
@@ -189,7 +191,7 @@
   <section class="card hidden" id="langs">
     <div class="tablewrap">
       <table class="results">
-        <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Next step</th></tr></thead>
+        <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Slides</th><th>Next step</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
@@ -358,30 +360,34 @@ function languageRow(row, o, busy) {
   const [label, tone] = STATUS[row.status] || [row.status, ""];
   const editable = !busy && (o.editable || []);
 
+  // 1. Blog files only
   const fileItems = row.files.map((name) => el("div", {},
     el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name),
     editable && editable.includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null));
+  const files = el("td", {class: "files"}, ...fileItems);
 
-  const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
-  if (slideFile) {
-    fileItems.push(el("div", {},
-      el("a", {href: fileUrl(slideFile), target: "_blank", rel: "noopener"}, slideFile),
-      editable && editable.includes(slideFile) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(slideFile)}, "Edit") : null));
-  }
-
+  // 2. Slides column
+  const slideItems = [];
   const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
   if (deck && deck.url) {
     const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
-    fileItems.push(el("div", {style: "margin-top:3px"},
-      el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:500"}, "Google Slides ↗"),
+    slideItems.push(el("div", {},
+      el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides"),
       " · ",
-      el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗")));
+      el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF")));
   }
+  const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
+  if (slideFile) {
+    slideItems.push(el("div", {class: "muted small"},
+      el("a", {href: fileUrl(slideFile), target: "_blank", rel: "noopener"}, slideFile),
+      editable && editable.includes(slideFile) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(slideFile)}, "Edit") : null));
+  }
+  const slidesCol = el("td", {class: "slides-col"}, ...(slideItems.length > 0 ? slideItems : [el("span", {class: "muted"}, "–")]));
 
-  const files = el("td", {class: "files"}, ...fileItems);
+  // 3. Next step column
   const next = el("div", {class: "next"});
   if (row.url) next.append(el("a", {href: row.url, target: "_blank", rel: "noopener"},
-    row.status === "existing_source" ? "Open the original ↗" : row.status === "draft" ? "Open the draft ↗" : "Open the post ↗"));
+    row.status === "existing_source" ? "Open original" : row.status === "draft" ? "Open draft" : "Open post"));
   if (row.status !== "existing_source" && row.status !== "published") {
     if (row.can_post_draft) {
       const update = row.status === "draft";
@@ -399,6 +405,7 @@ function languageRow(row, o, busy) {
     el("td", {class: "title"}, row.title),
     el("td", {}, el("span", {class: "badge " + tone}, label)),
     files,
+    slidesCol,
     el("td", {}, next));
 }
 
@@ -441,9 +448,9 @@ function render(data) {
         const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
         items.push(el("li", {},
           el("span", {}, `Google Slides (${langName}) · `,
-            el("a", {href: deck.url, target: "_blank", rel: "noopener"}, (deck.title || "Open deck") + " ↗"),
+            el("a", {href: deck.url, target: "_blank", rel: "noopener"}, deck.title || "Open deck"),
             " · ",
-            el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗"),
+            el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF"),
             el("span", {class: "muted small"}, `  ${deck.slide_count} slides` + (deck.images_inserted ? `, ${deck.images_inserted} images` : "")))));
       }
     }
@@ -451,9 +458,9 @@ function render(data) {
     const pdfUrl = o.deck.url.replace(/\/edit.*$/, "/export/pdf");
     items.push(el("li", {},
       el("span", {}, "Google Slides · ",
-        el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, (o.deck.title || "Open deck") + " ↗"),
+        el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, o.deck.title || "Open deck"),
         " · ",
-        el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗"),
+        el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF"),
         el("span", {class: "muted small"}, `  ${o.deck.slide_count} slides` + (o.deck.images_inserted ? `, ${o.deck.images_inserted} images` : "")))));
   } else if (o.can_create_deck && !busy) {
     items.push(el("li", {},
