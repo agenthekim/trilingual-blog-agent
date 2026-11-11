@@ -406,11 +406,16 @@ async def create_deck(
         )
         images_failed = 0
         for number, url in images.items():
-            response = await client.post(
-                update_url,
-                headers=headers,
-                json={"requests": [image_request(number, url)]},
-            )
+            # A freshly rendered diagram can be slow the first time Google
+            # fetches it, so a failed image gets one more try.
+            for _attempt in range(2):
+                response = await client.post(
+                    update_url,
+                    headers=headers,
+                    json={"requests": [image_request(number, url)]},
+                )
+                if response.status_code < 400:
+                    break
             images_failed += response.status_code >= 400
         presentation = _checked(
             await client.get(f"{SLIDES_API}/{presentation_id}", headers=headers),
