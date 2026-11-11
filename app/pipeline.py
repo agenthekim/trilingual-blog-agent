@@ -1,33 +1,42 @@
-"""Run the workflow stage by stage without a person typing each prompt.
+"""Run the workflow for the web page and the command-line script.
 
-``ArticlePipeline`` drives the same agent a chat user talks to: it sends the
-stage prompts in order, keeps track of approvals the agent is waiting for, and
-reports the outcome as data. The command-line script and the web UI both use
-it, so the two cannot drift apart.
+``ArticlePipeline`` is one article in one agent session. What needs judgement
+(localizing, planning a talk, a change asked for in words) it asks of the same
+agent a chat user talks to. What needs none (storing the source document,
+finalizing, exporting, creating a deck, posting, the manifest) it does by
+calling the same tool functions directly, as an action a person started: no
+model sits between a person's click and what it does, and the rules in
+``app.policy`` apply on both routes because they live in the tools.
 
-Publishing stays human-approved. The pipeline never answers an approval
-request on its own; the caller passes on a decision a person made.
+After each step the pipeline checks that the step produced what was asked and
+says so when it did not, instead of trusting that a reply meant success.
 """
 
 from __future__ import annotations
 
-import hashlib
+import inspect
 import re
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from google.adk.events import Event, EventActions
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
-from google.adk.sessions.in_memory_session_service import InMemorySessionService
+from google.adk.sessions.base_session_service import (
+    BaseSessionService,
+    GetSessionConfig,
+)
+from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 
-from app import deck_sync, google_slides, state
-from app.agent import app
+from app import deck_sync, google_slides, platforms, policy, state
 from app.markdown_checks import check_fidelity
+from app.observability import log_event
 from app.persistence import get_article_store
+from app.policy import API_PLATFORMS, PLATFORM_NAMES
 from app.redaction import find_secrets
 from app.settings import (
     ALLOWED_ARTICLE_HOSTS,
@@ -36,18 +45,40 @@ from app.settings import (
     PLATFORM_FOR_LANGUAGE,
     workspace_dir,
 )
-from app.tools.slides import parse_slide_plan_markdown, render_slide_plan_markdown
+from app.tools.articles import (
+    fetch_published_article_markdown,
+    finalize_seed_article,
+    save_seed_article_revision,
+    title_of_draft,
+)
+from app.tools.publish import (
+    export_naver_blog_paste_ready_html,
+    finalize_localized_post,
+    markdown_to_inline_styled_html,
+    publish_devto_article_draft,
+    publish_qiita_article_draft,
+    record_manually_posted_url,
+    verify_published_article_urls,
+)
+from app.tools.slides import (
+    compile_artifact_manifest_markdown,
+    create_google_slides_deck_with_speaker_notes,
+    parse_slide_plan_markdown,
+    render_slide_plan_markdown,
+    slide_plan_file,
+    slide_timing_report,
+)
+
+__all__ = ["API_PLATFORMS", "PLATFORM_NAMES", "ArticlePipeline"]
 
 _EDITABLE_FILE = re.compile(r"^(post|slides)\.(ko|en|ja)\.md$")
 MAX_TITLE_CHARS = 120
 USER_ID = "pipeline"
 CONFIRMATION_CALL = "adk_request_confirmation"
-PLATFORM_NAMES = {
-    "qiita": "Qiita",
-    "devto": "DEV Community",
-    "naver_blog": "Naver Blog",
+_POSTING_TOOL = {
+    "qiita": publish_qiita_article_draft,
+    "devto": publish_devto_article_draft,
 }
-API_PLATFORMS = ("qiita", "devto")
 
 # Agents whose output is a whole article or a JSON document. The gate and
 # report agents summarise them, so only their size is logged.
@@ -69,18 +100,19 @@ def _host(url: str) -> str:
     return re.sub(r"^https?://", "", url).split("/", 1)[0].lower().removeprefix("www.")
 
 
-def seed_message(text: str) -> str:
-    """Turn what the user typed into the first message for the agent."""
-    text = text.strip()
-    urls = [u for u in _URL.findall(text) if _host(u) in ALLOWED_ARTICLE_HOSTS]
-    if urls and len(text) <= _MAX_URL_REQUEST_CHARS:
-        if text == urls[0]:
-            return f"Use this already published post as the seed article: {text}"
-        return text
-    return (
-        "Save this draft as the seed article and finalize it; it needs no "
-        "further editing. Work out its language and title from the text.\n\n" + text
-    )
+def classify_source(text: str) -> tuple[str, str]:
+    """What a person handed in: ('url', url), ('request', text) or ('draft', text).
+
+    A bare address of a post on a supported site is read by code. A short
+    message that contains such an address but says more is a request in words
+    and goes to the agent. Everything else is the draft itself and is stored
+    exactly as given.
+    """
+    stripped = text.strip()
+    urls = [u for u in _URL.findall(stripped) if _host(u) in ALLOWED_ARTICLE_HOSTS]
+    if urls and len(stripped) <= _MAX_URL_REQUEST_CHARS:
+        return ("url", stripped) if stripped == urls[0] else ("request", stripped)
+    return "draft", text
 
 
 def project_file(project_id: str, name: str) -> Path | None:
@@ -96,21 +128,13 @@ def project_file(project_id: str, name: str) -> Path | None:
     return path
 
 
-def text_digest(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def is_finalized(session_state: dict[str, Any], language: str) -> bool:
-    """Whether a person finalized exactly the text this language has now."""
-    text = state.article_markdown(session_state, language)
-    mark = (session_state.get(state.FINALIZED_POSTS) or {}).get(language)
-    return bool(text) and mark == text_digest(text)
-
-
 def overview(session_state: dict[str, Any]) -> dict[str, Any]:
     """Describe what exists for the article in this session, as plain data."""
     project_id = session_state.get(state.PROJECT_ID) or ""
-    publications = session_state.get(state.PUBLICATIONS) or {}
+    source = session_state.get(state.SOURCE_LANGUAGE)
+    plans = session_state.get(state.SLIDE_PLANS) or {}
+    decks = session_state.get(state.GOOGLE_SLIDES_DECKS) or {}
+    timing = session_state.get(state.SLIDE_TIMING) or {}
 
     def existing(name: str) -> str | None:
         return name if project_file(project_id, name) else None
@@ -118,11 +142,12 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
     rows = []
     for language in LANGUAGES:
         platform = PLATFORM_FOR_LANGUAGE[language]
-        publication = publications.get(platform) or {}
+        record = policy.publication(session_state, platform)
         has_text = bool(state.article_markdown(session_state, language))
         files = [existing(f"post.{language}.md")]
         if platform == "naver_blog":
             files.append(existing("naver_blog.html"))
+        step = policy.next_step(session_state, language)
         rows.append(
             {
                 "language": language,
@@ -132,88 +157,217 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 else "",
                 "platform": platform,
                 "platform_name": PLATFORM_NAMES[platform],
-                "status": publication.get("state") or "not_posted",
-                "finalized": is_finalized(session_state, language),
-                "url": publication.get("url"),
+                "status": record.get("state") or "not_posted",
+                "finalized": policy.is_finalized(session_state, language),
+                # The one thing to do next for this post; see policy.next_step.
+                "next": step,
+                "url": record.get("url"),
                 "files": [f for f in files if f],
-                "can_post_draft": has_text
-                and platform in API_PLATFORMS
-                and publication.get("state") != "existing_source",
-                "can_record_url": has_text
-                and publication.get("state") != "existing_source",
+                # A post that is neither the article as it was handed in nor
+                # out of the author's hands can be edited here.
+                "can_edit": has_text
+                and language != source
+                and step in ("review", "post", "paste"),
+                "slides_file": existing(slide_plan_file(language))
+                if language in plans
+                else None,
+                "slides_on_time": (timing.get(language) or {}).get("passed"),
+                "deck": decks.get(language),
             }
         )
-    slides = [
-        name for language in LANGUAGES if (name := existing(f"slides.{language}.md"))
-    ]
-    source = session_state.get(state.SOURCE_LANGUAGE)
+    slides = [row["slides_file"] for row in rows if row["slides_file"]]
     editable = [
         f"post.{row['language']}.md"
         for row in rows
-        if row["language"] != source and f"post.{row['language']}.md" in row["files"]
+        if row["can_edit"] and f"post.{row['language']}.md" in row["files"]
     ] + slides
-    deck = session_state.get(state.GOOGLE_SLIDES_DECK)
-    decks = dict(session_state.get("google_slides_decks") or {})
-    if deck and not decks:
-        decks[deck.get("language") or "en"] = deck
     return {
         "project_id": project_id,
         "title": session_state.get(state.SEED_TITLE) or "",
-        "source_language": session_state.get(state.SOURCE_LANGUAGE),
+        "source_language": source,
         "rows": rows,
         "slides": slides,
-        "deck": deck,
-        "decks": decks,
-        "can_create_deck": bool(session_state.get(state.SLIDE_DECK_PLAN)),
+        "decks": dict(decks),
         "editable": editable,
         "manifest": existing("manifest.md"),
     }
 
 
-def _find_hint(value: Any) -> str:
-    if isinstance(value, dict):
-        if isinstance(value.get("hint"), str):
-            return value["hint"]
-        for child in value.values():
-            if hint := _find_hint(child):
-                return hint
-    return ""
+def progress(
+    session_state: dict[str, Any], talk_languages: list[str], wants_decks: bool
+) -> list[dict[str, Any]]:
+    """The steps of a run and whether each is done, for what was asked for.
+
+    Computed from the session and the files alone, so a page shows the same
+    before and after a reload.
+    """
+    project_id = session_state.get(state.PROJECT_ID) or ""
+    targets = session_state.get(state.TARGET_LANGUAGES) or []
+    seeded = bool(session_state.get(state.SEED_MARKDOWN))
+    transformed = bool(targets) and all(
+        session_state.get(state.localized_key(language)) for language in targets
+    )
+    naver = policy.publication(session_state, "naver_blog").get("state")
+    posts_ready = transformed and bool(
+        naver == "existing_source" or project_file(project_id, "naver_blog.html")
+    )
+    steps = [
+        {"name": "Source document", "done": seeded},
+        {"name": "Transform", "done": transformed},
+        {"name": "Prepare posts", "done": posts_ready},
+    ]
+    if talk_languages:
+        plans = session_state.get(state.SLIDE_PLANS) or {}
+        decks = session_state.get(state.GOOGLE_SLIDES_DECKS) or {}
+        steps.append(
+            {
+                "name": "Prepare slides",
+                "done": all(
+                    language in plans and (not wants_decks or language in decks)
+                    for language in talk_languages
+                ),
+            }
+        )
+    steps.append(
+        {"name": "Summarize", "done": bool(project_file(project_id, "manifest.md"))}
+    )
+    return steps
+
+
+@dataclass(frozen=True)
+class Approval:
+    """One request the agent is waiting for a person to answer."""
+
+    id: str
+    tool: str  # the tool that asked
+    hint: str
+    payload: dict[str, Any]
+    call: types.FunctionCall
+
+    def public(self) -> dict[str, Any]:
+        return {"id": self.id, "tool": self.tool, "hint": self.hint}
+
+
+def _approval_from(call: types.FunctionCall) -> Approval:
+    args = dict(call.args or {})
+    original = args.get("originalFunctionCall") or {}
+    confirmation = args.get("toolConfirmation") or {}
+    payload = confirmation.get("payload")
+    return Approval(
+        id=call.id or uuid.uuid4().hex,
+        tool=str(original.get("name") or ""),
+        hint=str(confirmation.get("hint") or "Approve the pending action?"),
+        payload=payload if isinstance(payload, dict) else {},
+        call=call,
+    )
+
+
+class _StateEdits:
+    """Session state as a tool sees it, remembering what the tool wrote."""
+
+    def __init__(self, base: dict[str, Any]) -> None:
+        self._base = base
+        self.delta: dict[str, Any] = {}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key in self.delta:
+            return self.delta[key]
+        return self._base.get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.delta[key] if key in self.delta else self._base[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.delta[key] = value
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.delta or key in self._base
+
+
+@dataclass
+class PersonContext:
+    """What a tool is given when a person, not the model, started it.
+
+    It carries the session state and, for a tool that asks for approval, the
+    approval the person gave with the action itself: pressing "Approve and
+    post" is the approval, so the tool is not paused to ask again.
+    """
+
+    state: _StateEdits
+    tool_confirmation: ToolConfirmation | None = None
+
+    def request_confirmation(self, **_: Any) -> None:
+        raise RuntimeError("A person's action must carry its own approval.")
+
+
+def _failure(result: dict[str, Any]) -> str | None:
+    """Why a tool did not do what was asked, or None when it did."""
+    if result.get("status") == "success" or "passed" in result:
+        return None
+    return str(result.get("message") or f"it ended as '{result.get('status')}'")
 
 
 class ArticlePipeline:
-    """One article, one agent session, driven stage by stage."""
+    """One article, one agent session, driven step by step."""
 
-    def __init__(self, log: Callable[[str], None] = print) -> None:
-        self._sessions = InMemorySessionService()
+    def __init__(
+        self,
+        log: Callable[[str], None] = print,
+        *,
+        session_service: BaseSessionService | None = None,
+        session_id: str | None = None,
+        agent_app: Any = None,
+    ) -> None:
+        if agent_app is None:
+            from app.agent import app as agent_app
+        if session_service is None:
+            # The process-wide service: a SQLite file locally, so a run can be
+            # opened again after the server restarts.
+            from app.app_utils.services import get_session_service
+
+            session_service = get_session_service()
+        self._app = agent_app
+        self._sessions = session_service
         self._runner = Runner(
-            app=app,
+            app=agent_app,
             session_service=self._sessions,
             memory_service=InMemoryMemoryService(),
             auto_create_session=True,
         )
-        self.session_id = uuid.uuid4().hex
+        self.session_id = session_id or uuid.uuid4().hex
         self.log = log
-        self._pending: list[types.FunctionCall] = []
+        self._pending: list[Approval] = []
+        self.last_reply = ""
+
+    async def _session(self, *, events: bool = True) -> Any:
+        config = None if events else GetSessionConfig(num_recent_events=0)
+        found = await self._sessions.get_session(
+            app_name=self._app.name,
+            user_id=USER_ID,
+            session_id=self.session_id,
+            config=config,
+        )
+        if found is None:
+            found = await self._sessions.create_session(
+                app_name=self._app.name, user_id=USER_ID, session_id=self.session_id
+            )
+        return found
 
     async def session_state(self) -> dict[str, Any]:
-        session = await self._sessions.get_session(
-            app_name=app.name, user_id=USER_ID, session_id=self.session_id
-        )
-        return dict(session.state) if session else {}
+        """The state alone; the events, which hold whole articles, are not loaded."""
+        return dict((await self._session(events=False)).state)
 
     async def overview(self) -> dict[str, Any]:
         return overview(await self.session_state())
 
     @property
-    def approval_hints(self) -> list[str]:
+    def approvals(self) -> list[dict[str, Any]]:
         """What the agent is waiting for a person to approve, if anything."""
-        return [
-            _find_hint(dict(call.args or {})) or "Approve the pending action?"
-            for call in self._pending
-        ]
+        return [approval.public() for approval in self._pending]
 
     async def _send(self, content: types.Content) -> None:
         self._pending = []
+        self.last_reply = ""
         async for event in self._runner.run_async(
             user_id=USER_ID, session_id=self.session_id, new_message=content
         ):
@@ -223,14 +377,15 @@ class ArticlePipeline:
                 if part.function_call:
                     name = part.function_call.name
                     if name == CONFIRMATION_CALL:
-                        self._pending.append(part.function_call)
+                        self._pending.append(_approval_from(part.function_call))
                     elif name != "transfer_to_agent":
                         self.log(f"[{event.author}] tool: {name}")
                 elif part.text and not part.thought and event.is_final_response():
                     if event.author.startswith(_BULK_WRITERS):
                         self.log(f"[{event.author}] wrote {len(part.text)} characters")
                     else:
-                        self.log(f"[{event.author}]\n{part.text.strip()}")
+                        self.last_reply = part.text.strip()
+                        self.log(f"[{event.author}]\n{self.last_reply}")
 
     async def say(self, text: str) -> None:
         """Send one user message and run the agent until it stops."""
@@ -240,144 +395,323 @@ class ArticlePipeline:
             types.Content(role="user", parts=[types.Part.from_text(text=text)])
         )
 
-    async def answer_approvals(
-        self, confirmed: bool, payload: dict[str, Any] | None = None
-    ) -> None:
-        """Pass a person's yes/no on to every approval the agent is waiting for.
+    async def answer_approval(
+        self, approval_id: str, confirmed: bool, payload: dict[str, Any] | None = None
+    ) -> int:
+        """Pass a person's answer on to the one request it was given for.
 
-        ``payload`` carries what the person chose along with the yes, for
-        example ``{"visibility": "public"}`` for a post.
+        An answer is never applied to another request that happens to be
+        waiting. The agent takes all answers of a turn at once, so every other
+        pending request is declined; the number of those is returned so the
+        caller can say so. Raises ValueError when no such request is waiting.
         """
-        if not self._pending:
-            return
-        chosen = f" ({payload})" if confirmed and payload else ""
-        self.log(f">>> approval: {'yes' if confirmed else 'no'}{chosen}")
-        response: dict[str, Any] = {"confirmed": confirmed}
-        if confirmed and payload:
-            response["payload"] = payload
-        parts = [
-            types.Part(
+        chosen = next((a for a in self._pending if a.id == approval_id), None)
+        if chosen is None:
+            raise ValueError("That approval request is no longer waiting.")
+        others = [a for a in self._pending if a.id != approval_id]
+        self.log(
+            f">>> approval of {chosen.tool or 'a request'}: "
+            f"{'yes' if confirmed else 'no'}"
+            + (f" ({payload})" if confirmed and payload else "")
+            + (f"; {len(others)} other request(s) declined" if others else "")
+        )
+        log_event(
+            "approval answered by a person",
+            event_phase="HUMAN_APPROVAL",
+            tool=chosen.tool,
+            confirmed=confirmed,
+            declined_others=len(others),
+        )
+
+        def answer(approval: Approval, yes: bool) -> types.Part:
+            response: dict[str, Any] = {"confirmed": yes}
+            if yes and payload:
+                response["payload"] = payload
+            return types.Part(
                 function_response=types.FunctionResponse(
-                    id=call.id, name=call.name, response=response
+                    id=approval.call.id, name=approval.call.name, response=response
                 )
             )
-            for call in self._pending
-        ]
+
+        parts = [answer(chosen, confirmed), *(answer(a, False) for a in others)]
         await self._send(types.Content(role="user", parts=parts))
+        return len(others)
+
+    async def act(
+        self, tool: Callable[..., Any], *args: Any, approval: Any = None, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Run a tool function as an action a person started; no model is involved.
+
+        ``approval`` is the payload of the approval the person gave with the
+        action (an empty dict for a plain yes); leave it None for tools that
+        ask for none. What the tool wrote to the state is recorded in the
+        session as one event.
+        """
+        current = await self.session_state()
+        context = PersonContext(
+            _StateEdits(current),
+            None
+            if approval is None
+            else ToolConfirmation(confirmed=True, payload=approval),
+        )
+        name = tool.__name__
+        log_event("tool call for a person's action", event_phase="INTENT", tool=name)
+        result = tool(*args, tool_context=context, **kwargs)
+        if inspect.isawaitable(result):
+            result = await result
+        if context.state.delta:
+            await self._update_state(context.state.delta)
+        failure = _failure(result)
+        log_event(
+            "tool call for a person's action",
+            event_phase="OUTCOME",
+            tool=name,
+            status=result.get("status"),
+            error_code=result.get("error_code"),
+        )
+        self.log(f">>> {name}: " + (f"not done. {failure}" if failure else "done"))
+        return result
+
+    # --- the run ------------------------------------------------------------
+
+    async def _store_source(self, source_text: str, notes: list[str]) -> str | None:
+        """Stage 1. Returns a sentence when no usable seed came out of it."""
+        kind, text = classify_source(source_text)
+        if kind == "url":
+            result = await self.act(fetch_published_article_markdown, text)
+            if failure := _failure(result):
+                return f"The post could not be read. {failure}"
+            if not result.get("seed_finalized"):
+                # Naver has no Markdown export; the run goes on with what the
+                # page gave, and the person is told to look at it.
+                await self.act(finalize_seed_article)
+                notes.append(
+                    "The text was rebuilt from the Naver page, so headings, lists, "
+                    "images and links may be missing. Check the Korean file "
+                    "before using the results."
+                )
+            return None
+        if kind == "request":
+            await self.say(text)
+            current = await self.session_state()
+            if not current.get(state.SEED_MARKDOWN):
+                return (
+                    "No article was stored. See the agent's reply in the activity log."
+                )
+            if not current.get(state.SEED_FINALIZED):
+                await self.act(finalize_seed_article)
+            return None
+        # A draft is stored as it was handed in. No model retypes it.
+        result = await self.act(
+            save_seed_article_revision,
+            title=title_of_draft(text),
+            markdown=text,
+            source_language=platforms.guess_language(text),
+            code_mode="inline_markdown" if "```" in text else "none",
+            code_repo_url="",
+            finalized=True,
+        )
+        if failure := _failure(result):
+            return f"The draft could not be stored. {failure}"
+        return None
 
     async def run_stages(
         self,
         source_text: str,
         talk_minutes: int,
-        talk_language: str | list[str] = "en",
+        talk_languages: list[str] | None = None,
         audience: str = "software engineers",
         create_deck: bool = False,
-        talk_languages: list[str] | None = None,
     ) -> str | None:
-        """Seed, localize, export, plan the talk, compile the manifest.
+        """Source document, localization, export, talks, manifest.
 
-        Returns None on success or a sentence saying what did not happen.
-        Nothing is posted to Qiita or DEV Community here. ``create_deck`` is
-        the person's approval, given with the run options, to create
-        Google Slides files in their own Drive from the slide plans; without it
-        the agent's approval request is left for them to answer.
+        Returns None when everything asked for was done, else sentences
+        saying what was not or what the person should look at. Nothing is
+        posted to Qiita or DEV Community here. ``create_deck`` is the person's
+        approval, given with the run options, to create one Google Slides
+        file per selected language in their own Drive.
         """
-        await self.say(seed_message(source_text))
-        current = await self.session_state()
-        if not current.get(state.SEED_MARKDOWN):
-            return "No seed article was saved. See the agent's reply above."
-        if not current.get(state.SEED_FINALIZED):
-            await self.say("The seed is final. Finalize it.")
+        notes: list[str] = []
+        if stopped := await self._store_source(source_text, notes):
+            return stopped
 
         await self.say("Localize it into the other two languages.")
         current = await self.session_state()
+        targets = current.get(state.TARGET_LANGUAGES) or []
+        unwritten = [
+            LANGUAGE_NAMES[language]
+            for language in targets
+            if not current.get(state.localized_key(language))
+        ]
+        if unwritten:
+            return (
+                f"No {' or '.join(unwritten)} text was written, so nothing else "
+                "was done. See the agent's reply in the activity log."
+            )
+        report = current.get(state.FIDELITY_REPORT) or {}
         failed = [
-            language
-            for language, report in (current.get(state.FIDELITY_REPORT) or {}).items()
-            if not report.get("passed")
+            LANGUAGE_NAMES[language]
+            for language in targets
+            if not (report.get(language) or {}).get("passed")
         ]
         if failed:
             return (
-                f"The structure check failed for {failed}; nothing was exported. "
-                "Review the files before going on."
+                f"The structure check failed for {' and '.join(failed)}, so nothing "
+                "was exported and no slides were made. Review the files; the "
+                "activity log lists what differs."
             )
 
-        naver = (current.get(state.PUBLICATIONS) or {}).get("naver_blog") or {}
-        if naver.get("state") != "existing_source":
-            await self.say("Export the Naver Blog HTML.")
-        problem = None
-        if talk_languages is not None:
-            langs = [code for code in talk_languages if code in LANGUAGES]
-        elif isinstance(talk_language, list):
-            langs = [code for code in talk_language if code in LANGUAGES]
-        elif talk_language:
-            langs = [talk_language]
-        else:
-            langs = ["en", "ko", "ja"]
+        if policy.publication(current, "naver_blog").get("state") != "existing_source":
+            if failure := _failure(await self.act(export_naver_blog_paste_ready_html)):
+                notes.append(f"The Naver Blog file was not written. {failure}")
 
-        if talk_minutes > 0 and langs:
-            for lang in langs:
-                await self.say(
-                    f"Prepare a {talk_minutes} minute talk in language "
-                    f"'{lang}'. Audience: {audience}."
-                )
-                current = await self.session_state()
-                if create_deck and current.get(state.SLIDE_DECK_PLAN):
-                    await self.request_slides_deck()
-                    if self.approval_hints:
-                        self.log(
-                            f">>> approval ({lang} deck): yes (given in advance with the run options)"
-                        )
-                        await self.answer_approvals(True)
-                    if not (await self.session_state()).get(state.GOOGLE_SLIDES_DECK):
-                        problem = (
-                            f"Everything else finished, but the Google Slides deck ({lang}) was "
-                            "not created. See the agent's reply in the activity log."
-                        )
-        await self.say("Compile the artifact manifest.")
-        return problem
+        wanted = list(dict.fromkeys(talk_languages or []))
+        for language in wanted if talk_minutes > 0 else []:
+            notes += await self._prepare_talk(
+                language, talk_minutes, audience, create_deck
+            )
+        await self.act(compile_artifact_manifest_markdown)
+        return " ".join(notes) or None
 
-    async def request_draft(self, platform: str, tags: list[str]) -> None:
-        """Ask the agent to create or update a draft; it stops at the approval request."""
-        language = LANGUAGE_NAMES[
-            next(lang for lang, p in PLATFORM_FOR_LANGUAGE.items() if p == platform)
-        ]
+    async def _prepare_talk(
+        self, language: str, minutes: int, audience: str, create_deck: bool
+    ) -> list[str]:
+        """Plan one language's talk and, if approved, create its deck."""
+        name = LANGUAGE_NAMES[language]
+        if language not in LANGUAGES:
+            return [f"'{language}' is not a language slides can be made in."]
         await self.say(
-            f"Create the {language} draft on {PLATFORM_NAMES[platform]} from the "
-            f"current text, or update the draft if one exists. Tags: {', '.join(tags)}."
+            f"Prepare a {minutes} minute talk in language '{language}'. "
+            f"Audience: {audience}."
         )
-
-    async def finalize_post(self, language: str) -> dict[str, Any]:
-        """Record that a person has reviewed a localized post and calls it final.
-
-        What is remembered is a digest of the text, so any later change to the
-        text, by a person or by the agent, makes the post unfinished again
-        without anyone having to remember to say so. Text that cannot be
-        posted because it holds credential-looking values cannot be finalized.
-        """
         current = await self.session_state()
-        text = state.article_markdown(current, language)
-        if not text or language == current.get(state.SOURCE_LANGUAGE):
-            raise ValueError("There is no localized post in this language to finalize.")
-        if findings := find_secrets(text):
-            raise ValueError(
-                "The text contains credential-looking values and cannot be "
-                f"posted: {[str(finding) for finding in findings[:5]]}."
+        brief = current.get(state.PRESENTATION_BRIEF) or {}
+        plan = (current.get(state.SLIDE_PLANS) or {}).get(language)
+        if not plan or brief.get("language") != language:
+            return [
+                f"No {name} slide plan was made. See the agent's reply in the "
+                "activity log."
+            ]
+        notes = []
+        timing = (current.get(state.SLIDE_TIMING) or {}).get(language) or {}
+        if not timing.get("passed"):
+            notes.append(
+                f"The {name} slide plan missed the one-slide-per-minute target "
+                "after two attempts; its speaker notes say how long each slide runs."
             )
-        marks = dict(current.get(state.FINALIZED_POSTS) or {})
-        marks[language] = text_digest(text)
-        await self._update_state({state.FINALIZED_POSTS: marks})
+        if create_deck:
+            self.log(f">>> {name} deck: approved in advance with the run options")
+            if failure := await self.create_deck(language, summarize=False):
+                notes.append(failure)
+        return notes
+
+    # --- actions a person starts on the page ---------------------------------
+
+    async def summarize(self) -> None:
+        await self.act(compile_artifact_manifest_markdown)
+
+    async def post(self, platform: str, tags: list[str], public: bool) -> str | None:
+        """Send a finalized post, as the person who approved it chose.
+
+        Returns None when it was sent, else why it was not.
+        """
+        log_event(
+            "publication approved by a person",
+            event_phase="HUMAN_APPROVAL",
+            platform=platform,
+            visibility="public" if public else "draft",
+        )
+        result = await self.act(
+            _POSTING_TOOL[platform],
+            tags,
+            approval={"visibility": "public" if public else "draft"},
+        )
+        if failure := _failure(result):
+            return f"Nothing was posted on {PLATFORM_NAMES[platform]}. {failure}"
+        await self.summarize()
+        return None
+
+    async def create_deck(self, language: str, summarize: bool = True) -> str | None:
+        """Create the deck of one language, approved by a person. None when created."""
+        log_event(
+            "slides deck approved by a person",
+            event_phase="HUMAN_APPROVAL",
+            language=language,
+        )
+        result = await self.act(
+            create_google_slides_deck_with_speaker_notes, language, approval={}
+        )
+        if failure := _failure(result):
+            return (
+                f"The {LANGUAGE_NAMES.get(language, language)} Google Slides deck "
+                f"was not created. {failure}"
+            )
+        if summarize:
+            await self.summarize()
+        return None
+
+    async def record_posted_url(self, platform: str, url: str) -> str | None:
+        """Record where a person posted by hand, then check that it answers."""
+        result = await self.act(record_manually_posted_url, platform, url)
+        if failure := _failure(result):
+            return f"The address was not recorded. {failure}"
+        checks = (await self.act(verify_published_article_urls)).get("checks") or []
+        await self.summarize()
+        problem = next(
+            (
+                check.get("problem") or "no answer"
+                for check in checks
+                if check.get("platform") == platform and not check.get("reachable")
+            ),
+            None,
+        )
+        if problem:
+            return (
+                "The address was recorded, but it did not answer when checked "
+                f"({problem}). Open it to make sure it is right."
+            )
+        return None
+
+    async def finalize_post(
+        self, language: str, acknowledge_findings: bool = False
+    ) -> dict[str, Any]:
+        """Record that a person has reviewed a post and calls it final.
+
+        Text with credential-looking values is finalized only when the person
+        was shown the findings and said they are not real: the first request
+        comes back with ``needs_acknowledgement`` and the findings, and
+        nothing is recorded. Other refusals raise ValueError.
+        """
+        result = await self.act(
+            finalize_localized_post,
+            language,
+            approval={"acknowledge_findings": acknowledge_findings},
+        )
+        current = await self.session_state()
+        if result.get("error_code") == "SECRET_IN_ARTICLE":
+            return {
+                "language": language,
+                "finalized": False,
+                "needs_acknowledgement": True,
+                "findings": policy.findings(current, language),
+            }
+        if failure := _failure(result):
+            raise ValueError(failure)
         self.log(f">>> {LANGUAGE_NAMES[language]} post finalized by a person")
+        if (
+            PLATFORM_FOR_LANGUAGE[language] == "naver_blog"
+            and policy.publication(current, "naver_blog").get("state")
+            != "existing_source"
+        ):
+            # The paste file is written from the text as finalized.
+            await self.act(export_naver_blog_paste_ready_html)
         check = (current.get(state.FIDELITY_REPORT) or {}).get(language)
         return {"language": language, "finalized": True, "check": check}
 
     async def _update_state(self, delta: dict[str, Any]) -> None:
-        """Record a change a person made, outside any agent turn."""
-        session = await self._sessions.get_session(
-            app_name=app.name, user_id=USER_ID, session_id=self.session_id
-        )
+        """Record a change made outside any agent turn."""
         await self._sessions.append_event(
-            session,
+            await self._session(),
             Event(
                 author="human_editor",
                 invocation_id=f"edit-{uuid.uuid4().hex[:8]}",
@@ -407,9 +741,7 @@ class ArticlePipeline:
                 "secrets": [],
             }
         path.write_text(render_slide_plan_markdown(plan), encoding="utf-8")
-        current = (await self.session_state()).get(state.SLIDE_DECK_PLAN) or {}
-        if current.get("language") == language:
-            await self._update_state({state.SLIDE_DECK_PLAN: plan.model_dump()})
+        await self._update_state(await self._plan_of_record(language, plan))
         self.log(f">>> edited {path.name} by hand ({len(plan.slides)} slides)")
         return {
             "saved": path.name,
@@ -467,8 +799,8 @@ class ArticlePipeline:
                 language: deck_sync.agreed(file_view, deck_view, baseline),
             }
         }
-        if (current.get(state.SLIDE_DECK_PLAN) or {}).get("language") == language:
-            delta[state.SLIDE_DECK_PLAN] = plan.model_dump()
+        if direction == "pull":
+            delta.update(await self._plan_of_record(language, plan))
         await self._update_state(delta)
         where = "deck from the file" if direction == "push" else "file from the deck"
         self.log(
@@ -478,16 +810,19 @@ class ArticlePipeline:
         result["applied"] = True
         return result
 
-    async def request_slides_deck(self) -> None:
-        """Ask for a Google Slides deck; the agent stops at the approval request."""
-        await self.say("Create the Google Slides deck from the slide plan.")
-
-    async def record_posted_url(self, platform: str, url: str) -> None:
-        await self.say(
-            f"I posted the article on {PLATFORM_NAMES[platform]} by hand. Record this "
-            f"URL and verify it: {url}"
-        )
-        await self.say("Compile the artifact manifest.")
+    async def _plan_of_record(self, language: str, plan: Any) -> dict[str, Any]:
+        """State change that makes ``plan`` the plan of its language, with its timing."""
+        current = await self.session_state()
+        timing = dict(current.get(state.SLIDE_TIMING) or {})
+        expected = (timing.get(language) or {}).get("expected_slide_count")
+        timing[language] = slide_timing_report(plan, int(expected or len(plan.slides)))
+        return {
+            state.SLIDE_PLANS: {
+                **(current.get(state.SLIDE_PLANS) or {}),
+                language: plan.model_dump(),
+            },
+            state.SLIDE_TIMING: timing,
+        }
 
     async def save_edit(
         self, name: str, markdown: str, title: str | None = None
@@ -495,10 +830,12 @@ class ArticlePipeline:
         """Save a person's edit of a generated file and make the agent use it.
 
         A localized article is stored in the session state, the article store
-        and the file, so a later draft is created from the edited text. The
-        structure check is run again and returned; it does not block the save,
-        because the person editing has the final say. The seed itself is not
-        editable here: changing it would invalidate both localizations.
+        and the file, so a later post is made from the edited text. Changing
+        the text or the title undoes the post's finalization (the digest no
+        longer matches). The structure check is run again and returned; it
+        does not block the save, because the person editing has the final
+        say. The seed itself is not editable here: changing it would
+        invalidate both localizations.
         """
         current = await self.session_state()
         project_id = current.get(state.PROJECT_ID) or ""
@@ -535,8 +872,6 @@ class ArticlePipeline:
         get_article_store().add_version(project_id, language, "edited", text)
         path.write_text(text, encoding="utf-8")
         if language == "ko" and project_file(project_id, "naver_blog.html"):
-            from app.tools.publish import markdown_to_inline_styled_html
-
             (workspace_dir() / project_id / "naver_blog.html").write_text(
                 markdown_to_inline_styled_html(text), encoding="utf-8"
             )

@@ -112,22 +112,20 @@
   #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--text); color:var(--bg);
     padding:8px 14px; border-radius:6px; max-width:90vw; z-index:10; }
   footer { color:var(--muted); font-size:12.5px; text-align:center; }
-  dialog.modal { border:1px solid #d0d7de; border-radius:12px; padding:0; background:#ffffff; box-shadow:0 20px 40px rgba(15,23,42,.2), 0 0 0 1px rgba(0,0,0,.04); max-width:480px; width:92%; color:var(--text); }
-  dialog.modal::backdrop { background:rgba(15,23,42,.5); backdrop-filter:blur(4px); }
-  .modal-card { padding:22px 24px; }
-  .modal-head { display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid #edf2f7; }
-  .modal-head h3 { font-size:16px; font-weight:600; color:#0f172a; margin:0; }
-  .btn-close { border:0; background:transparent; font-size:18px; color:#64748b; cursor:pointer; border-radius:6px; padding:2px 8px; line-height:1; }
-  .btn-close:hover { background:#f1f5f9; color:#0f172a; }
-  .btn-settings { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; font-size:13px; font-weight:500; color:var(--text); background:#ffffff; border:1px solid var(--line); border-radius:6px; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.04); }
-  .btn-settings:hover { background:#f6f8fa; border-color:#bbc0c5; }
-  .platform-row { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
+  .btn-settings { margin-top:4px; }
+  .platform-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 14px;
+    background:var(--soft); border:1px solid var(--line); border-radius:8px; }
   .platform-meta { display:flex; flex-direction:column; gap:2px; }
-  .platform-lang { font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.04em; }
-  .platform-name { font-size:13.5px; font-weight:600; color:#0f172a; }
-  .platform-tag { font-size:11.5px; font-weight:500; padding:2px 9px; border-radius:999px; border:1px solid; white-space:nowrap; }
-  .platform-tag.auto { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
-  .platform-tag.manual { background:#fefce8; color:#854d0e; border-color:#fef08a; }
+  .platform-lang { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; }
+  .platform-name { font-size:13.5px; font-weight:600; }
+  .platform-tags { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .platform-tag { font-size:11.5px; font-weight:500; padding:2px 9px; border-radius:999px; border:1px solid var(--line);
+    color:var(--muted); white-space:nowrap; }
+  .platform-tag.ok { color:var(--ok); border-color:var(--ok); }
+  .platform-tag.warn { color:var(--warn); border-color:var(--warn); }
+  #settingsRows { display:grid; gap:8px; }
+  .reply { margin-top:10px; padding:8px 12px; border-left:3px solid var(--accent); background:var(--soft); border-radius:0 6px 6px 0;
+    white-space:pre-wrap; overflow-wrap:anywhere; }
 </style>
 </head>
 <body>
@@ -137,7 +135,7 @@
       <h1>Trilingual Blog Agent</h1>
       <p>Automatically transform an article in one language into blog posts and presentation slides across three languages.</p>
     </div>
-    <button type="button" id="openSettings" class="btn-settings" style="margin-top:4px">
+    <button type="button" id="openSettings" class="btn-settings">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"></circle>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -221,13 +219,13 @@
       <input type="text" id="message" placeholder="Ask the agent for a change (e.g. replace examples, adjust tone)...">
       <button id="send" type="button" class="primary">Send</button>
     </div>
+    <div class="reply hidden" id="reply" aria-live="polite"></div>
     <details style="margin-top:14px" id="logBox">
       <summary>Agent activity log</summary>
       <pre id="log"></pre>
     </details>
   </section>
 
-  <footer>New layout · <a href="/v1">switch to the classic layout</a></footer>
 </main>
 
 <dialog id="confirmDialog">
@@ -243,51 +241,15 @@
   </div>
 </dialog>
 
-<dialog id="settingsModal" class="modal" aria-labelledby="settingsTitle">
-  <div class="modal-card">
-    <div class="modal-head">
-      <h3 id="settingsTitle">Publishing platforms</h3>
-      <button type="button" class="btn-close" onclick="$('settingsModal').close()">✕</button>
-    </div>
-    <div class="body" style="margin-top:14px">
-      <p class="muted small" style="margin:0 0 12px">Configured publishing destinations for each target language.</p>
-      
-      <div style="display:grid; gap:8px">
-        <div class="platform-row">
-          <div class="platform-meta">
-            <span class="platform-lang">Korean</span>
-            <span class="platform-name">Naver Blog</span>
-          </div>
-          <span class="platform-tag manual">Paste-ready HTML</span>
-        </div>
-
-        <div class="platform-row">
-          <div class="platform-meta">
-            <span class="platform-lang">English</span>
-            <span class="platform-name">DEV Community</span>
-          </div>
-          <span class="platform-tag auto">Draft API</span>
-        </div>
-
-        <div class="platform-row">
-          <div class="platform-meta">
-            <span class="platform-lang">Japanese</span>
-            <span class="platform-name">Qiita</span>
-          </div>
-          <span class="platform-tag auto">Draft API</span>
-        </div>
-      </div>
-
-      <div style="margin-top:14px; padding:10px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px">
-        <div style="font-size:12px; font-weight:600; color:#166534; margin-bottom:3px">✓ Authenticated via Google Cloud Secret Manager</div>
-        <div style="font-size:11.5px; color:#15803d; line-height:1.4">
-          Keys for <code>QIITA_API_TOKEN</code>, <code>DEVTO_API_KEY</code>, and <code>GOOGLE_SLIDES_OAUTH</code> are securely loaded server-side.
-        </div>
-      </div>
-    </div>
-    <div style="display:flex; justify-content:flex-end; margin-top:16px; padding-top:12px; border-top:1px solid #edf2f7">
-      <button type="button" class="btn-settings" style="background:#0969da; color:#fff; border-color:#0969da; font-weight:600" onclick="$('settingsModal').close()">Done</button>
-    </div>
+<dialog id="settingsModal" aria-labelledby="settingsTitle">
+  <div class="body">
+    <h2 id="settingsTitle">Publishing platforms</h2>
+    <p class="muted small" style="margin:0">Each language goes to one platform. This is fixed; what is set up on this server is shown next to it.</p>
+    <div id="settingsRows"></div>
+    <p class="muted small" id="settingsNote" style="margin:0"></p>
+  </div>
+  <div class="foot">
+    <button type="button" class="primary" id="closeSettings">Done</button>
   </div>
 </dialog>
 
@@ -299,10 +261,11 @@ const STATUS = {
   not_posted: ["Not posted", ""], exported_for_manual_post: ["Ready to paste", "warn"],
   draft: ["Draft created", "ok"], published: ["Published", "ok"], existing_source: ["Original", "ok"],
 };
-const SETTINGS_KEY = "tba.settings";
-let jobId = null, timer = null, state = null;
+const SETTINGS_KEY = "tba.settings", LAST_RUN_KEY = "tba.lastRun";
+const RUN_ID = /^[0-9a-f]{32}$/;
+let jobId = null, timer = null, state = null, missed = 0;
 let busySince = null, lastLogAt = Date.now(), lastLogLength = 0, liveKey = null;
-const typed = {};  // values typed into cards survive re-rendering
+const typed = {};  // values typed into the table survive re-rendering
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -329,7 +292,9 @@ async function api(path, body, method) {
   try { data = await response.json(); } catch (e) {}
   if (!response.ok) {
     const detail = data && data.detail;
-    throw new Error(typeof detail === "string" ? detail : detail ? detail.map((d) => d.msg).join("; ") : response.statusText);
+    const error = new Error(typeof detail === "string" ? detail : detail ? detail.map((d) => d.msg).join("; ") : response.statusText);
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
@@ -340,7 +305,7 @@ const fileUrl = (name) => `/api/jobs/${jobId}/files/${encodeURIComponent(name)}`
 function confirmAction({title, summary, note, okLabel, choices}) {
   return new Promise((resolve) => {
     $("confirmTitle").textContent = title;
-    $("confirmSummary").replaceChildren(...summary.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+    $("confirmSummary").replaceChildren(...(summary || []).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
     $("confirmChoices").replaceChildren(...(choices || []).map((choice, i) => el("label", {class: "choice"},
       el("input", {type: "radio", name: "confirmChoice", value: choice.value, checked: i === 0}),
       el("span", {}, el("strong", {}, choice.label), el("span", {class: "muted"}, " · " + choice.hint)))));
@@ -361,21 +326,7 @@ function confirmAction({title, summary, note, okLabel, choices}) {
 
 async function act(path, body) {
   try { await api(`/api/jobs/${jobId}/${path}`, body); busySince = Date.now(); await poll(); }
-  catch (error) { toast(error.message); }
-}
-
-function steps(o) {
-  const targets = o.rows.filter((r) => r.language !== o.source_language);
-  const localized = targets.length > 0 && targets.every((r) => r.title);
-  const wantsSlides = o.can_create_deck || o.slides.length > 0 || Number(state.requestedMinutes || 0) > 0;
-  const list = [
-    ["Source document", Boolean(o.title)],
-    ["Transform", localized],
-    ["Prepare posts", localized && Boolean(o.manifest || o.slides.length || o.rows.some((r) => r.files.includes("naver_blog.html")))],
-  ];
-  if (wantsSlides) list.push(["Prepare slides", o.slides.length > 0 && (!state.wantsDeck || Boolean(o.deck) || Boolean(o.manifest))]);
-  list.push(["Summarize", Boolean(o.manifest)]);
-  return list;
+  catch (error) { toast(error.message, 6000); }
 }
 
 function keep(key, attrs) {
@@ -384,47 +335,46 @@ function keep(key, attrs) {
   return input;
 }
 
-function languageRow(row, o, busy) {
-  const [label, tone] = STATUS[row.status] || [row.status, ""];
+function languageRow(row, busy) {
+  // "Ready to paste" would be untrue for a text nobody has finalized yet.
+  const shown = row.status === "exported_for_manual_post" && row.next === "review" ? "not_posted" : row.status;
+  const [label, tone] = STATUS[shown] || [shown, ""];
 
-  // 1. Blog files only. Editing starts from the preview a link opens.
-  const fileItems = row.files.map((name) => el("div", {},
-    el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name)));
-  const files = el("td", {class: "files"}, ...fileItems);
+  // Files: the posts. Editing starts from the preview a link opens.
+  const files = el("td", {class: "files"}, ...row.files.map((name) => el("div", {},
+    el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name))));
 
-  // 2. Slides column
+  // Slides: the deck and the speaker notes of this language, nothing of another.
   const slideItems = [];
-  const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
-  if (deck && deck.url) {
-    slideItems.push(el("div", {},
-      el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
-  }
-  const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
-  if (slideFile) {
+  if (row.deck && row.deck.url) slideItems.push(el("div", {},
+    el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
+  if (row.slides_file) {
     slideItems.push(el("div", {class: "muted small"},
-      el("a", {href: fileUrl(slideFile), target: "_blank", rel: "noopener", title: slideFile}, "Speaker notes")));
+      el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, "Speaker notes")));
+    if (!(row.deck && row.deck.url)) slideItems.push(el("div", {},
+      el("button", {type: "button", class: "ghost", disabled: busy, onclick: () => createDeck(row)}, "Create deck…")));
   }
   const slidesCol = el("td", {class: "slides-col"}, ...(slideItems.length > 0 ? slideItems : [el("span", {class: "muted"}, "–")]));
 
-  // 3. Next step: review, finalize, approve, post. Each step shows only when it is the next one.
+  // Next step: review, finalize, approve, post. Only the one that is next is shown.
   const next = el("div", {class: "next"});
   const link = (text) => el("a", {href: row.url, target: "_blank", rel: "noopener"}, text);
-  if (row.status === "existing_source") next.append(link("Open original"));
-  else if (row.status === "published") next.append(link("Open post"));
+  const drafted = row.status === "draft";
+  if (row.next === "original") next.append(link("Open original"));
+  else if (row.next === "public") next.append(link("Open post"));
   else {
-    const drafted = row.status === "draft";
     if (row.url) next.append(link(drafted ? "Open draft" : "Open post"));
-    if (!row.finalized) {
+    if (row.next === "review") {
       next.append(el("span", {class: "muted small"}, drafted
-          ? "The text changed after the draft was made. Finalize it to update the post."
+          ? "The title or text changed after the draft was made. Finalize it to update the post."
           : `Review post.${row.language}.md and edit it if needed. Finalize it when it is ready.`),
         el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy, onclick: () => finalize(row)}, "Finalize")));
-    } else if (row.can_post_draft) {
+    } else if (row.next === "post") {
       const tags = keep(`tags:${row.platform}`, {placeholder: "Tags: ai, agents", "aria-label": `Tags for ${row.platform_name}`});
       next.append(el("div", {class: "inline"}, tags, el("button", {class: "primary", type: "button", disabled: busy,
         onclick: () => postDraft(row, tags.value, drafted)}, drafted ? "Update post…" : "Post…")),
         el("span", {class: "muted small"}, "Finalized. You choose draft or public when you approve."));
-    } else {
+    } else if (row.next === "paste") {
       const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
       next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL")),
         el("span", {class: "muted small"}, "Finalized. Paste naver_blog.html into the Naver editor, post, then register the URL."));
@@ -446,47 +396,54 @@ function render(data) {
   if (data.log.length !== lastLogLength) { lastLogLength = data.log.length; lastLogAt = Date.now(); $("log").textContent = data.log.join("\n\n"); $("log").scrollTop = $("log").scrollHeight; }
 
   $("progress").classList.remove("hidden");
-  $("articleTitle").textContent = o.title || "Reading the article…";
-  const list = steps(o);
-  const firstOpen = list.findIndex(([, done]) => !done);
-  $("steps").replaceChildren(...list.map(([name, done], i) =>
-    el("li", {class: done ? "done" : (busy && i === firstOpen ? "now" : "")}, (done ? "✓ " : "") + name)));
+  $("articleTitle").textContent = o.title || (busy ? "Reading the source document…" : "No article was stored");
+  // The server says which steps are done, judged against what this run was asked for.
+  const firstOpen = data.progress.findIndex((step) => !step.done);
+  $("steps").replaceChildren(...data.progress.map((step, i) =>
+    el("li", {class: step.done ? "done" : (busy && i === firstOpen ? "now" : "")}, (step.done ? "✓ " : "") + step.name)));
   drawLive();
 
   const notices = [];
   if (data.error) notices.push(el("div", {class: "notice err"}, el("span", {class: "grow"}, "Stopped with an error: " + data.error)));
   if (data.notice) notices.push(el("div", {class: "notice note"}, el("span", {class: "grow"}, data.notice)));
-  if (!busy) for (const hint of data.approvals) notices.push(el("div", {class: "notice ask"},
-    el("span", {class: "grow"}, hint),
-    el("button", {type: "button", onclick: () => act("approval", {confirmed: false})}, "Decline"),
-    el("button", {type: "button", class: "primary", onclick: () => act("approval", {confirmed: true})}, "Approve")));
-  const hasDeck = Boolean(o.deck) || Object.keys(o.decks || {}).length > 0;
-  if (!busy && o.can_create_deck && !hasDeck && data.approvals.length === 0) notices.push(el("div", {class: "notice note"},
-    el("span", {class: "grow"}, "No Google Slides deck was created in this run."),
-    el("button", {type: "button", onclick: createDeck}, "Create it now…")));
+  if (!busy) for (const approval of data.approvals) notices.push(el("div", {class: "notice ask"},
+    el("span", {class: "grow"}, approval.hint, data.approvals.length > 1
+      ? el("div", {class: "muted small"}, "The agent takes one answer at a time: answering this one declines the others.") : null),
+    el("button", {type: "button", onclick: () => act("approval", {id: approval.id, confirmed: false})}, "Decline"),
+    el("button", {type: "button", class: "primary", onclick: () => act("approval", {id: approval.id, confirmed: true})}, "Approve")));
   $("notices").replaceChildren(...notices);
 
   const rows = o.rows.filter((r) => r.title)
     .sort((a, b) => (b.language === o.source_language) - (a.language === o.source_language));
   $("langs").classList.toggle("hidden", rows.length === 0);
-  if (!$("rows").contains(document.activeElement)) $("rows").replaceChildren(...rows.map((row) => languageRow(row, o, busy)));
+  // Rebuilding a row would wipe what is being typed into it, so wait while a
+  // text box in the table has the focus; a focused button does not hold it up.
+  const active = document.activeElement;
+  if (!($("rows").contains(active) && active.tagName === "INPUT"))
+    $("rows").replaceChildren(...rows.map((row) => languageRow(row, busy)));
 
   $("askCard").classList.toggle("hidden", !o.title);
+  $("reply").classList.toggle("hidden", !data.reply);
+  $("reply").textContent = data.reply || "";
   $("run").disabled = busy;
   $("send").disabled = busy;
-  $("send").title = busy ? "Agent is busy processing. Please wait..." : "Send modification request to the agent";
+  $("send").title = busy ? "The agent is still working." : "";
 }
 
 function drawLive() {
-  if (!state || !jobId) return;
+  if (!state || !jobId || !state.overview) return;
   const lastLine = (state.log && state.log.length ? state.log[state.log.length - 1] : "").split("\n")[0];
-  if (state.busy) {
+  if (missed >= 2) {
+    liveKey = null;
+    $("elapsed").textContent = "";
+    $("live").replaceChildren(el("span", {class: "muted"}, "Lost contact with the server. Trying again…"));
+  } else if (state.busy) {
     liveKey = null;
     $("elapsed").textContent = `${clock(Date.now() - (busySince || Date.now()))} elapsed`;
     $("live").replaceChildren(el("span", {class: "spinner"}), el("span", {}, "Working"),
       el("span", {class: "last"}, `· ${lastLine || "starting"} · quiet for ${clock(Date.now() - lastLogAt)} (long text shows up only when it is finished)`));
   } else {
-    const manifest = state.overview && state.overview.manifest;
+    const manifest = state.overview.manifest;
     const key = `${jobId}|${state.error ? "stopped" : "finished"}|${manifest || ""}`;
     if (key === liveKey) return;   // keep the link in place; a rebuilt link can swallow a click
     liveKey = key;
@@ -498,21 +455,30 @@ function drawLive() {
 }
 setInterval(drawLive, 1000);
 
+function forget(message) {
+  clearInterval(timer); jobId = null; state = null; missed = 0;
+  history.replaceState(null, "", location.pathname);
+  localStorage.removeItem(LAST_RUN_KEY);
+  $("run").disabled = false;
+  for (const id of ["progress", "langs", "askCard"]) $(id).classList.add("hidden");
+  if (message) toast(message, 8000);
+}
+
 async function poll() {
   if (!jobId) return;
-  try { render(await api(`/api/jobs/${jobId}`)); }
+  try { render(await api(`/api/jobs/${jobId}`)); missed = 0; }
   catch (error) {
-    if (/Unknown job/.test(error.message)) { clearInterval(timer); history.replaceState(null, "", location.pathname); toast("That run is gone: the server was restarted. Files remain in the workspace folder.", 8000); jobId = null; }
+    if (error.status === 404) forget(state && state.overview ? "That run is not on this server any more. Its files remain in the workspace folder." : "");
+    else { missed += 1; if (missed === 2) $("run").disabled = false; drawLive(); }
   }
 }
 
 async function postDraft(row, tagText, update) {
   const tags = tagText.split(",").map((t) => t.trim()).filter(Boolean);
-  if (!tags.length || tags.length > 5) { toast("Enter one to five tags, separated by commas."); return; }
   // The person approving decides how far the post goes; the agent cannot.
   const visibility = await confirmAction({
     title: `${update ? "Update the post" : "Post"} on ${row.platform_name}?`,
-    summary: [["Title", row.title], ["Tags", tags.join(", ")]],
+    summary: [["Title", row.title], ["Tags", tags.join(", ") || "none"]],
     choices: [
       {value: "draft", label: "Draft", hint: "Not public. You publish it yourself on the site."},
       {value: "public", label: "Public", hint: "Visible to everyone as soon as you approve."}],
@@ -521,34 +487,70 @@ async function postDraft(row, tagText, update) {
 }
 async function finalize(row) {
   try {
-    const done = await api(`/api/jobs/${jobId}/finalize`, {language: row.language});
+    let done = await api(`/api/jobs/${jobId}/finalize`, {language: row.language});
+    if (done.needs_acknowledgement) {
+      // Shown as type and line only; the values never leave the server.
+      const accepted = await confirmAction({
+        title: `The ${row.language_name} text has values that look like credentials`,
+        summary: done.findings.map((f) => [`Line ${f.line}`, f.type.replaceAll("_", " ").toLowerCase()]),
+        note: "Remove them in the editor if they are real. If they are examples, you can finalize anyway.",
+        okLabel: "They are not real: finalize"});
+      if (!accepted) return;
+      done = await api(`/api/jobs/${jobId}/finalize`, {language: row.language, acknowledge_findings: true});
+    }
     if (done.check && !done.check.passed) toast(`Finalized. Note: its structure differs from the source: ${done.check.errors.join(" ")}`, 9000);
     await poll();
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message, 6000); }
 }
 function recordUrl(row, url) {
   if (!/^https:\/\/\S+$/.test(url.trim())) { toast("Enter the https URL of the post."); return; }
   act("url", {platform: row.platform, url: url.trim()});
 }
-async function createDeck() {
+async function createDeck(row) {
   const ok = await confirmAction({
-    title: "Create a Google Slides deck?",
-    summary: [["From", "the current slide plan"], ["Where", "a new file in your Google Drive"], ["Contains", "one slide per minute, script in the speaker notes"]],
+    title: `Create the ${row.language_name} Google Slides deck?`,
+    summary: [["From", "the speaker notes of this language"], ["Where", "a new file in your Google Drive"], ["Contains", "one slide per minute, script in the speaker notes"]],
     okLabel: "Approve and create"});
-  if (ok) act("deck", {approved: true});
+  if (ok) act("deck", {language: row.language, approved: true});
 }
 
 const MAX_FILE_BYTES = 80000;
-function loadFile(file) {
+async function loadFile(file) {
   if (!file) return;
   if (!/\.(md|markdown|txt)$/i.test(file.name)) { toast("Attach a Markdown (.md) or text file."); return; }
   if (file.size > MAX_FILE_BYTES) { toast("The file is larger than 80 KB, the limit for one article."); return; }
+  if ($("source").value.trim() && !(await confirmAction({
+      title: "Replace what is in the box?", summary: [["With", file.name]], okLabel: "Replace"}))) return;
   const reader = new FileReader();
   reader.onload = () => { $("source").value = reader.result; $("fileInfo").textContent = `${file.name} loaded (${reader.result.length.toLocaleString()} characters). You can edit it above.`; };
   reader.onerror = () => toast("The file could not be read.");
   reader.readAsText(file, "utf-8");
 }
-$("openSettings").addEventListener("click", () => $("settingsModal").showModal());
+
+// Settings: the fixed mapping, and what the server says is set up right now.
+async function openSettings() {
+  $("settingsRows").replaceChildren(el("span", {class: "muted small"}, "Checking…"));
+  $("settingsNote").textContent = "";
+  $("settingsModal").showModal();
+  try {
+    const config = await api("/api/config");
+    const tag = (text, tone) => el("span", {class: "platform-tag " + (tone || "")}, text);
+    const row = (language, name, ...tags) => el("div", {class: "platform-row"},
+      el("div", {class: "platform-meta"}, el("span", {class: "platform-lang"}, language), el("span", {class: "platform-name"}, name)),
+      el("div", {class: "platform-tags"}, ...tags));
+    $("settingsRows").replaceChildren(
+      ...config.platforms.map((p) => row(p.language, p.platform,
+        tag(p.how === "api" ? "Posted through the API" : "Paste-ready HTML"),
+        p.how === "api" ? tag(p.configured ? "Credential configured" : "No credential", p.configured ? "ok" : "warn") : null)),
+      row("Slides", "Google Slides", tag(config.google_slides ? "Access granted" : "Not set up", config.google_slides ? "ok" : "warn"),
+        tag(config.diagrams ? "Diagrams drawn" : "Diagrams off")));
+    $("settingsNote").textContent = "Credentials stay on the server; this page never sees them.";
+  } catch (error) {
+    $("settingsRows").replaceChildren(el("span", {class: "muted small"}, "The settings could not be read: " + error.message));
+  }
+}
+$("openSettings").addEventListener("click", openSettings);
+$("closeSettings").addEventListener("click", () => $("settingsModal").close());
 $("attach").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", (e) => { loadFile(e.target.files[0]); e.target.value = ""; });
 const zone = $("dropZone");
@@ -559,10 +561,7 @@ zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove
 function submitMessage() {
   const text = $("message").value.trim();
   if (!text) return;
-  if (state && state.busy) {
-    toast("The agent is currently busy processing. Please wait until the current task finishes.");
-    return;
-  }
+  if (state && state.busy) { toast("The agent is still working. Try again when it has finished."); return; }
   $("message").value = "";
   act("message", {text});
 }
@@ -570,49 +569,48 @@ $("send").addEventListener("click", submitMessage);
 $("message").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submitMessage(); } });
 
 function watch(id) {
-  jobId = id; lastLogLength = 0; lastLogAt = Date.now(); busySince = null;
+  jobId = id; lastLogLength = 0; lastLogAt = Date.now(); busySince = null; missed = 0; liveKey = null;
   history.replaceState(null, "", "#" + id);   // a reload comes back to the same run
+  localStorage.setItem(LAST_RUN_KEY, id);     // and so does opening the page again
   clearInterval(timer); timer = setInterval(poll, 2000);
   return poll();
 }
 zone.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const text = $("source").value.trim();
-  if (text.length < 10) { toast("Paste a URL or a draft first."); $("source").focus(); return; }
-  const slideLangs = [];
-  if ($("slideLangEn").checked) slideLangs.push("en");
-  if ($("slideLangKo").checked) slideLangs.push("ko");
-  if ($("slideLangJa").checked) slideLangs.push("ja");
+  const text = $("source").value;
+  if (text.trim().length < 10) { toast("Paste a URL or a draft first."); $("source").focus(); return; }
+  const languages = ["En", "Ko", "Ja"].filter((code) => $("slideLang" + code).checked).map((code) => code.toLowerCase());
+  const minutes = Number($("minutes").value);
   const settings = {
-    talk_minutes: Number($("minutes").value),
-    talk_language: slideLangs[0] || "en",
-    talk_languages: slideLangs,
+    talk_minutes: minutes,
+    talk_languages: languages,
     audience: $("audience").value || "software engineers",
-    create_deck: Number($("minutes").value) > 0 && slideLangs.length > 0,
+    // Choosing a length and a language is the request for a deck per language.
+    create_deck: minutes > 0 && languages.length > 0,
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   $("run").disabled = true;
   try {
     const started = await api("/api/jobs", {text, ...settings});
     for (const key of Object.keys(typed)) delete typed[key];
-    state = {requestedMinutes: settings.talk_minutes, wantsDeck: settings.create_deck, log: []};
+    state = {log: []};
     $("rows").replaceChildren(); $("log").textContent = "";
     await watch(started.job_id);
     $("progress").scrollIntoView({behavior: "smooth", block: "start"});
-  } catch (error) { toast(error.message); $("run").disabled = false; }
+  } catch (error) { toast(error.message, 6000); $("run").disabled = false; }
 });
 
-// Restore the last settings and, after a reload, the run in the address bar.
+// Restore the last settings, then the run in the address or the last run of this browser.
 try {
   const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
   $("minutes").value = String(saved.talk_minutes ?? 5);
-  const savedLangs = Array.isArray(saved.talk_languages) ? saved.talk_languages : (saved.talk_language ? [saved.talk_language] : ["en", "ko", "ja"]);
-  $("slideLangEn").checked = savedLangs.includes("en");
-  $("slideLangKo").checked = savedLangs.includes("ko");
-  $("slideLangJa").checked = savedLangs.includes("ja");
+  const savedLangs = Array.isArray(saved.talk_languages) ? saved.talk_languages : ["en", "ko", "ja"];
+  for (const code of ["En", "Ko", "Ja"]) $("slideLang" + code).checked = savedLangs.includes(code.toLowerCase());
   if (saved.audience) $("audience").value = saved.audience;
 } catch (e) { $("minutes").value = "5"; }
-if (location.hash.length > 1) { state = {log: []}; watch(location.hash.slice(1)); }
+const wanted = location.hash.slice(1) || localStorage.getItem(LAST_RUN_KEY) || "";
+if (RUN_ID.test(wanted)) { state = {log: []}; watch(wanted); }
+else if (location.hash.length > 1) history.replaceState(null, "", location.pathname);
 </script>
 </body>
 </html>

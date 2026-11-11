@@ -17,15 +17,41 @@ CODE_REPO_URL = "code_repo_url"
 FIDELITY_REPORT = "fidelity_report"
 REVIEW_VERDICT = "review_verdict"
 PUBLICATIONS = "publications"
-PRESENTATION_BRIEF = "presentation_brief"
-SLIDE_DECK_PLAN = "slide_deck_plan"
 LOCALIZED_TITLES = "localized_titles"
-GOOGLE_SLIDES_DECK = "google_slides_deck"
-# Per language, a digest of the localized text a person reviewed and called final.
+# Per language, what a person signed off: a digest of the title and text and
+# whether they acknowledged credential-looking findings (see app/policy.py).
 FINALIZED_POSTS = "finalized_posts"
-GOOGLE_SLIDES_DECKS = "google_slides_decks"  # the deck of each language
-# Per language, the text on which the deck and its Markdown plan last agreed.
+
+# Slide planning works on one language at a time. These three keys are the
+# working area of the planning run in progress; nothing reads them afterwards.
+PRESENTATION_BRIEF = "presentation_brief"  # language, audience, minutes
+SLIDE_DECK_PLAN = "slide_deck_plan"  # the planner model's latest draft
+SLIDE_DRAFT_TIMING = "slide_timing_report"  # timing check of that draft
+
+# The record, per language. Everything outside the planning loop reads these.
+SLIDE_PLANS = "slide_plans"  # the plan of record
+SLIDE_TIMING = "slide_timing"  # its timing report
+GOOGLE_SLIDES_DECKS = "google_slides_decks"  # the deck created from it
+# The text on which the deck and its Markdown plan last agreed.
 DECK_TEXT_BASELINE = "google_slides_synced_text"
+
+# Keys that describe one article. Storing a different article in the same
+# session discards them, so nothing of the old article is posted or shown
+# under the new one.
+DERIVED_FROM_SEED = (
+    FIDELITY_REPORT,
+    REVIEW_VERDICT,
+    PUBLICATIONS,
+    LOCALIZED_TITLES,
+    FINALIZED_POSTS,
+    PRESENTATION_BRIEF,
+    SLIDE_DECK_PLAN,
+    SLIDE_DRAFT_TIMING,
+    SLIDE_PLANS,
+    SLIDE_TIMING,
+    GOOGLE_SLIDES_DECKS,
+    DECK_TEXT_BASELINE,
+)
 
 
 def localized_key(language: str) -> str:

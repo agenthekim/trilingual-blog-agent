@@ -8,9 +8,9 @@ Structure (see README for the diagram):
     │   ├── localization_fanout        ParallelAgent: ko / en / ja localizers + titles
     │   ├── localization_review_loop   LoopAgent: check -> critic -> gate -> refine
     │   └── localization_report_agent  saves versions, reports to the user
-    └── slide_planning_pipeline        SequentialAgent
+    └── slide_planning_pipeline        SequentialAgent, gated on a presentation brief
         ├── slide_review_loop          LoopAgent: planner -> timing gate
-        └── slide_report_agent         writes the deck file, reports to the user
+        └── slide_report_agent         writes the plan file, reports to the user
 
 The coordinator runs one stage per user request; the user reviews the result
 before the next stage starts. Model choice per agent comes from
@@ -43,6 +43,7 @@ from app.tools.articles import (
 )
 from app.tools.publish import (
     export_naver_blog_paste_ready_html,
+    finalize_localized_post,
     publish_devto_article_draft,
     publish_qiita_article_draft,
     record_manually_posted_url,
@@ -56,6 +57,7 @@ from app.tools.slides import (
     set_presentation_brief,
 )
 from app.workflow_agents import (
+    BriefGate,
     FidelityCheckAgent,
     LanguageGate,
     LocalizationReportAgent,
@@ -204,13 +206,27 @@ slide_planning_pipeline = SequentialAgent(
         "set_presentation_brief, or when the user asks to redo the slides."
     ),
     sub_agents=[
-        LoopAgent(
-            name="slide_review_loop",
-            description="Self-evaluation: plan, then check the one-minute rule.",
-            max_iterations=MAX_REVIEW_ROUNDS,
-            sub_agents=[slide_plan_agent, SlideTimingGate(name="slide_timing_gate")],
-        ),
-        SlideReportAgent(name="slide_report_agent"),
+        BriefGate(
+            name="brief_gate",
+            sub_agents=[
+                SequentialAgent(
+                    name="slide_planning_steps",
+                    sub_agents=[
+                        LoopAgent(
+                            name="slide_review_loop",
+                            description="Self-evaluation: plan, then check the "
+                            "one-minute rule.",
+                            max_iterations=MAX_REVIEW_ROUNDS,
+                            sub_agents=[
+                                slide_plan_agent,
+                                SlideTimingGate(name="slide_timing_gate"),
+                            ],
+                        ),
+                        SlideReportAgent(name="slide_report_agent"),
+                    ],
+                )
+            ],
+        )
     ],
 )
 
@@ -228,6 +244,7 @@ root_agent = Agent(
         load_markdown_draft_file,
         save_seed_article_revision,
         finalize_seed_article,
+        finalize_localized_post,
         export_naver_blog_paste_ready_html,
         publish_qiita_article_draft,
         publish_devto_article_draft,

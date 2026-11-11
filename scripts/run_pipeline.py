@@ -1,15 +1,16 @@
-"""Run the whole workflow for one article without typing each prompt.
+"""Run the whole workflow for one article from the command line.
 
-The script sends the same messages a person would type, one stage after
-another, and prints what the agent did. Nothing is posted to Qiita or DEV
-Community unless ``--publish`` is given, and even then every post waits for a
-yes/no answer in the terminal. ``app/web_ui.py`` offers the same flow in a
-browser.
+The script goes through the same steps as the web page and prints what was
+done. Nothing is posted to Qiita or DEV Community unless ``--publish`` is
+given, and even then each post is first finalized and then approved by a
+yes/no answer in the terminal, where you also choose draft or public.
+``app/web_ui.py`` offers the same flow in a browser.
 
 Examples:
     uv run python scripts/run_pipeline.py --url https://qiita.com/<user>/items/<id>
     uv run python scripts/run_pipeline.py --draft post.md \\
-        --talk-minutes 10 --talk-language en --publish devto --tags ai,agents
+        --talk-minutes 10 --talk-language en --talk-language ko \\
+        --publish devto --tags ai,agents
 """
 
 from __future__ import annotations
@@ -29,7 +30,8 @@ try:
 except ImportError:  # the environment is then expected to be set already
     pass
 
-from app.pipeline import API_PLATFORMS, ArticlePipeline  # noqa: E402
+from app.pipeline import API_PLATFORMS, PLATFORM_NAMES, ArticlePipeline  # noqa: E402
+from app.settings import LANGUAGE_FOR_PLATFORM  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,7 +48,11 @@ def parse_args() -> argparse.Namespace:
         help="Talk length in minutes; 0 skips the slide plan. Default: 5.",
     )
     parser.add_argument(
-        "--talk-language", choices=["ko", "en", "ja"], default="en", help="Default: en."
+        "--talk-language",
+        action="append",
+        choices=["ko", "en", "ja"],
+        default=[],
+        help="Language to plan the talk in (repeatable). Default: en.",
     )
     parser.add_argument("--audience", default="software engineers")
     parser.add_argument(
@@ -54,13 +60,14 @@ def parse_args() -> argparse.Namespace:
         action="append",
         choices=sorted(API_PLATFORMS),
         default=[],
-        help="Create a draft on this platform (repeatable). Asks before each post.",
+        help="Post on this platform (repeatable). Asks you to finalize and to "
+        "approve each post, and whether it is a draft or public.",
     )
     parser.add_argument(
         "--create-deck",
         action="store_true",
-        help="Also create a Google Slides deck in your Drive from the slide plan. "
-        "Giving this flag is the approval for that one file.",
+        help="Also create a Google Slides deck in your Drive for each talk "
+        "language. Giving this flag is the approval for those files.",
     )
     parser.add_argument(
         "--tags", default="", help="Comma-separated tags for --publish, e.g. ai,agents."
@@ -71,31 +78,67 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+async def ask(question: str) -> bool:
+    reply = await asyncio.to_thread(input, f"{question} [y/N] ")
+    return reply.strip().lower() in ("y", "yes")
+
+
+async def publish(pipeline: ArticlePipeline, platform: str, tags: list[str]) -> None:
+    """Finalize, approve and send one post; every step is a person's answer."""
+    language = LANGUAGE_FOR_PLATFORM[platform]
+    name = PLATFORM_NAMES[platform]
+    row = next(
+        r for r in (await pipeline.overview())["rows"] if r["language"] == language
+    )
+    if row["next"] not in ("review", "post"):
+        print(f"{name}: nothing to post ({row['next']}).")
+        return
+    if row["next"] == "review":
+        if not await ask(
+            f"FINALIZE: is post.{language}.md ('{row['title']}') reviewed and ready?"
+        ):
+            print(f"{name}: not finalized, so not posted.")
+            return
+        done = await pipeline.finalize_post(language)
+        if done.get("needs_acknowledgement"):
+            found = ", ".join(
+                f"{f['type']} on line {f['line']}" for f in done["findings"]
+            )
+            if not await ask(
+                f"The text has values that look like credentials ({found}). "
+                "Are they examples, not real credentials?"
+            ):
+                print(f"{name}: not finalized, so not posted.")
+                return
+            await pipeline.finalize_post(language, acknowledge_findings=True)
+    if not await ask(f"APPROVAL NEEDED: post '{row['title']}' on {name}?"):
+        print(f"{name}: declined. Nothing was sent.")
+        return
+    public = await ask("Make it PUBLIC right away? (No keeps it a non-public draft.)")
+    if problem := await pipeline.post(platform, tags, public):
+        print(problem, file=sys.stderr)
+
+
 async def main() -> int:
     args = parse_args()
     pipeline = ArticlePipeline(log=lambda line: print(line + "\n"))
     source_text = args.url or args.draft.read_text(encoding="utf-8")
 
-    stopped = await pipeline.run_stages(
+    notes = await pipeline.run_stages(
         source_text,
         args.talk_minutes,
-        args.talk_language,
+        args.talk_language or ["en"],
         args.audience,
         args.create_deck,
     )
-    if stopped:
-        print(stopped, file=sys.stderr)
-        return 1
+    if notes:
+        print(notes, file=sys.stderr)
+    if not (await pipeline.overview())["manifest"]:
+        return 1  # the run stopped before the end
 
     tags = [t.strip() for t in args.tags.split(",") if t.strip()]
     for platform in args.publish:
-        await pipeline.request_draft(platform, tags)
-        while pipeline.approval_hints:
-            hint = " / ".join(pipeline.approval_hints)
-            reply = await asyncio.to_thread(input, f"APPROVAL NEEDED: {hint} [y/N] ")
-            await pipeline.answer_approvals(reply.strip().lower() in ("y", "yes"))
-    if args.publish:
-        await pipeline.say("Compile the artifact manifest.")
+        await publish(pipeline, platform, tags)
     return 0
 
 

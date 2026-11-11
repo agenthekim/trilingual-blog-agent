@@ -7,11 +7,11 @@
 <style>
   :root {
     --bg:#f6f7f9; --surface:#fff; --text:#1c2128; --muted:#636c76; --line:#d8dee4;
-    --accent:#0969da; --accent-ink:#fff; --bad:#cf222e; --soft:#f0f3f6; --control:32px;
+    --accent:#0969da; --accent-ink:#fff; --bad:#cf222e; --warn:#9a6700; --soft:#f0f3f6; --control:32px;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#0d1117; --surface:#161b22; --text:#e6edf3; --muted:#9198a1; --line:#30363d;
-      --accent:#4493f8; --accent-ink:#0d1117; --bad:#f85149; --soft:#21262d; }
+      --accent:#4493f8; --accent-ink:#0d1117; --bad:#f85149; --warn:#d29922; --soft:#21262d; }
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
@@ -25,6 +25,7 @@
   .muted { color:var(--muted); }
   .small { font-size:12.5px; }
   .bad { color:var(--bad); }
+  .warn { color:var(--warn); }
   .hidden { display:none !important; }
   button { height:var(--control); padding:0 12px; border-radius:6px; border:1px solid var(--line);
     background:var(--surface); color:var(--text); font:inherit; font-weight:500; cursor:pointer; white-space:nowrap; }
@@ -54,7 +55,7 @@
 <body>
 <main>
   <div class="bar"><strong id="name"></strong> &middot; editing &middot; <a id="view">back to the preview</a></div>
-  <label class="field hidden" id="titleField">Title<input type="text" id="title" maxlength="200"></label>
+  <label class="field hidden" id="titleField">Title<input type="text" id="title" maxlength="120"></label>
   <textarea id="text" spellcheck="false" aria-label="File text" disabled></textarea>
   <footer>
     <span class="muted small" id="result" role="status">Loading…</span>
@@ -93,7 +94,12 @@ const language = name.split(".")[1];
 let savedText = "", savedTitle = "", hasTitle = false, hasDeck = false;
 
 const dirty = () => $("text").value !== savedText || (hasTitle && $("title").value !== savedTitle);
-function say(text, bad) { $("result").textContent = text; $("result").classList.toggle("bad", Boolean(bad)); }
+// tone: "bad" when something did not happen, "warn" when it did but needs a look.
+function say(text, tone) {
+  $("result").textContent = text;
+  $("result").classList.toggle("bad", tone === true || tone === "bad");
+  $("result").classList.toggle("warn", tone === "warn");
+}
 
 async function api(path, options) {
   const response = await fetch(path, options);
@@ -150,8 +156,8 @@ async function save() {
     good = !data.check || data.check.passed;
     if (hasTitle) notes.push((good ? "Structure matches the source." : "Differs from the source: " + data.check.errors.join(" ")) + " Finalize the post on the main page before posting it.");
     else if (!good) notes.push("It no longer reads as a slide plan, so the deck cannot be updated from it: " + data.check.errors.join(" "));
-    if (data.secrets && data.secrets.length) notes.push("Contains credential-looking text; the agent will refuse to post it.");
-    say(notes.join(" "), !good);
+    if (data.secrets && data.secrets.length) notes.push("It has values that look like credentials; you will be asked about them when you finalize.");
+    say(notes.join(" "), good ? "" : "warn");
     // The server keeps a slide plan in its regular form; show that form.
     if (good && !hasTitle) await reloadText();
   } catch (error) { say(error.message, true); }
@@ -194,8 +200,14 @@ function changeList(s) {
   return [s.titles && plural(s.titles, "title"), s.bullets && `bullets on ${plural(s.bullets, "slide")}`,
     s.notes && `speaker notes on ${plural(s.notes, "slide")}`].filter(Boolean).join(", ");
 }
-const syncDeck = async (direction, approved) => (await api(`/api/jobs/${job}/deck/sync`, {method: "POST",
-  headers: {"Content-Type": "application/json"}, body: JSON.stringify({language, direction, approved})})).json();
+// One request to the deck at a time: the buttons wait while one is under way.
+async function syncDeck(direction, approved) {
+  for (const id of ["push", "pull", "save"]) $(id).disabled = true;
+  try {
+    return await (await api(`/api/jobs/${job}/deck/sync`, {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({language, direction, approved})})).json();
+  } finally { for (const id of ["push", "pull", "save"]) $(id).disabled = false; }
+}
 
 // File to deck. Nothing is written until the person approves what the dialog lists.
 async function pushToDeck(quietIfSame) {

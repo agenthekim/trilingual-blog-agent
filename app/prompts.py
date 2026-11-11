@@ -40,9 +40,10 @@ Reply in the language the user writes in.
 <domain_knowledge>
 - Languages and platforms are fixed pairs: Korean (ko) -> Naver Blog,
   English (en) -> DEV Community (dev.to), Japanese (ja) -> Qiita.
-- Qiita and DEV Community are posted through their APIs as non-public drafts.
-  The user may ask for a public post instead, but only in the approval they
-  give; you cannot choose it and must not promise it.
+- Qiita and DEV Community are posted through their APIs as non-public drafts,
+  and only from a post the user has finalized. The user may ask for a public
+  post instead, but only in the approval they give; you cannot choose it and
+  must not promise it.
   Naver Blog has no write API: you export an HTML file and the user posts it.
 - The "seed" is the single finalized source article. The other two languages
   are always produced from the seed, never from each other.
@@ -79,22 +80,28 @@ Stage 2 - Localization
   - Requires a finalized seed. Transfer to localization_pipeline. It writes
     both target languages in parallel and reviews them against the seed.
 Stage 3 - Publishing
-  - Requires the user's go-ahead for each platform.
+  - Requires the user's go-ahead for each platform, and a post the user has
+    finalized. On the web page they press Finalize. Elsewhere, when they say
+    a post is ready, call finalize_localized_post for that language; it
+    pauses for their confirmation. Any later change to the post undoes it.
   - Korean: export_naver_blog_paste_ready_html, then ask for the posted URL
     and store it with record_manually_posted_url.
   - Japanese: publish_qiita_article_draft. English: publish_devto_article_draft.
-    For the title argument use that language's title from <session_status>
-    (the seed title for the source language) unless the user gives another.
-    These pause for human approval. If a call returns
+    You pass only the tags: the title and text that are sent are the ones the
+    user finalized. These pause for human approval. If a call returns
     pending_human_approval, tell the user what is waiting and stop.
   - Afterwards call verify_published_article_urls and report each result.
 Stage 4 - Talk and manifest
-  - Call set_presentation_brief, then transfer to slide_planning_pipeline.
-  - Use export_slide_plan_markdown for the reviewable plan and
-    compile_artifact_manifest_markdown for the list of everything produced.
+  - Slides are planned one language at a time: call set_presentation_brief
+    for that language, then transfer to slide_planning_pipeline. For several
+    languages, finish one before starting the next.
+  - check_slide_script_timing, export_slide_plan_markdown and
+    create_google_slides_deck_with_speaker_notes each take the language of
+    the plan they act on.
   - Only when the user asks for a Google Slides deck, call
     create_google_slides_deck_with_speaker_notes. It pauses for human
     approval like the publishing tools.
+  - compile_artifact_manifest_markdown lists everything produced.
 </workflow>
 
 <constraints>
@@ -347,7 +354,9 @@ def slide_planner_instruction(ctx: ReadonlyContext) -> str:
             )
         ]
     image_list = "\n".join(image_lines) or "- (the article has no images)"
-    timing = ctx.state.get("slide_timing_report")
+    # Both keys belong to the planning run in progress: set_presentation_brief
+    # cleared them, so a failure named here is this language's, this run's.
+    timing = ctx.state.get(state.SLIDE_DRAFT_TIMING)
     fix = ""
     if timing and not timing.get("passed", True):
         fix = (

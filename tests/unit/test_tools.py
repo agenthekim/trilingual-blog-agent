@@ -83,99 +83,8 @@ def test_fetched_qiita_post_becomes_final_seed_and_existing_source(
 
     # The source platform must never be published to again.
     tool_context.state["localized_markdown_ko"] = "x"
-    again = asyncio.run(
-        publish.publish_qiita_article_draft("記事", ["AI"], tool_context)
-    )
+    again = asyncio.run(publish.publish_qiita_article_draft(["AI"], tool_context))
     assert again["error_code"] == "ALREADY_PUBLISHED_SOURCE"
-
-
-def test_publish_needs_finalized_seed_and_localization(
-    tool_context: FakeToolContext,
-) -> None:
-    result = asyncio.run(publish.publish_devto_article_draft("T", ["ai"], tool_context))
-    assert result["error_code"] == "SEED_NOT_FINALIZED"
-    articles.save_seed_article_revision(
-        "제목", SEED_KO, "ko", "none", "", True, tool_context
-    )
-    result = asyncio.run(publish.publish_devto_article_draft("T", ["ai"], tool_context))
-    assert result["error_code"] == "LOCALIZATION_MISSING"
-
-
-def test_publish_pauses_for_human_approval_and_sends_nothing(
-    finalized_project, monkeypatch
-) -> None:
-    async def fail(**kwargs):
-        raise AssertionError("must not publish before approval")
-
-    monkeypatch.setattr(platforms, "qiita_save_item", fail)
-    result = asyncio.run(
-        publish.publish_qiita_article_draft("記事", ["AI"], finalized_project)
-    )
-    assert result["status"] == "pending_human_approval"
-    assert len(finalized_project.confirmation_requests) == 1
-    assert "qiita" not in (finalized_project.state.get(state.PUBLICATIONS) or {})
-
-
-def test_declined_approval_sends_nothing(finalized_project, monkeypatch) -> None:
-    async def fail(**kwargs):
-        raise AssertionError("must not publish when declined")
-
-    monkeypatch.setattr(platforms, "devto_save_article", fail)
-    finalized_project.decline()
-    result = asyncio.run(
-        publish.publish_devto_article_draft("T", ["ai"], finalized_project)
-    )
-    assert result["status"] == "declined"
-
-
-def test_approved_publish_creates_draft_then_updates_it(
-    finalized_project, monkeypatch
-) -> None:
-    calls = []
-
-    async def fake_save(**kwargs):
-        calls.append(kwargs)
-        return {"id": 42, "url": "https://dev.to/user/t-temp-slug-42"}
-
-    monkeypatch.setattr(platforms, "devto_save_article", fake_save)
-    finalized_project.approve()
-    first = asyncio.run(
-        publish.publish_devto_article_draft("T", ["AI"], finalized_project)
-    )
-    assert first["status"] == "success" and first["publication"]["state"] == "draft"
-    assert calls[0]["published"] is False and calls[0]["article_id"] is None
-    assert calls[0]["tags"] == ["ai"]
-    asyncio.run(publish.publish_devto_article_draft("T2", ["ai"], finalized_project))
-    assert calls[1]["article_id"] == "42"  # second approval updates, never duplicates
-    stored = get_article_store().list_publications(
-        finalized_project.state[state.PROJECT_ID]
-    )
-    assert [p["platform"] for p in stored] == ["devto"]
-
-
-def test_article_with_credential_is_refused_before_approval(finalized_project) -> None:
-    finalized_project.state["localized_markdown_ja"] += f"\napi_key = '{FAKE_KEY}'\n"
-    result = asyncio.run(
-        publish.publish_qiita_article_draft("記事", ["AI"], finalized_project)
-    )
-    assert result["error_code"] == "SECRET_IN_ARTICLE"
-    assert FAKE_KEY not in str(result)
-    assert finalized_project.confirmation_requests == []
-
-
-def test_platform_error_becomes_guided_tool_error(
-    finalized_project, monkeypatch
-) -> None:
-    async def unauthorized(**kwargs):
-        raise platforms.PlatformError("QIITA_UNAUTHORIZED", "rejected", "do not retry")
-
-    monkeypatch.setattr(platforms, "qiita_save_item", unauthorized)
-    finalized_project.approve()
-    result = asyncio.run(
-        publish.publish_qiita_article_draft("記事", ["AI"], finalized_project)
-    )
-    assert (result["status"], result["error_code"]) == ("error", "QIITA_UNAUTHORIZED")
-    assert result["recovery_instruction"] == "do not retry"
 
 
 def test_naver_export_writes_inline_styled_html_and_never_posts(
@@ -230,59 +139,6 @@ def test_sqlite_store_survives_reopening(tmp_path) -> None:
     assert reopened.get_project("p1") == {"title": "A", "seed_finalized": True}
     assert reopened.latest_version("p1", "ko")["markdown"] == "v1"
     assert reopened.list_publications("p1")[0]["state"] == "draft"
-
-
-def test_only_the_approving_person_can_make_a_post_public(
-    finalized_project, monkeypatch
-) -> None:
-    from types import SimpleNamespace
-
-    calls = []
-
-    async def fake_save(**kwargs):
-        calls.append(kwargs)
-        return {"id": 42, "url": "https://dev.to/user/t-42"}
-
-    monkeypatch.setattr(platforms, "devto_save_article", fake_save)
-    # An approval that asks for a public post: the choice rides on the approval.
-    finalized_project.tool_confirmation = SimpleNamespace(
-        confirmed=True, payload={"visibility": "public"}
-    )
-    posted = asyncio.run(
-        publish.publish_devto_article_draft("T", ["ai"], finalized_project)
-    )
-    assert calls[0]["published"] is True
-    assert posted["publication"]["state"] == "published"
-    assert "public" in posted["message"]
-
-    # Once public it is never posted again, whatever the approval says.
-    again = asyncio.run(
-        publish.publish_devto_article_draft("T", ["ai"], finalized_project)
-    )
-    assert again["error_code"] == "ALREADY_PUBLISHED" and len(calls) == 1
-
-
-def test_an_approval_without_a_choice_means_a_private_draft(
-    finalized_project, monkeypatch
-) -> None:
-    from types import SimpleNamespace
-
-    calls = []
-
-    async def fake_save(**kwargs):
-        calls.append(kwargs)
-        return {"id": "abc", "url": "https://qiita.com/u/private/abc"}
-
-    monkeypatch.setattr(platforms, "qiita_save_item", fake_save)
-    for payload in (None, {}, {"visibility": "anything else"}, "public"):
-        finalized_project.tool_confirmation = SimpleNamespace(
-            confirmed=True, payload=payload
-        )
-        saved = asyncio.run(
-            publish.publish_qiita_article_draft("記事", ["AI"], finalized_project)
-        )
-        assert saved["publication"]["state"] == "draft"
-    assert [call["private"] for call in calls] == [True] * 4
 
 
 def test_load_draft_reads_only_inside_workspace(
@@ -684,54 +540,6 @@ def test_images_are_found_in_markdown_and_html_but_not_in_code() -> None:
     ]
 
 
-@pytest.mark.asyncio
-async def test_google_slides_deck_needs_plan_and_human_approval(
-    tool_context, monkeypatch
-) -> None:
-    from app import google_slides, state
-
-    tool = slides.create_google_slides_deck_with_speaker_notes
-    assert (await tool(tool_context))["error_code"] == "NO_SLIDE_PLAN"
-
-    calls = []
-
-    async def fake_create(plan, allowed_images):
-        calls.append(plan.deck_title)
-        return {"presentation_id": "abc", "url": google_slides.deck_url("abc")}
-
-    monkeypatch.setattr(google_slides, "create_deck", fake_create)
-    tool_context.state[state.SLIDE_DECK_PLAN] = _deck_plan()
-
-    monkeypatch.setattr(google_slides, "granted_account", lambda: "owner@example.com")
-    assert (await tool(tool_context))["status"] == "pending_human_approval"
-    hint = tool_context.confirmation_requests[0]["hint"]
-    assert "2 slides" in hint and "the Google Drive of owner@example.com" in hint
-    tool_context.decline()
-    assert (await tool(tool_context))["status"] == "declined"
-    assert calls == [] and state.GOOGLE_SLIDES_DECK not in tool_context.state
-
-    tool_context.approve()
-    result = await tool(tool_context)
-    assert result["status"] == "success" and calls == ["Deck"]
-    assert tool_context.state[state.GOOGLE_SLIDES_DECK]["url"].endswith("/d/abc/edit")
-
-
-@pytest.mark.asyncio
-async def test_google_slides_without_a_grant_gives_guidance(
-    tool_context, monkeypatch
-) -> None:
-    from app import secrets, state
-
-    monkeypatch.delenv("GOOGLE_SLIDES_OAUTH", raising=False)
-    monkeypatch.setattr(secrets, "_from_secret_manager", lambda name: None)
-    secrets.get_secret.cache_clear()
-    tool_context.state[state.SLIDE_DECK_PLAN] = _deck_plan()
-    tool_context.approve()
-    result = await slides.create_google_slides_deck_with_speaker_notes(tool_context)
-    assert result["error_code"] == "SLIDES_NOT_AUTHORIZED"
-    assert "authorize_google_slides.py" in result["recovery_instruction"]
-
-
 def test_mermaid_diagrams_become_references_and_image_addresses(monkeypatch) -> None:
     import base64
     import json
@@ -780,3 +588,155 @@ def test_mermaid_rendering_is_off_unless_enabled(monkeypatch) -> None:
     assert render_mermaid_enabled() is False
     monkeypatch.setenv("BLOG_AGENT_RENDER_MERMAID", "true")
     assert render_mermaid_enabled() is True
+
+
+def _plan_for(language: str) -> dict:
+    return {**_deck_plan(), "language": language, "deck_title": f"Deck {language}"}
+
+
+@pytest.mark.asyncio
+async def test_a_deck_needs_the_plan_of_its_language_and_human_approval(
+    tool_context, monkeypatch
+) -> None:
+    from app import google_slides, state
+
+    tool = slides.create_google_slides_deck_with_speaker_notes
+    assert (await tool("en", tool_context))["error_code"] == "NO_SLIDE_PLAN"
+    assert (await tool("fr", tool_context))["error_code"] == "UNKNOWN_LANGUAGE"
+
+    calls = []
+
+    async def fake_create(plan, allowed_images):
+        calls.append(plan.language)
+        return {
+            "presentation_id": f"id-{plan.language}",
+            "url": google_slides.deck_url(f"id-{plan.language}"),
+        }
+
+    monkeypatch.setattr(google_slides, "create_deck", fake_create)
+    tool_context.state[state.SLIDE_PLANS] = {
+        "en": _plan_for("en"),
+        "ko": _plan_for("ko"),
+    }
+    missing = await tool("ja", tool_context)
+    assert missing["error_code"] == "NO_SLIDE_PLAN" and "en, ko" in missing["message"]
+
+    monkeypatch.setattr(google_slides, "granted_account", lambda: "owner@example.com")
+    assert (await tool("ko", tool_context))["status"] == "pending_human_approval"
+    request = tool_context.confirmation_requests[0]
+    assert "Korean, 2 slides" in request["hint"]
+    assert "the Google Drive of owner@example.com" in request["hint"]
+    assert request["payload"]["language"] == "ko"
+    tool_context.decline()
+    assert (await tool("ko", tool_context))["status"] == "declined"
+    assert calls == [] and not tool_context.state.get(state.GOOGLE_SLIDES_DECKS)
+
+    tool_context.approve()
+    result = await tool("ko", tool_context)
+    assert result["status"] == "success" and calls == ["ko"]
+    await tool("en", tool_context)
+    decks = tool_context.state[state.GOOGLE_SLIDES_DECKS]
+    # One deck per language; creating the English one did not replace the Korean.
+    assert decks["ko"]["url"].endswith("/d/id-ko/edit")
+    assert decks["en"]["url"].endswith("/d/id-en/edit")
+    assert sorted(tool_context.state[state.DECK_TEXT_BASELINE]) == ["en", "ko"]
+
+
+@pytest.mark.asyncio
+async def test_google_slides_without_a_grant_gives_guidance(
+    tool_context, monkeypatch
+) -> None:
+    from app import secrets, state
+
+    monkeypatch.delenv("GOOGLE_SLIDES_OAUTH", raising=False)
+    monkeypatch.setattr(secrets, "_from_secret_manager", lambda name: None)
+    secrets.get_secret.cache_clear()
+    tool_context.state[state.SLIDE_PLANS] = {"en": _plan_for("en")}
+    tool_context.approve()
+    result = await slides.create_google_slides_deck_with_speaker_notes(
+        "en", tool_context
+    )
+    assert result["error_code"] == "SLIDES_NOT_AUTHORIZED"
+    assert "authorize_google_slides.py" in result["recovery_instruction"]
+
+
+@pytest.mark.asyncio
+async def test_a_failure_after_the_file_exists_names_the_file(monkeypatch) -> None:
+    """A deck that was created and then failed must not be lost in Drive."""
+    import httpx
+
+    from app import google_slides
+    from app.schemas import SlideDeckPlan
+
+    async def token(client):
+        return "token"
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/v1/presentations":
+            return httpx.Response(
+                200, json={"presentationId": "made-123", "slides": []}
+            )
+        return httpx.Response(500, json={"error": {"message": "backend error"}})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(google_slides, "_access_token", token)
+    monkeypatch.setattr(
+        google_slides.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(answer)),
+    )
+    with pytest.raises(google_slides.SlidesError) as failure:
+        await google_slides.create_deck(SlideDeckPlan.model_validate(_deck_plan()), {})
+    assert "adding the slides" in failure.value.message
+    assert google_slides.deck_url("made-123") in failure.value.message
+
+
+def test_timing_export_and_manifest_work_per_language(finalized_project) -> None:
+    from app import state
+
+    finalized_project.state[state.SLIDE_PLANS] = {
+        "en": _plan_for("en"),
+        "ja": _plan_for("ja"),
+    }
+    finalized_project.state[state.GOOGLE_SLIDES_DECKS] = {
+        "ja": {"url": "https://docs.google.com/presentation/d/ja/edit"}
+    }
+    report = slides.check_slide_script_timing("en", finalized_project)
+    assert report["slide_count"] == 2
+    assert list(finalized_project.state[state.SLIDE_TIMING]) == ["en"]
+    assert slides.check_slide_script_timing("ko", finalized_project)["error_code"] == (
+        "NO_SLIDE_PLAN"
+    )
+
+    written = slides.export_slide_plan_markdown("ja", finalized_project)
+    assert written["file"].endswith("slides.ja.md") and written["slide_count"] == 2
+
+    manifest = slides.compile_artifact_manifest_markdown(finalized_project)["manifest"]
+    assert "Slides and speaker script (English): slides.en.md" in manifest
+    assert "Slides and speaker script (Japanese): slides.ja.md" in manifest
+    assert "Google Slides deck (Japanese): https://docs.google.com/" in manifest
+    assert "Google Slides deck (English)" not in manifest
+
+
+def test_a_new_brief_clears_what_the_last_planning_run_left(finalized_project) -> None:
+    from app import state
+
+    finalized_project.state[state.SLIDE_DECK_PLAN] = _plan_for("en")
+    finalized_project.state[state.SLIDE_DRAFT_TIMING] = {
+        "passed": False,
+        "recovery_instruction": "lengthen the scripts of slides [1]",
+    }
+    done = slides.set_presentation_brief("ja", "developers", 5, finalized_project)
+    assert done["status"] == "success"
+    assert finalized_project.state[state.SLIDE_DECK_PLAN] is None
+    assert finalized_project.state[state.SLIDE_DRAFT_TIMING] is None
+
+    from types import SimpleNamespace
+
+    from app import prompts
+
+    instruction = prompts.slide_planner_instruction(
+        SimpleNamespace(state=finalized_project.state)
+    )
+    assert "previous draft failed" not in instruction.lower()
+    assert "Language of slides and script: Japanese ('ja')" in instruction

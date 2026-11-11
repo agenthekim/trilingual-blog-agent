@@ -45,6 +45,34 @@ def write_workspace_file(project_id: str, name: str, content: str) -> str:
     return str(path)
 
 
+def title_of_draft(markdown: str, fallback: str = "Untitled") -> str:
+    """Title of a Markdown draft: its first level-1 heading, else its first line."""
+    heading = re.search(r"^#\s+(.+)$", markdown, flags=re.MULTILINE)
+    if heading:
+        return heading.group(1).strip()[:200]
+    first = next((ln.strip() for ln in markdown.splitlines() if ln.strip()), "")
+    return first.lstrip("#").strip()[:200] or fallback
+
+
+def _discard_what_the_old_text_produced(
+    tool_context: ToolContext, *, new_article: bool
+) -> None:
+    """Drop what was made from a seed that is being replaced.
+
+    A revised seed makes its localizations, their sign-offs and the slide
+    plans stale; publication records and decks are still this article's and
+    stay. Another article keeps nothing, so that no draft id, deck or title
+    of the previous article is ever used for the new one.
+    """
+    keep = () if new_article else (state.PUBLICATIONS, state.GOOGLE_SLIDES_DECKS)
+    for key in state.DERIVED_FROM_SEED:
+        if key not in keep and tool_context.state.get(key) is not None:
+            tool_context.state[key] = None
+    for language in LANGUAGES:
+        if tool_context.state.get(state.localized_key(language)) is not None:
+            tool_context.state[state.localized_key(language)] = None
+
+
 def _register_seed(
     tool_context: ToolContext,
     *,
@@ -55,9 +83,15 @@ def _register_seed(
     entry_mode: str,
     code_mode: str,
     code_repo_url: str | None,
+    new_article: bool = False,
 ) -> SeedSavedOutput:
     """Persist a seed revision and publish it to session state."""
-    project_id = tool_context.state.get(state.PROJECT_ID) or _new_project_id(title)
+    previous = tool_context.state.get(state.SEED_MARKDOWN)
+    if previous is not None and (new_article or previous != markdown):
+        _discard_what_the_old_text_produced(tool_context, new_article=new_article)
+    project_id = (
+        None if new_article else tool_context.state.get(state.PROJECT_ID)
+    ) or _new_project_id(title)
     targets = [lang for lang in LANGUAGES if lang != source_language]
     store = get_article_store()
     revision = store.add_version(project_id, source_language, "seed", markdown)
@@ -180,6 +214,7 @@ async def fetch_published_article_markdown(
         entry_mode="published_url",
         code_mode="inline_markdown" if "```" in markdown else "none",
         code_repo_url=None,
+        new_article=True,
     )
     record = PublicationRecord(
         platform=platform,  # type: ignore[arg-type]
@@ -258,10 +293,8 @@ def load_markdown_draft_file(
             "Ask the user to check the file name, or to paste the draft text instead.",
         )
     markdown = path.read_text(encoding="utf-8")
-    heading = re.search(r"^#\s+(.+)$", markdown, flags=re.MULTILINE)
-    title = heading.group(1).strip() if heading else path.stem
     return save_seed_article_revision(
-        title=title,
+        title=title_of_draft(markdown, fallback=path.stem),
         markdown=markdown,
         source_language=source_language,
         code_mode="inline_markdown" if "```" in markdown else "none",

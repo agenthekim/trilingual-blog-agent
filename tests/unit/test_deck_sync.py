@@ -294,7 +294,7 @@ async def _pipeline_with_deck(monkeypatch, plan: SlideDeckPlan):
         state={
             state.PROJECT_ID: "proj-9",
             state.SOURCE_LANGUAGE: "ja",
-            state.SLIDE_DECK_PLAN: plan.model_dump(),
+            state.SLIDE_PLANS: {"ko": plan.model_dump()},
             state.GOOGLE_SLIDES_DECKS: {
                 "ko": {"presentation_id": "deck-ko", "url": "https://docs.google.com/x"}
             },
@@ -317,9 +317,9 @@ async def test_saved_notes_reach_the_deck_only_after_approval(
     assert saved["check"] == {"passed": True, "errors": []}
     # The agent's plan of this language follows the file.
     current = await pipeline.session_state()
-    assert current[state.SLIDE_DECK_PLAN]["slides"][1]["speaker_script"].startswith(
-        "가드레일을 다시"
-    )
+    record = current[state.SLIDE_PLANS]["ko"]
+    assert record["slides"][1]["speaker_script"].startswith("가드레일을 다시")
+    assert current[state.SLIDE_TIMING]["ko"]["slide_count"] == len(plan.slides)
 
     preview = await pipeline.sync_deck_text("ko", "push", apply=False)
     assert (preview["slides"], preview["notes"], preview["applied"]) == ([2], 1, False)
@@ -358,6 +358,9 @@ async def test_notes_edited_in_the_deck_are_pulled_into_the_file(
     assert pulled.closing_script == "감사합니다. 덱에서 고친 맺음말입니다."
     assert pulled.slides[1] == plan.slides[1] and written == []  # the deck is only read
     assert pulled.opening_script == plan.opening_script
+    # The plan of record follows the file, so a deck made again uses the pulled text.
+    record = (await pipeline.session_state())[state.SLIDE_PLANS]["ko"]
+    assert record["slides"][0]["title"] == "덱에서 고친 제목"
     # A push right after has nothing to carry: nothing is written back.
     assert (await pipeline.sync_deck_text("ko", "push", apply=True))["slides"] == []
 
@@ -377,3 +380,18 @@ async def test_sync_needs_a_deck_and_a_readable_plan(
     with pytest.raises(ValueError, match="No slide heading"):
         await pipeline.sync_deck_text("ko", "push", apply=True)
     assert written == []
+
+
+def test_a_title_emptied_in_the_deck_is_not_pulled() -> None:
+    plan = _plan()
+    deck = _presentation(plan)
+    _edit_deck(deck, "slide_001_title", "")
+    _edit_deck(deck, "notes_1", "덱에서 고친 대본")
+    deck_view, _ = deck_sync.deck_text(deck)
+    baseline = deck_sync.plan_text(plan)
+    found = deck_sync.differences(baseline, deck_view, baseline)
+    assert {d.key for d in found} == {"1/title", "1/notes"}
+    pulled = deck_sync.to_carry(found, "pull")
+    assert [d.key for d in pulled] == ["1/notes"]  # the emptied title stays as it was
+    merged = deck_sync.merged_plan(plan, pulled)
+    assert merged.slides[0].title == plan.slides[0].title

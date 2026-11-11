@@ -26,11 +26,10 @@ from typing import Any
 from app.google_slides import (
     CLOSING_SLIDE_NUMBER,
     TITLE_SLIDE_ID,
+    VISUAL_MARK,
     speaker_notes_text,
 )
 from app.schemas import SlideDeckPlan
-
-_VISUAL_MARK = "\n\n[Visual] "
 
 
 def _key(number: int, field: str) -> str:
@@ -181,7 +180,11 @@ def to_carry(found: list[Difference], direction: str) -> list[Difference]:
     """The differences a push (file to deck) or a pull (deck to file) moves."""
     if direction == "push":
         return [d for d in found if d.file_changed]
-    return [d for d in found if d.deck_changed]
+    # A title emptied in the deck is not pulled: a plan cannot hold a slide
+    # without a title, and an emptied box is far more often a slip than a wish.
+    return [
+        d for d in found if d.deck_changed and not (d.field == "title" and not d.deck)
+    ]
 
 
 def describe(
@@ -252,7 +255,7 @@ def update_requests(
 
 def split_notes(notes: str) -> tuple[str, str | None]:
     """Speaker notes as the script and, if it is there, the '[Visual]' note."""
-    script, mark, visual = notes.rpartition(_VISUAL_MARK)
+    script, mark, visual = notes.rpartition(VISUAL_MARK)
     return (script.strip(), visual.strip()) if mark else (notes.strip(), None)
 
 

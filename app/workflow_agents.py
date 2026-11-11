@@ -25,9 +25,12 @@ from app.persistence import get_article_store
 from app.schemas import SlideDeckPlan
 from app.settings import LANGUAGE_NAMES, PLATFORM_FOR_LANGUAGE
 from app.tools.articles import write_workspace_file
-from app.tools.slides import render_slide_plan_markdown, slide_timing_report
-
-SLIDE_TIMING_REPORT = "slide_timing_report"
+from app.tools.slides import (
+    plan_of_record,
+    render_slide_plan_markdown,
+    slide_plan_file,
+    slide_timing_report,
+)
 
 
 def _text_event(
@@ -225,18 +228,55 @@ class LocalizationReportAgent(BaseAgent):
         )
 
 
-class SlideTimingGate(BaseAgent):
-    """Checks the drafted deck against the one-slide-per-minute rule."""
+def _brief(session_state: Any) -> dict[str, Any]:
+    return session_state.get(state.PRESENTATION_BRIEF) or {}
+
+
+class BriefGate(BaseAgent):
+    """Runs slide planning only when it is known what to plan.
+
+    Planning needs a brief (language, audience, length) and the article in
+    that language. Without them the planner would fall back on defaults and
+    produce a talk nobody asked for, so nothing runs and the reason is said.
+    """
 
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
         session_state = ctx.session.state
-        brief = session_state.get(state.PRESENTATION_BRIEF) or {}
-        try:
-            plan = SlideDeckPlan.model_validate(
-                session_state.get(state.SLIDE_DECK_PLAN)
+        language = _brief(session_state).get("language")
+        if not language or not state.article_markdown(session_state, language):
+            yield _text_event(
+                self,
+                ctx,
+                "Slide planning was not started: there is no presentation brief "
+                "for a language that has an article. Call set_presentation_brief "
+                "first.",
             )
+            return
+        async for event in self.sub_agents[0].run_async(ctx):
+            yield event
+
+
+class SlideTimingGate(BaseAgent):
+    """Checks the planner's draft and makes it the plan of record of its language.
+
+    The language of a plan is the language that was asked for in the brief,
+    whatever the model wrote in the draft. The draft and its timing report are
+    stored per language, so planning one language never overwrites another.
+    """
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        session_state = ctx.session.state
+        brief = _brief(session_state)
+        language = brief.get("language")
+        delta: dict[str, Any] = {}
+        try:
+            draft = dict(session_state.get(state.SLIDE_DECK_PLAN) or {})
+            draft["language"] = language
+            plan = SlideDeckPlan.model_validate(draft)
         except ValidationError:
             report: dict[str, Any] = {
                 "passed": False,
@@ -246,15 +286,24 @@ class SlideTimingGate(BaseAgent):
             report = slide_timing_report(
                 plan, int(brief.get("minutes") or len(plan.slides))
             )
+            delta[state.SLIDE_PLANS] = {
+                **(session_state.get(state.SLIDE_PLANS) or {}),
+                language: plan.model_dump(),
+            }
+            delta[state.SLIDE_TIMING] = {
+                **(session_state.get(state.SLIDE_TIMING) or {}),
+                language: report,
+            }
         log_event(
             "self-evaluation: slide timing",
             event_phase="SELF_EVAL",
+            language=language,
             passed=report.get("passed"),
         )
         yield _state_event(
             self,
             ctx,
-            state_delta={SLIDE_TIMING_REPORT: report},
+            state_delta={**delta, state.SLIDE_DRAFT_TIMING: report},
             escalate=bool(report.get("passed")),
         )
 
@@ -266,22 +315,21 @@ class SlideReportAgent(BaseAgent):
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
         session_state = ctx.session.state
-        try:
-            plan = SlideDeckPlan.model_validate(
-                session_state.get(state.SLIDE_DECK_PLAN)
-            )
-        except ValidationError:
+        language = _brief(session_state).get("language") or ""
+        # Only a plan this run produced is reported; an older plan of the same
+        # language is still there, but it is not what was just asked for.
+        produced = bool(session_state.get(state.SLIDE_DECK_PLAN))
+        plan = plan_of_record(session_state, language) if produced else None
+        if plan is None:
             yield _text_event(
                 self, ctx, "The slide plan could not be produced. Please try again."
             )
             return
         project_id = session_state.get(state.PROJECT_ID) or "unsaved"
         file = write_workspace_file(
-            project_id, f"slides.{plan.language}.md", render_slide_plan_markdown(plan)
+            project_id, slide_plan_file(language), render_slide_plan_markdown(plan)
         )
-        if project_id != "unsaved":
-            get_article_store().save_project(project_id, {"slide_plan_file": file})
-        timing = session_state.get(SLIDE_TIMING_REPORT) or {}
+        timing = (session_state.get(state.SLIDE_TIMING) or {}).get(language) or {}
         lines = [
             f"Slide plan drafted: '{plan.deck_title}', {len(plan.slides)} slides "
             f"({LANGUAGE_NAMES[plan.language]}). File: {file}",

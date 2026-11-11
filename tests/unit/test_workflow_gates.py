@@ -19,7 +19,7 @@ from google.genai import types
 
 from app import state
 from app.workflow_agents import (
-    SLIDE_TIMING_REPORT,
+    BriefGate,
     FidelityCheckAgent,
     LanguageGate,
     ReviewGate,
@@ -214,12 +214,12 @@ async def test_slide_timing_gate_rejects_scripts_that_are_too_short() -> None:
     events = await run_agent(
         SlideTimingGate(name="timing"),
         {
-            state.PRESENTATION_BRIEF: {"minutes": 3},
+            state.PRESENTATION_BRIEF: {"language": "en", "minutes": 3},
             state.SLIDE_DECK_PLAN: slide_plan("Too short.", 3),
         },
     )
     last = events[-1]
-    report = last.actions.state_delta[SLIDE_TIMING_REPORT]
+    report = last.actions.state_delta[state.SLIDE_DRAFT_TIMING]
     assert report["passed"] is False
     assert {slide["verdict"] for slide in report["slides"]} == {"too_short"}
     assert not last.actions.escalate
@@ -231,19 +231,97 @@ async def test_slide_timing_gate_accepts_one_minute_scripts() -> None:
     events = await run_agent(
         SlideTimingGate(name="timing"),
         {
-            state.PRESENTATION_BRIEF: {"minutes": 3},
+            state.PRESENTATION_BRIEF: {"language": "en", "minutes": 3},
             state.SLIDE_DECK_PLAN: slide_plan(one_minute, 3),
         },
     )
     last = events[-1]
-    assert last.actions.state_delta[SLIDE_TIMING_REPORT]["passed"] is True
+    assert last.actions.state_delta[state.SLIDE_DRAFT_TIMING]["passed"] is True
     assert last.actions.escalate is True
+
+
+@pytest.mark.asyncio
+async def test_the_brief_decides_the_language_of_a_plan() -> None:
+    """The model may write any language code; the plan is filed under the one asked for."""
+    one_minute = "단어 " * 150
+    draft = slide_plan(one_minute, 3)  # the draft claims to be English
+    events = await run_agent(
+        SlideTimingGate(name="timing"),
+        {
+            state.PRESENTATION_BRIEF: {"language": "ko", "minutes": 3},
+            state.SLIDE_DECK_PLAN: draft,
+        },
+    )
+    delta = events[-1].actions.state_delta
+    assert list(delta[state.SLIDE_PLANS]) == ["ko"]
+    assert delta[state.SLIDE_PLANS]["ko"]["language"] == "ko"
+    assert list(delta[state.SLIDE_TIMING]) == ["ko"]
+
+
+@pytest.mark.asyncio
+async def test_planning_one_language_keeps_the_plans_of_the_others() -> None:
+    one_minute = " ".join(["word"] * 140)
+    korean = {**slide_plan("단어 " * 150, 3), "language": "ko"}
+    events = await run_agent(
+        SlideTimingGate(name="timing"),
+        {
+            state.PRESENTATION_BRIEF: {"language": "en", "minutes": 3},
+            state.SLIDE_DECK_PLAN: slide_plan(one_minute, 3),
+            state.SLIDE_PLANS: {"ko": korean},
+            state.SLIDE_TIMING: {"ko": {"passed": True}},
+        },
+    )
+    delta = events[-1].actions.state_delta
+    assert delta[state.SLIDE_PLANS]["ko"] == korean
+    assert delta[state.SLIDE_PLANS]["en"]["deck_title"] == "Deck"
+    assert delta[state.SLIDE_TIMING]["ko"] == {"passed": True}
+    assert delta[state.SLIDE_TIMING]["en"]["passed"] is True
+
+
+@pytest.mark.asyncio
+async def test_slide_numbers_must_run_from_one_without_gaps_or_repeats() -> None:
+    one_minute = " ".join(["word"] * 140)
+    draft = slide_plan(one_minute, 3)
+    draft["slides"][2]["number"] = 2  # 1, 2, 2
+    events = await run_agent(
+        SlideTimingGate(name="timing"),
+        {
+            state.PRESENTATION_BRIEF: {"language": "en", "minutes": 3},
+            state.SLIDE_DECK_PLAN: draft,
+        },
+    )
+    report = events[-1].actions.state_delta[state.SLIDE_DRAFT_TIMING]
+    assert report["passed"] is False
+    assert "number the slides 1 to 3" in report["recovery_instruction"]
+    assert not events[-1].actions.escalate
+
+
+@pytest.mark.asyncio
+async def test_slide_planning_does_not_start_without_a_brief_and_its_article() -> None:
+    def gate() -> BriefGate:
+        return BriefGate(name="brief_gate", sub_agents=[StubWriter(name="writer")])
+
+    events = await run_agent(gate(), {})
+    assert "not started" in texts(events)[0]
+
+    no_article = {state.PRESENTATION_BRIEF: {"language": "en", "minutes": 3}}
+    events = await run_agent(gate(), no_article)
+    assert "not started" in texts(events)[0]
+
+    ready = {
+        **no_article,
+        state.SOURCE_LANGUAGE: "ko",
+        state.localized_key("en"): "# Title\n\nText.",
+    }
+    events = await run_agent(gate(), ready)
+    assert all("not started" not in text for text in texts(events))
+    assert len(events) == 1  # the stub writer ran
 
 
 @pytest.mark.asyncio
 async def test_slide_timing_gate_handles_a_missing_plan() -> None:
     events = await run_agent(SlideTimingGate(name="timing"), {})
-    report = events[-1].actions.state_delta[SLIDE_TIMING_REPORT]
+    report = events[-1].actions.state_delta[state.SLIDE_DRAFT_TIMING]
     assert report["passed"] is False
     assert "not valid" in report["recovery_instruction"]
     assert not events[-1].actions.escalate

@@ -80,8 +80,10 @@ _ACCENT = {"red": 0.10, "green": 0.45, "blue": 0.91}
 TITLE_SLIDE_ID = "slide_000"
 # The thank-you slide after the planned slides. Its number is past any a plan
 # can have, so its id sorts last and can never collide with a planned slide.
+# Between a slide's script and the note on what to show, in speaker notes.
+VISUAL_MARK = "\n\n[Visual] "
 CLOSING_SLIDE_NUMBER = 999
-CLOSING_SLIDE_ID = "slide_999"
+CLOSING_SLIDE_ID = f"slide_{CLOSING_SLIDE_NUMBER}"
 THANK_YOU = {"en": "Thank you", "ko": "감사합니다", "ja": "ありがとうございました"}
 
 
@@ -689,7 +691,7 @@ def speaker_notes_text(visual_note: str, speaker_script: str) -> str:
     """Speaker notes for one slide: the script, then what to show."""
     notes = speaker_script.strip()
     if visual_note.strip() and visual_note.strip().lower() != "text only":
-        notes += f"\n\n[Visual] {visual_note.strip()}"
+        notes += f"{VISUAL_MARK}{visual_note.strip()}"
     return notes
 
 
@@ -803,58 +805,88 @@ async def create_deck(
             "creating the presentation",
         )
         presentation_id = created["presentationId"]
-        update_url = f"{SLIDES_API}/{presentation_id}:batchUpdate"
-        first = (created.get("slides") or [{}])[0].get("objectId")
-        _checked(
-            await client.post(
-                update_url,
-                headers=headers,
-                json={"requests": slide_requests(plan, first, images, aspects)},
-            ),
-            "adding the slides",
+        try:
+            return await _fill_deck(
+                client, headers, plan, created, images, aspects, layouts
+            )
+        except (SlidesError, httpx.HTTPError) as exc:
+            # The file exists from here on. Say where it is, so a failure
+            # does not leave a deck in Drive that nobody knows about.
+            detail = (
+                exc.message
+                if isinstance(exc, SlidesError)
+                else (f"Google Slides could not be reached ({type(exc).__name__}).")
+            )
+            raise SlidesError(
+                getattr(exc, "code", "SLIDES_API_ERROR"),
+                f"{detail} The file was created before this failed and is in "
+                f"the Drive: {deck_url(presentation_id)}",
+                "Give the user that address so they can delete the unfinished "
+                "file. Do not retry more than once.",
+            ) from exc
+
+
+async def _fill_deck(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    plan: SlideDeckPlan,
+    created: dict[str, Any],
+    images: dict[int, str],
+    aspects: dict[int, float],
+    layouts: dict[int, Any],
+) -> dict[str, Any]:
+    """Add slides, images and speaker notes to the presentation just created."""
+    presentation_id = created["presentationId"]
+    update_url = f"{SLIDES_API}/{presentation_id}:batchUpdate"
+    first = (created.get("slides") or [{}])[0].get("objectId")
+    _checked(
+        await client.post(
+            update_url,
+            headers=headers,
+            json={"requests": slide_requests(plan, first, images, aspects)},
+        ),
+        "adding the slides",
+    )
+    presentation = _checked(
+        await client.get(f"{SLIDES_API}/{presentation_id}", headers=headers),
+        "reading the new slides",
+    )
+    # Titles next to a full-height image are narrowed first. If that is
+    # refused, those images go under the title instead of over it.
+    narrowing = title_width_requests(layouts, presentation)
+    if narrowing:
+        response = await client.post(
+            update_url,
+            headers=headers,
+            json={"requests": list(narrowing.values())},
         )
-        presentation = _checked(
-            await client.get(f"{SLIDES_API}/{presentation_id}", headers=headers),
-            "reading the new slides",
+        if response.status_code >= 400:
+            narrowing = {}
+    images_failed = 0
+    for number, url in images.items():
+        layout = layouts[number]
+        box = (
+            layout.image
+            if layout.title_right is None or number in narrowing
+            else layout.fallback_image
         )
-        # Titles next to a full-height image are narrowed first. If that is
-        # refused, those images go under the title instead of over it.
-        narrowing = title_width_requests(layouts, presentation)
-        if narrowing:
+        # A freshly rendered diagram can be slow the first time Google
+        # fetches it, so a failed image gets one more try.
+        for _attempt in range(2):
             response = await client.post(
                 update_url,
                 headers=headers,
-                json={"requests": list(narrowing.values())},
+                json={"requests": [image_request(number, url, box)]},
             )
-            if response.status_code >= 400:
-                narrowing = {}
-        images_failed = 0
-        for number, url in images.items():
-            layout = layouts[number]
-            box = (
-                layout.image
-                if layout.title_right is None or number in narrowing
-                else layout.fallback_image
-            )
-            # A freshly rendered diagram can be slow the first time Google
-            # fetches it, so a failed image gets one more try.
-            for _attempt in range(2):
-                response = await client.post(
-                    update_url,
-                    headers=headers,
-                    json={"requests": [image_request(number, url, box)]},
-                )
-                if response.status_code < 400:
-                    break
-            images_failed += response.status_code >= 400
-        notes = notes_requests(plan, presentation)
-        if notes:
-            _checked(
-                await client.post(
-                    update_url, headers=headers, json={"requests": notes}
-                ),
-                "writing the speaker notes",
-            )
+            if response.status_code < 400:
+                break
+        images_failed += response.status_code >= 400
+    notes = notes_requests(plan, presentation)
+    if notes:
+        _checked(
+            await client.post(update_url, headers=headers, json={"requests": notes}),
+            "writing the speaker notes",
+        )
     return {
         "presentation_id": presentation_id,
         "url": deck_url(presentation_id),

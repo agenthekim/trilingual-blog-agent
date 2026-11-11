@@ -1,30 +1,37 @@
-"""Stage 3 tools: export, publish as draft, and verify.
+"""Stage 3 tools: finalize, export, post, and verify.
 
-Publishing is the one place where the agent acts outside the conversation, so
-it is gated twice. First, the article is scanned for credential-looking
-strings and refused if any are found. Second, the tool stops and asks for
-human confirmation before it sends anything; it only proceeds when the run is
-resumed with an approval.
+Posting is the one place where the agent acts outside the conversation, so it
+is gated three times. A person finalizes the post (title and text); the rules
+in ``app.policy`` refuse anything that is not finalized, is the original, is
+already public or carries credential-looking values nobody acknowledged; and
+the tool stops and asks for human approval before it sends anything. The
+rules are checked when the tool is first called and again when the run is
+resumed with the approval, because the text can change in between.
 
-Posts are created as private (Qiita) or unpublished (DEV) drafts. Making a
-draft public stays a manual step on the platform.
+Posts are created as private (Qiita) or unpublished (DEV) drafts unless the
+person approving asks for a public post in that same approval. The model has
+no argument for it, and none for the title either: the title sent is the one
+that was finalized.
 """
 
 from __future__ import annotations
 
 import asyncio
+import html as html_lib
 import re
+from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import urlparse
 
 import markdown as markdown_lib
 from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
-from app import platforms, state
+from app import platforms, policy, state
 from app.persistence import get_article_store
-from app.redaction import find_secrets
 from app.schemas import (
     DevtoDraftInput,
+    FetchArticleInput,
     PublicationRecord,
     PublishOutput,
     QiitaDraftInput,
@@ -32,7 +39,12 @@ from app.schemas import (
     tool_error,
     validation_error,
 )
-from app.settings import LANGUAGE_FOR_PLATFORM, LANGUAGE_NAMES
+from app.settings import (
+    ALLOWED_ARTICLE_HOSTS,
+    LANGUAGE_FOR_PLATFORM,
+    LANGUAGE_NAMES,
+    LANGUAGES,
+)
 from app.tools.articles import write_workspace_file
 
 _INLINE_STYLES = {
@@ -51,58 +63,120 @@ _INLINE_STYLES = {
 }
 
 
+# Naver's editor is the last line of defence, not the first: what the export
+# hands a person to paste carries no script, no event handler and no link
+# that runs code, whatever the article's own HTML contained.
+_DROPPED_WITH_CONTENT = {"script", "style", "iframe", "object", "embed", "template"}
+_DROPPED_TAGS = _DROPPED_WITH_CONTENT | {
+    "form",
+    "input",
+    "button",
+    "textarea",
+    "select",
+    "link",
+    "meta",
+    "base",
+}
+_URL_ATTRIBUTES = {"href", "src", "action", "formaction", "poster", "xlink:href"}
+_VOID_TAGS = {"br", "hr", "img", "wbr", "col"}
+
+
+def _safe_url(value: str) -> bool:
+    compact = re.sub(r"[\x00-\x20]+", "", value).lower()
+    scheme = re.match(r"^([a-z][a-z0-9+.-]*):", compact)
+    return scheme is None or scheme.group(1) in ("http", "https", "mailto")
+
+
+class _Sanitizer(HTMLParser):
+    """Re-emits HTML without the tags and attributes that can run code."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.out: list[str] = []
+        self._skipping = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _DROPPED_WITH_CONTENT:
+            self._skipping += 1
+        if self._skipping or tag in _DROPPED_TAGS:
+            return
+        kept = []
+        for name, value in attrs:
+            if name.startswith("on") or name == "srcdoc":
+                continue
+            if name in _URL_ATTRIBUTES and not _safe_url(value or ""):
+                continue
+            kept.append(name if value is None else f'{name}="{html_lib.escape(value)}"')
+        self.out.append(f"<{' '.join([tag, *kept])}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _DROPPED_WITH_CONTENT:
+            return  # self-closed: there is no content to skip
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _DROPPED_WITH_CONTENT:
+            self._skipping = max(0, self._skipping - 1)
+            return
+        if self._skipping or tag in _DROPPED_TAGS or tag in _VOID_TAGS:
+            return
+        self.out.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skipping:
+            self.out.append(html_lib.escape(data, quote=False))
+
+
+def sanitize_html(markup: str) -> str:
+    parser = _Sanitizer()
+    parser.feed(markup)
+    parser.close()
+    return "".join(parser.out)
+
+
 def markdown_to_inline_styled_html(markdown: str) -> str:
     """Render Markdown to HTML whose formatting survives pasting into a rich editor.
 
     Rich editors such as Naver SmartEditor drop ``<style>`` blocks and class
-    names, so every element carries its own ``style`` attribute.
+    names, so every element carries its own ``style`` attribute. Raw HTML in
+    the article is kept only as far as it cannot run code.
     """
-    html = markdown_lib.markdown(
-        markdown, extensions=["fenced_code", "tables", "sane_lists"]
+    html = sanitize_html(
+        markdown_lib.markdown(
+            markdown, extensions=["fenced_code", "tables", "sane_lists"]
+        )
     )
     for tag, style in _INLINE_STYLES.items():
         html = re.sub(rf"<{tag}(\s[^>]*)?>", rf'<{tag}\1 style="{style}">', html)
     return html
 
 
-def _publishing_preconditions(
+def _refused(refusal: policy.Refusal) -> dict[str, Any]:
+    return tool_error(refusal.code, refusal.message, refusal.recovery)
+
+
+def _post_to_send(
     tool_context: ToolContext, platform: str
-) -> tuple[str, str, str] | dict[str, Any]:
-    """Return (project_id, language, markdown) or a ToolError dict."""
-    project_id = tool_context.state.get(state.PROJECT_ID)
-    if not project_id or not tool_context.state.get(state.SEED_FINALIZED):
-        return tool_error(
-            "SEED_NOT_FINALIZED",
-            "There is no finalized seed article yet.",
-            "Finish stage 1 first: get the user's confirmation and call "
-            "finalize_seed_article.",
-        )
+) -> tuple[str, str, str, str] | dict[str, Any]:
+    """(project_id, language, title, markdown) of a post that may be sent, or a ToolError.
+
+    The title and the text come from the session, never from the model: they
+    are what a person finalized.
+    """
+    rule = (
+        policy.posting_refusal
+        if platform in policy.API_PLATFORMS
+        else policy.export_refusal
+    )
+    if refusal := rule(tool_context.state, platform):
+        return _refused(refusal)
     language = LANGUAGE_FOR_PLATFORM[platform]
-    existing = (tool_context.state.get(state.PUBLICATIONS) or {}).get(platform)
-    if existing and existing.get("state") == "existing_source":
-        return tool_error(
-            "ALREADY_PUBLISHED_SOURCE",
-            f"This article was imported from {platform} ({existing.get('url')}); "
-            "it is already published there.",
-            "Do not publish to this platform. Continue with the other platforms.",
-        )
-    markdown = state.article_markdown(tool_context.state, language)
-    if not markdown:
-        return tool_error(
-            "LOCALIZATION_MISSING",
-            f"There is no {LANGUAGE_NAMES[language]} version of the article yet.",
-            "Run localization first by transferring to localization_pipeline.",
-        )
-    findings = find_secrets(markdown)
-    if findings:
-        return tool_error(
-            "SECRET_IN_ARTICLE",
-            f"The {LANGUAGE_NAMES[language]} article contains credential-looking "
-            f"text: {findings[:5]}.",
-            "Do not publish. Show the user the finding types and line numbers and "
-            "ask them to remove the values from the seed article.",
-        )
-    return project_id, language, markdown
+    return (
+        tool_context.state.get(state.PROJECT_ID),
+        language,
+        state.article_title(tool_context.state, language),
+        state.article_markdown(tool_context.state, language),
+    )
 
 
 def _remember_publication(
@@ -117,26 +191,39 @@ def _remember_publication(
 
 
 def _approval(
-    tool_context: ToolContext, *, platform: str, title: str, chars: int, updating: bool
+    tool_context: ToolContext,
+    *,
+    platform: str,
+    title: str,
+    tags: list[str],
+    chars: int,
+    updating: bool,
 ) -> dict[str, Any] | None:
     """Stop for human approval. Returns a result dict unless approval was given."""
+    name = policy.PLATFORM_NAMES[platform]
     confirmation = tool_context.tool_confirmation
     if confirmation is None:
         action = "update the existing draft on" if updating else "create a draft on"
         tool_context.request_confirmation(
-            hint=f"Approve to {action} {platform}: '{title}' ({chars} characters). "
-            "It will be saved as a non-public draft, unless the approval itself "
-            "asks for a public post.",
-            payload={"platform": platform, "title": title, "updating": updating},
+            hint=f"Approve to {action} {name}: '{title}' ({chars} characters, "
+            f"tags: {', '.join(tags) or 'none'}). It will be saved as a "
+            "non-public draft, unless the approval itself asks for a public post.",
+            payload={
+                "action": "post",
+                "platform": platform,
+                "title": title,
+                "tags": tags,
+                "updating": updating,
+            },
         )
         return PublishOutput(
             status="pending_human_approval",
-            message=f"Waiting for the user's approval before sending anything to {platform}.",
+            message=f"Waiting for the user's approval before sending anything to {name}.",
         ).model_dump()
     if not confirmation.confirmed:
         return PublishOutput(
             status="declined",
-            message=f"The user declined publishing to {platform}. Nothing was sent.",
+            message=f"The user declined publishing to {name}. Nothing was sent.",
         ).model_dump()
     return None
 
@@ -152,14 +239,80 @@ def _approved_as_public(tool_context: ToolContext) -> bool:
     return isinstance(payload, dict) and payload.get("visibility") == "public"
 
 
-def _already_public(existing: dict[str, Any], platform: str) -> dict[str, Any] | None:
-    if existing.get("state") != "published":
-        return None
-    return tool_error(
-        "ALREADY_PUBLISHED",
-        f"This article is already public on {platform}: {existing.get('url')}.",
-        "Do not post it again. Tell the user to edit the public post on the site.",
+def finalize_localized_post(language: str, tool_context: ToolContext) -> dict[str, Any]:
+    """Record the user's sign-off of one post (its title and text), after they confirm.
+
+    Posting to Qiita or DEV Community needs it. Use it when the user says a
+    post is ready, on a surface without the web page's Finalize button. The
+    first call records nothing: it pauses and asks the user to confirm. Any
+    later change to the title or the text undoes the sign-off. You cannot
+    confirm for the user.
+
+    Args:
+        language: Which post: 'ko', 'en' or 'ja'.
+
+    Returns:
+        status 'pending_human_approval' while waiting, 'declined' if refused,
+        or 'success' with language, title and finalized. On failure: status
+        'error' with error_code, message and recovery_instruction.
+    """
+    if language not in LANGUAGES:
+        return tool_error(
+            "UNKNOWN_LANGUAGE",
+            f"'{language}' is not one of the three languages.",
+            "Use 'ko', 'en' or 'ja'.",
+        )
+    confirmation = tool_context.tool_confirmation
+    payload = getattr(confirmation, "payload", None)
+    acknowledged = isinstance(payload, dict) and bool(
+        payload.get("acknowledge_findings")
     )
+    found = policy.findings(tool_context.state, language)
+    if refusal := policy.finalize_refusal(
+        tool_context.state, language, acknowledge_findings=True
+    ):
+        return _refused(refusal)
+    title = state.article_title(tool_context.state, language)
+    name = LANGUAGE_NAMES[language]
+    if confirmation is None:
+        warning = (
+            " It has values that look like credentials "
+            f"({policy.describe_findings(found)}); approving here does not accept them."
+            if found
+            else ""
+        )
+        tool_context.request_confirmation(
+            hint=f"Finalize the {name} post '{title}' as reviewed and ready to "
+            f"send?{warning}",
+            payload={"action": "finalize", "language": language, "title": title},
+        )
+        return {
+            "status": "pending_human_approval",
+            "message": f"Waiting for the user to confirm that the {name} post is final.",
+        }
+    if not confirmation.confirmed:
+        return {
+            "status": "declined",
+            "message": f"The user did not finalize the {name} post.",
+        }
+    # Findings are accepted only by a person who was shown them and said so
+    # in the approval itself; a plain yes is not enough.
+    if refusal := policy.finalize_refusal(
+        tool_context.state, language, acknowledge_findings=acknowledged
+    ):
+        return _refused(refusal)
+    marks = dict(tool_context.state.get(state.FINALIZED_POSTS) or {})
+    marks[language] = policy.finalization(tool_context.state, language, acknowledged)
+    tool_context.state[state.FINALIZED_POSTS] = marks
+    return {
+        "status": "success",
+        "language": language,
+        "title": title,
+        "finalized": True,
+        "structure_check": (tool_context.state.get(state.FIDELITY_REPORT) or {}).get(
+            language
+        ),
+    }
 
 
 def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, Any]:
@@ -175,20 +328,25 @@ def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, A
         message with the manual steps. On failure: status 'error' with
         error_code, message and recovery_instruction.
     """
-    checked = _publishing_preconditions(tool_context, "naver_blog")
+    checked = _post_to_send(tool_context, "naver_blog")
     if isinstance(checked, dict):
         return checked
-    project_id, language, markdown = checked
-    title = state.article_title(tool_context.state, language)
-    html = markdown_to_inline_styled_html(markdown)
-    file = write_workspace_file(project_id, "naver_blog.html", html)
-    record = PublicationRecord(
-        platform="naver_blog",
-        language=language,  # type: ignore[arg-type]
-        state="exported_for_manual_post",
-        title=title,
+    project_id, language, title, markdown = checked
+    file = write_workspace_file(
+        project_id, "naver_blog.html", markdown_to_inline_styled_html(markdown)
     )
-    _remember_publication(tool_context, project_id, record)
+    previous = policy.publication(tool_context.state, "naver_blog")
+    if previous.get("state") == "published":
+        # The post is up; writing the file again must not forget its address.
+        record = PublicationRecord.model_validate(previous)
+    else:
+        record = PublicationRecord(
+            platform="naver_blog",
+            language=language,  # type: ignore[arg-type]
+            state="exported_for_manual_post",
+            title=title,
+        )
+        _remember_publication(tool_context, project_id, record)
     return {
         "status": "success",
         "file": file,
@@ -202,18 +360,19 @@ def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, A
 
 
 async def publish_qiita_article_draft(
-    title: str, tags: list[str], tool_context: ToolContext
+    tags: list[str], tool_context: ToolContext
 ) -> dict[str, Any]:
-    """Save the Japanese article to Qiita as a private draft, after human approval.
+    """Save the finalized Japanese article to Qiita as a private draft, after human approval.
 
-    The first call does not send anything: it pauses and asks the user to
-    approve. When the run is resumed with approval, the draft is created, or
-    updated if this project already has a Qiita draft. The draft stays private
-    and the user makes it public on Qiita, unless the user asked for a public
-    post in the approval itself. You cannot choose that; never promise it.
+    The post must have been finalized by the user. The title and text sent are
+    the finalized ones; you cannot pass others. The first call does not send
+    anything: it pauses and asks the user to approve. When the run is resumed
+    with approval, the draft is created, or updated if this project already
+    has a Qiita draft. The draft stays private and the user makes it public on
+    Qiita, unless the user asked for a public post in the approval itself. You
+    cannot choose that; never promise it.
 
     Args:
-        title: Japanese title of the article, at most 255 characters.
         tags: One to five Qiita tags without spaces, for example ['AI', 'LLM'].
 
     Returns:
@@ -222,25 +381,27 @@ async def publish_qiita_article_draft(
         On failure: status 'error' with error_code, message and
         recovery_instruction.
     """
+    checked = _post_to_send(tool_context, "qiita")
+    if isinstance(checked, dict):
+        return checked
+    project_id, language, title, markdown = checked
     try:
         request = QiitaDraftInput(title=title, tags=tags)
     except ValidationError as exc:
         return validation_error(
-            exc, "Fix the title or tags (1-5 tags, no spaces) and call again."
+            exc,
+            "Fix the tags (1-5 tags, no spaces) and call again. If the title is "
+            "the problem (255 characters at most), the user shortens it in the "
+            "editor and finalizes the post again.",
         )
-    checked = _publishing_preconditions(tool_context, "qiita")
-    if isinstance(checked, dict):
-        return checked
-    project_id, language, markdown = checked
-    existing = (tool_context.state.get(state.PUBLICATIONS) or {}).get("qiita") or {}
-    if refused := _already_public(existing, "qiita"):
-        return refused
+    existing = policy.publication(tool_context.state, "qiita")
     item_id = existing.get("article_id") if existing.get("state") == "draft" else None
 
     pending = _approval(
         tool_context,
         platform="qiita",
         title=request.title,
+        tags=request.tags,
         chars=len(markdown),
         updating=bool(item_id),
     )
@@ -276,19 +437,19 @@ async def publish_qiita_article_draft(
 
 
 async def publish_devto_article_draft(
-    title: str, tags: list[str], tool_context: ToolContext
+    tags: list[str], tool_context: ToolContext
 ) -> dict[str, Any]:
-    """Save the English article to DEV Community as an unpublished draft, after human approval.
+    """Save the finalized English article to DEV Community as an unpublished draft, after human approval.
 
-    The first call does not send anything: it pauses and asks the user to
-    approve. When the run is resumed with approval, the draft is created, or
-    updated if this project already has a DEV draft. The draft stays
-    unpublished and the user publishes it on dev.to, unless the user asked for
-    a public post in the approval itself. You cannot choose that; never
-    promise it.
+    The post must have been finalized by the user. The title and text sent are
+    the finalized ones; you cannot pass others. The first call does not send
+    anything: it pauses and asks the user to approve. When the run is resumed
+    with approval, the draft is created, or updated if this project already
+    has a DEV draft. The draft stays unpublished and the user publishes it on
+    dev.to, unless the user asked for a public post in the approval itself.
+    You cannot choose that; never promise it.
 
     Args:
-        title: English title of the article, at most 128 characters.
         tags: Up to four DEV tags, lowercase letters and digits only, for
             example ['ai', 'agents', 'python'].
 
@@ -298,21 +459,20 @@ async def publish_devto_article_draft(
         On failure: status 'error' with error_code, message and
         recovery_instruction.
     """
+    checked = _post_to_send(tool_context, "devto")
+    if isinstance(checked, dict):
+        return checked
+    project_id, language, title, markdown = checked
     try:
         request = DevtoDraftInput(title=title, tags=tags)
     except ValidationError as exc:
         return validation_error(
             exc,
-            "Fix the tags (at most 4, lowercase letters and digits only) or the "
-            "title and call again.",
+            "Fix the tags (at most 4, lowercase letters and digits only) and "
+            "call again. If the title is the problem (128 characters at most), "
+            "the user shortens it in the editor and finalizes the post again.",
         )
-    checked = _publishing_preconditions(tool_context, "devto")
-    if isinstance(checked, dict):
-        return checked
-    project_id, language, markdown = checked
-    existing = (tool_context.state.get(state.PUBLICATIONS) or {}).get("devto") or {}
-    if refused := _already_public(existing, "devto"):
-        return refused
+    existing = policy.publication(tool_context.state, "devto")
     article_id = (
         existing.get("article_id") if existing.get("state") == "draft" else None
     )
@@ -321,6 +481,7 @@ async def publish_devto_article_draft(
         tool_context,
         platform="devto",
         title=request.title,
+        tags=request.tags,
         chars=len(markdown),
         updating=bool(article_id),
     )
@@ -362,7 +523,8 @@ def record_manually_posted_url(
     """Record the URL of a post the user published by hand or made public.
 
     Use this after the user posts the Naver Blog export, or after they make a
-    Qiita or DEV draft public, so the URL can be verified and listed.
+    Qiita or DEV draft public, so the URL can be verified and listed. The URL
+    must be on that platform's own site.
 
     Args:
         platform: 'naver_blog', 'qiita' or 'devto'.
@@ -385,20 +547,34 @@ def record_manually_posted_url(
             f"'{platform}' is not a supported platform.",
             "Use one of: naver_blog, qiita, devto.",
         )
-    from app.schemas import FetchArticleInput  # reuse the URL allowlist
-
     try:
-        checked_url = FetchArticleInput(url=url).url
+        checked_url = FetchArticleInput(url=url).url  # https, one of the three sites
     except ValidationError as exc:
         return validation_error(exc, "Ask the user for the https URL of the post.")
-    previous = (tool_context.state.get(state.PUBLICATIONS) or {}).get(platform) or {}
+    name = policy.PLATFORM_NAMES[platform]
+    host = (urlparse(checked_url).hostname or "").lower().removeprefix("www.")
+    if ALLOWED_ARTICLE_HOSTS.get(host) != platform:
+        return tool_error(
+            "URL_ON_ANOTHER_SITE",
+            f"That address is not on {name}.",
+            f"Ask the user for the address of the post on {name}.",
+        )
+    previous = policy.publication(tool_context.state, platform)
+    if previous.get("state") == "existing_source":
+        return tool_error(
+            "ALREADY_PUBLISHED_SOURCE",
+            f"The article was read from {name}; its address is already recorded.",
+            "Nothing to record. Continue with the other platforms.",
+        )
+    language = LANGUAGE_FOR_PLATFORM[platform]
     record = PublicationRecord(
         platform=platform,  # type: ignore[arg-type]
-        language=LANGUAGE_FOR_PLATFORM[platform],  # type: ignore[arg-type]
+        language=language,  # type: ignore[arg-type]
         article_id=previous.get("article_id"),
         url=checked_url,
         state="published",
-        title=previous.get("title") or tool_context.state.get(state.SEED_TITLE),
+        title=previous.get("title")
+        or state.article_title(tool_context.state, language),
     )
     _remember_publication(tool_context, project_id, record)
     return {"status": "success", "publication": record.model_dump()}

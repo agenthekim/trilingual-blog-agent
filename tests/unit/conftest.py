@@ -24,8 +24,8 @@ class FakeToolContext:
     ) -> None:
         self.confirmation_requests.append({"hint": hint, "payload": payload})
 
-    def approve(self) -> None:
-        self.tool_confirmation = SimpleNamespace(confirmed=True)
+    def approve(self, payload: Any = None) -> None:
+        self.tool_confirmation = SimpleNamespace(confirmed=True, payload=payload)
 
     def decline(self) -> None:
         self.tool_confirmation = SimpleNamespace(confirmed=False)
@@ -37,11 +37,19 @@ def isolated_workspace(tmp_path, monkeypatch):
     monkeypatch.setenv("BLOG_AGENT_WORKSPACE_DIR", str(tmp_path / "workspace"))
     monkeypatch.delenv("FIRESTORE_PROJECT_ID", raising=False)
     monkeypatch.delenv("BLOG_AGENT_ENABLE_DLP", raising=False)
+    # Sessions in memory, a fresh store per test: nothing is written to the
+    # SQLite file a real run uses.
+    monkeypatch.setenv("USE_IN_MEMORY_SESSION", "1")
+    monkeypatch.delenv("SESSION_SERVICE_URI", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_AGENT_ENGINE_ID", raising=False)
+    from app.app_utils.services import get_session_service
     from app.persistence import get_article_store
 
     get_article_store.cache_clear()
+    get_session_service.cache_clear()
     yield tmp_path
     get_article_store.cache_clear()
+    get_session_service.cache_clear()
 
 
 @pytest.fixture
@@ -86,3 +94,13 @@ def finalized_project(tool_context: FakeToolContext) -> FakeToolContext:
     ).replace("# 주석입니다", "# a comment")
     tool_context.state["localized_markdown_ja"] = SEED_KO.replace("제목", "タイトル")
     return tool_context
+
+
+def finalize(tool_context: FakeToolContext, *languages: str) -> None:
+    """Record a person's sign-off of the posts as they are now."""
+    from app import policy, state
+
+    marks = dict(tool_context.state.get(state.FINALIZED_POSTS) or {})
+    for language in languages:
+        marks[language] = policy.finalization(tool_context.state, language)
+    tool_context.state[state.FINALIZED_POSTS] = marks

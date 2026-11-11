@@ -69,6 +69,10 @@ def set_presentation_brief(
             "Localize the article first, or choose a language that exists.",
         )
     tool_context.state[state.PRESENTATION_BRIEF] = brief.model_dump()
+    # A new planning run starts clean: what an earlier run, perhaps for another
+    # language, left in the working area must not reach this one.
+    tool_context.state[state.SLIDE_DECK_PLAN] = None
+    tool_context.state[state.SLIDE_DRAFT_TIMING] = None
     return {
         "status": "success",
         "brief": brief.model_dump(),
@@ -76,20 +80,47 @@ def set_presentation_brief(
     }
 
 
-def _load_plan(tool_context: ToolContext) -> SlideDeckPlan | dict[str, Any]:
-    raw = tool_context.state.get(state.SLIDE_DECK_PLAN)
+def plan_of_record(session_state: Any, language: str) -> SlideDeckPlan | None:
+    """The slide plan of ``language``, or None when there is none that reads as one."""
+    raw = (session_state.get(state.SLIDE_PLANS) or {}).get(language)
     if not raw:
-        return tool_error(
-            "NO_SLIDE_PLAN",
-            "No slide plan has been drafted yet.",
-            "Call set_presentation_brief, then transfer to slide_planning_pipeline.",
-        )
+        return None
     try:
         return SlideDeckPlan.model_validate(raw)
-    except ValidationError as exc:
-        return validation_error(
-            exc, "Transfer to slide_planning_pipeline to regenerate the plan."
+    except ValidationError:
+        return None
+
+
+def _load_plan(
+    tool_context: ToolContext, language: str
+) -> SlideDeckPlan | dict[str, Any]:
+    if language not in LANGUAGES:
+        return tool_error(
+            "UNKNOWN_LANGUAGE",
+            f"'{language}' is not one of the three languages.",
+            "Use 'ko', 'en' or 'ja'.",
         )
+    plan = plan_of_record(tool_context.state, language)
+    if plan is None:
+        have = sorted(tool_context.state.get(state.SLIDE_PLANS) or {})
+        return tool_error(
+            "NO_SLIDE_PLAN",
+            f"There is no {LANGUAGE_NAMES[language]} slide plan yet"
+            + (f" (plans exist for: {', '.join(have)})." if have else "."),
+            "Call set_presentation_brief for this language, then transfer to "
+            "slide_planning_pipeline.",
+        )
+    return plan
+
+
+def numbering_problem(plan: SlideDeckPlan) -> str | None:
+    """Slides are numbered 1..N, each once; anything else cannot become a deck."""
+    numbers = [slide.number for slide in plan.slides]
+    if numbers != list(range(1, len(numbers) + 1)):
+        return (
+            f"number the slides 1 to {len(numbers)} in order, each once (now {numbers})"
+        )
+    return None
 
 
 def slide_timing_report(plan: SlideDeckPlan, expected_slides: int) -> dict[str, Any]:
@@ -115,10 +146,12 @@ def slide_timing_report(plan: SlideDeckPlan, expected_slides: int) -> dict[str, 
         for name in ("opening_script", "closing_script")
         if not getattr(plan, name).strip()
     ]
+    misnumbered = numbering_problem(plan)
     passed = (
         not too_short
         and not too_long
         and not unspoken
+        and not misnumbered
         and len(plan.slides) == expected_slides
     )
     report: dict[str, Any] = {
@@ -142,6 +175,8 @@ def slide_timing_report(plan: SlideDeckPlan, expected_slides: int) -> dict[str, 
             fixes.append(f"shorten the scripts of slides {too_long}")
         if unspoken:
             fixes.append(f"write {' and '.join(unspoken)}")
+        if misnumbered:
+            fixes.append(misnumbered)
         report["recovery_instruction"] = (
             "Ask slide_planning_pipeline to "
             + "; ".join(fixes)
@@ -150,23 +185,37 @@ def slide_timing_report(plan: SlideDeckPlan, expected_slides: int) -> dict[str, 
     return report
 
 
-def check_slide_script_timing(tool_context: ToolContext) -> dict[str, Any]:
-    """Check the slide plan against the one-slide-per-minute rule.
+def _expected_slides(session_state: Any, plan: SlideDeckPlan) -> int:
+    """How many slides were asked for when this language was planned."""
+    timing = (session_state.get(state.SLIDE_TIMING) or {}).get(plan.language) or {}
+    return int(timing.get("expected_slide_count") or len(plan.slides))
+
+
+def check_slide_script_timing(
+    language: str, tool_context: ToolContext
+) -> dict[str, Any]:
+    """Check one language's slide plan against the one-slide-per-minute rule.
 
     Estimates how long each speaker script takes to read aloud from its length
     and the language's speaking rate, and compares the slide count with the
     requested talk length. Run this after the user edits or questions a plan.
+
+    Args:
+        language: Language of the plan to check: 'ko', 'en' or 'ja'.
 
     Returns:
         status, passed, slide_count, expected_slide_count, and per-slide
         estimated_seconds with a verdict. When passed is false,
         recovery_instruction lists the slides to lengthen or shorten.
     """
-    plan = _load_plan(tool_context)
+    plan = _load_plan(tool_context, language)
     if isinstance(plan, dict):
         return plan
-    brief = tool_context.state.get(state.PRESENTATION_BRIEF) or {}
-    return slide_timing_report(plan, int(brief.get("minutes") or len(plan.slides)))
+    report = slide_timing_report(plan, _expected_slides(tool_context.state, plan))
+    timing = dict(tool_context.state.get(state.SLIDE_TIMING) or {})
+    timing[language] = report
+    tool_context.state[state.SLIDE_TIMING] = timing
+    return report
 
 
 def render_slide_plan_markdown(plan: SlideDeckPlan) -> str:
@@ -295,34 +344,43 @@ def parse_slide_plan_markdown(text: str, language: str) -> SlideDeckPlan:
         ) from exc
 
 
-def export_slide_plan_markdown(tool_context: ToolContext) -> dict[str, Any]:
-    """Write the slide plan, with its speaker script, to a Markdown file.
+def export_slide_plan_markdown(
+    language: str, tool_context: ToolContext
+) -> dict[str, Any]:
+    """Write one language's slide plan, with its speaker script, to a Markdown file.
 
     The file lists each slide's title, bullets, visual note and the script to
     read while recording. It is the reviewable form of the deck and the source
     for building the actual slides.
 
+    Args:
+        language: Language of the plan to write: 'ko', 'en' or 'ja'.
+
     Returns:
         On success: status, file and slide_count. On failure: status 'error'
         with error_code, message and recovery_instruction.
     """
-    plan = _load_plan(tool_context)
+    plan = _load_plan(tool_context, language)
     if isinstance(plan, dict):
         return plan
     project_id = tool_context.state.get(state.PROJECT_ID) or "unsaved"
     file = write_workspace_file(
-        project_id, f"slides.{plan.language}.md", render_slide_plan_markdown(plan)
+        project_id, slide_plan_file(language), render_slide_plan_markdown(plan)
     )
-    get_article_store().save_project(project_id, {"slide_plan_file": file})
     return {"status": "success", "file": file, "slide_count": len(plan.slides)}
+
+
+def slide_plan_file(language: str) -> str:
+    return f"slides.{language}.md"
 
 
 def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, Any]:
     """Write a Markdown list of everything produced for this article.
 
     Lists each language version with its file and publication URL, the
-    companion code repository if any, and the slide files. The result is meant
-    to be pasted into a README.
+    companion code repository if any, and the slide plan and Google Slides
+    deck of every language that has one. The result is meant to be pasted
+    into a README.
 
     Returns:
         On success: status, file and the manifest text. On failure: status
@@ -362,59 +420,92 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
     lines = [f"## {title}", "", *rows, ""]
     if project.get("code_repo_url"):
         lines += [f"- Code: {project['code_repo_url']} ({project.get('code_mode')})"]
-    if project.get("slide_plan_file"):
-        lines += [
-            "- Slides and speaker script: "
-            + project["slide_plan_file"].rsplit("/", 1)[-1]
-        ]
-    decks = tool_context.state.get("google_slides_decks") or {}
-    if decks:
-        for lang, d in decks.items():
-            if d.get("url"):
-                lines += [
-                    f"- Google Slides deck ({LANGUAGE_NAMES.get(lang, lang)}): {d['url']}"
-                ]
-    else:
-        deck = tool_context.state.get(state.GOOGLE_SLIDES_DECK) or {}
-        if deck.get("url"):
-            lines += [f"- Google Slides deck: {deck['url']}"]
+    plans = tool_context.state.get(state.SLIDE_PLANS) or {}
+    decks = tool_context.state.get(state.GOOGLE_SLIDES_DECKS) or {}
+    for language in LANGUAGES:
+        name = LANGUAGE_NAMES[language]
+        if language in plans:
+            lines += [
+                f"- Slides and speaker script ({name}): {slide_plan_file(language)}"
+            ]
+        if (decks.get(language) or {}).get("url"):
+            lines += [f"- Google Slides deck ({name}): {decks[language]['url']}"]
     manifest = "\n".join(lines) + "\n"
     file = write_workspace_file(project_id, "manifest.md", manifest)
     return {"status": "success", "file": file, "manifest": manifest}
 
 
+def article_images(session_state: Any, language: str) -> dict[str, str]:
+    """References a plan may use, mapped to image addresses that are in the article."""
+    images = {
+        url: url
+        for code in LANGUAGES
+        for _, url in extract_images(state.article_markdown(session_state, code) or "")
+    }
+    if render_mermaid_enabled():
+        # Diagrams come from the article in the deck's language, so their
+        # labels match the slides. One too large for an image address is skipped.
+        article = state.article_markdown(session_state, language) or ""
+        for number, (_, code) in enumerate(extract_mermaid_diagrams(article), start=1):
+            if rendered := google_slides.mermaid_image_url(code):
+                images[google_slides.mermaid_reference(number)] = rendered
+    return images
+
+
 async def create_google_slides_deck_with_speaker_notes(
-    tool_context: ToolContext,
+    language: str, tool_context: ToolContext
 ) -> dict[str, Any]:
-    """Create a Google Slides deck from the slide plan, after human approval.
+    """Create a Google Slides deck from one language's slide plan, after human approval.
 
     Makes a title slide, one slide per planned slide and a thank-you slide,
-    places the article
-    image chosen for a slide next to its bullets, and puts each slide's
-    speaker script (and the note on what to show) into its speaker notes. The
-    deck is a new file in the Drive of the Google account that granted access;
-    no existing file is changed. The first call does not create anything: it
-    pauses and asks the user to approve. Calling it again later creates another
-    new deck from the current plan.
+    places the article image chosen for a slide next to its bullets, and puts
+    each slide's speaker script (and the note on what to show) into its
+    speaker notes. The deck is a new file in the Drive of the Google account
+    that granted access; no existing file is changed. The first call does not
+    create anything: it pauses and asks the user to approve. Calling it again
+    for the same language creates another new deck from the current plan; the
+    earlier file stays in Drive.
+
+    Args:
+        language: Language of the plan to build the deck from: 'ko', 'en' or 'ja'.
 
     Returns:
         status 'pending_human_approval' while waiting, 'declined' if refused,
         or 'success' with deck (presentation_id, url, title, slide_count,
-        slides_with_notes, images_inserted, images_failed). On failure: status 'error' with error_code, message
-        and recovery_instruction.
+        slides_with_notes, images_inserted, images_failed). On failure: status
+        'error' with error_code, message and recovery_instruction.
     """
-    plan = _load_plan(tool_context)
+    plan = _load_plan(tool_context, language)
     if isinstance(plan, dict):
         return plan
+    if problem := numbering_problem(plan):
+        return tool_error(
+            "SLIDE_PLAN_NOT_USABLE",
+            f"The {LANGUAGE_NAMES[language]} slide plan cannot become a deck: {problem}.",
+            "Fix the slide numbers in the plan, or plan the slides again.",
+        )
+    decks = dict(tool_context.state.get(state.GOOGLE_SLIDES_DECKS) or {})
     confirmation = tool_context.tool_confirmation
     if confirmation is None:
         # Name the account, so a deck never lands in a Drive nobody expected.
         account = google_slides.granted_account()
         where = f"the Google Drive of {account}" if account else "your Google Drive"
+        again = (
+            " A deck of this language exists already; it stays in Drive and "
+            "this page will link to the new one."
+            if language in decks
+            else ""
+        )
         tool_context.request_confirmation(
             hint=f"Approve to create a Google Slides deck '{plan.deck_title}' "
-            f"({len(plan.slides)} slides with speaker notes) in {where}.",
-            payload={"deck_title": plan.deck_title, "slides": len(plan.slides)},
+            f"({LANGUAGE_NAMES[language]}, {len(plan.slides)} slides with "
+            f"speaker notes) in {where}.{again}",
+            payload={
+                "action": "create_deck",
+                "language": language,
+                "deck_title": plan.deck_title,
+                "slides": len(plan.slides),
+            },
         )
         return {
             "status": "pending_human_approval",
@@ -425,37 +516,19 @@ async def create_google_slides_deck_with_speaker_notes(
             "status": "declined",
             "message": "The user declined. No Google Slides deck was created.",
         }
-    # Only images that really appear in the article may go on a slide.
-    article_images = {
-        url: url
-        for language in LANGUAGES
-        for _, url in extract_images(
-            state.article_markdown(tool_context.state, language) or ""
-        )
-    }
-    if render_mermaid_enabled():
-        # Diagrams come from the article in the deck's language, so their
-        # labels match the slides. One too large for an image address is skipped.
-        article = state.article_markdown(tool_context.state, plan.language) or ""
-        for number, (_, code) in enumerate(extract_mermaid_diagrams(article), start=1):
-            if rendered := google_slides.mermaid_image_url(code):
-                article_images[google_slides.mermaid_reference(number)] = rendered
     try:
-        deck = await google_slides.create_deck(plan, article_images)
-        deck["language"] = plan.language
+        deck = await google_slides.create_deck(
+            plan, article_images(tool_context.state, language)
+        )
     except google_slides.SlidesError as exc:
         return tool_error(exc.code, exc.message, exc.recovery)
-    tool_context.state[state.GOOGLE_SLIDES_DECK] = deck
-    decks = dict(tool_context.state.get("google_slides_decks") or {})
-    decks[plan.language] = deck
-    tool_context.state["google_slides_decks"] = decks
+    deck["language"] = language
+    decks[language] = deck
+    tool_context.state[state.GOOGLE_SLIDES_DECKS] = decks
     # What the deck and the plan agree on, for telling later edits apart.
     synced = dict(tool_context.state.get(state.DECK_TEXT_BASELINE) or {})
-    synced[plan.language] = plan_text(plan)
+    synced[language] = plan_text(plan)
     tool_context.state[state.DECK_TEXT_BASELINE] = synced
-    project_id = tool_context.state.get(state.PROJECT_ID)
-    if project_id:
-        get_article_store().save_project(project_id, {"google_slides_url": deck["url"]})
     return {
         "status": "success",
         "deck": deck,
