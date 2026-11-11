@@ -78,7 +78,7 @@ JOBS: dict[str, Job] = {}
 
 class StartRequest(BaseModel):
     text: str = Field(min_length=10, max_length=80_000)
-    talk_minutes: int = Field(default=5, ge=0, le=30)
+    talk_minutes: int = Field(default=5, ge=0, le=60)
     talk_language: Literal["ko", "en", "ja"] = "en"
     audience: str = Field(default="software engineers", max_length=200)
 

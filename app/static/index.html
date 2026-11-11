@@ -43,6 +43,12 @@
   pre#log { background:#0d1117; color:#c9d1d9; padding:12px; border-radius:6px; max-height:320px; overflow:auto; white-space:pre-wrap; font: 12px/1.5 ui-monospace, monospace; margin:8px 0 0; }
   details summary { cursor:pointer; color: var(--muted); }
   .hidden { display:none; }
+  h3 { font-size:15px; margin:0 0 4px; }
+  p.help, span.help { color: var(--muted); font-size:13px; margin:0 0 10px; }
+  .fields { display:flex; gap:16px; flex-wrap:wrap; }
+  .fields label { display:flex; flex-direction:column; gap:4px; font-weight:600; color:#1f2328; }
+  .fields small { font-weight:400; color: var(--muted); }
+  #dropZone.over { outline:2px dashed var(--accent); outline-offset:-6px; }
   ul.extra { margin: 12px 0 0; padding-left: 18px; }
 </style>
 </head>
@@ -51,17 +57,43 @@
   <h1>Trilingual Blog Agent</h1>
   <p class="sub">One article in, three languages, platform drafts and a talk plan out. Nothing is posted until you approve it.</p>
 
-  <section class="card">
+  <section class="card" id="dropZone">
+    <h3>1. Your article</h3>
+    <p class="help">Give the article in one language (Korean, English or Japanese). The agent writes it in the
+      <strong>other two languages</strong> and prepares a post for each: Korean → Naver Blog, English → DEV Community, Japanese → Qiita.</p>
     <textarea id="text" placeholder="Paste the URL of a post on Qiita, DEV Community or Naver Blog, or paste a whole Markdown draft."></textarea>
     <div class="row">
-      <label>Talk <select id="minutes">
-        <option value="0">none</option><option value="3">3 min</option><option value="5" selected>5 min</option>
-        <option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option>
-      </select></label>
-      <label>in <select id="talkLanguage">
-        <option value="en" selected>English</option><option value="ko">Korean</option><option value="ja">Japanese</option>
-      </select></label>
-      <label>for <input type="text" id="audience" value="software engineers" style="width:220px"></label>
+      <button id="attach" type="button">Attach a .md file</button>
+      <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" class="hidden">
+      <span class="help" id="fileInfo">or drop the file onto this box</span>
+    </div>
+
+    <h3 style="margin-top:20px">2. Talk slides (optional)</h3>
+    <p class="help">The agent also plans a slide deck about the article, with a script to read aloud for each slide.
+      It makes one slide per minute, so the length is also the number of slides.</p>
+    <div class="fields">
+      <label>Talk length
+        <select id="minutes">
+          <option value="0">No slides</option><option value="3">3 min · 3 slides</option>
+          <option value="5" selected>5 min · 5 slides</option><option value="10">10 min · 10 slides</option>
+          <option value="15">15 min · 15 slides</option><option value="20">20 min · 20 slides</option>
+          <option value="30">30 min · 30 slides</option><option value="45">45 min · 45 slides</option>
+          <option value="60">60 min · 60 slides</option>
+        </select>
+        <small>How long you will speak</small>
+      </label>
+      <label>Slide language
+        <select id="talkLanguage">
+          <option value="en" selected>English</option><option value="ko">Korean</option><option value="ja">Japanese</option>
+        </select>
+        <small>Language of the slides and the script</small>
+      </label>
+      <label style="flex:1; min-width:220px">Audience
+        <input type="text" id="audience" value="software engineers">
+        <small>Who will listen; sets the level of explanation</small>
+      </label>
+    </div>
+    <div class="row">
       <span style="flex:1"></span>
       <button class="primary" id="run">Run all stages</button>
     </div>
@@ -153,7 +185,7 @@ function render(data) {
   $("result").classList.remove("hidden");
   $("articleTitle").textContent = o.title || "Working…";
   $("status").replaceChildren();
-  if (data.busy) $("status").append(el("span", {class: "spinner"}), "The agent is working. A full run takes two to four minutes.");
+  if (data.busy) $("status").append(el("span", {class: "spinner"}), "The agent is working. A full run takes a few minutes; long talks take longer.");
 
   const banners = $("banners");
   banners.replaceChildren();
@@ -218,6 +250,27 @@ function recordUrl(row, url) {
   act("url", {platform: row.platform, url: url.trim()});
 }
 function approve(confirmed) { act("approval", {confirmed}); }
+
+const MAX_FILE_BYTES = 80000;
+function loadFile(file) {
+  if (!file) return;
+  if (!/\.(md|markdown|txt)$/i.test(file.name)) { alert("Attach a Markdown (.md) or text file."); return; }
+  if (file.size > MAX_FILE_BYTES) { alert("The file is larger than 80 KB, the limit for one article."); return; }
+  if ($("text").value.trim() && !confirm("Replace the text in the box with this file?")) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    $("text").value = reader.result;
+    $("fileInfo").textContent = `Loaded ${file.name} (${reader.result.length.toLocaleString()} characters). You can still edit it above.`;
+  };
+  reader.onerror = () => alert("The file could not be read.");
+  reader.readAsText(file, "utf-8");
+}
+$("attach").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", (e) => { loadFile(e.target.files[0]); e.target.value = ""; });
+const zone = $("dropZone");
+zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("over"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
 
 $("send").addEventListener("click", () => {
   const text = $("message").value.trim();
