@@ -60,11 +60,11 @@ flowchart TD
     end
     SP --> PL
 
+    T --> SM[Secret Manager]
+    T --> ST[(SQLite or Firestore)]
     T --> Q[Qiita API]
     T --> D[DEV Community API]
     T --> N[Naver Blog<br/>read only + HTML export]
-    T --> ST[(SQLite or Firestore)]
-    T --> SM[Secret Manager]
 ```
 
 Control flow is decided in code, not by a model: the gate agents in
