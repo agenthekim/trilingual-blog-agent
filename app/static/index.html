@@ -104,7 +104,7 @@
     </div>
 
     <h3 style="margin-top:20px">2. Slide options</h3>
-    <p class="help">Choose the slide length to create Google Slides and PDFs in your configured Google Drive.</p>
+    <p class="help">Choose the slide length to create Google Slides in your configured Google Drive.</p>
     <div class="fields">
       <label>Talk length
         <select id="minutes">
@@ -372,11 +372,8 @@ function render(data) {
       const slideLinks = [];
       const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
       if (deck && deck.url) {
-        const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
         slideLinks.push(el("div", {},
-          el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides"),
-          " · ",
-          el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF")));
+          el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
       }
       const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
       if (slideFile) slideLinks.push(fileLink(slideFile));
@@ -396,20 +393,14 @@ function render(data) {
     for (const [lang, deck] of Object.entries(o.decks)) {
       if (deck && deck.url) {
         const langName = {en: "English", ko: "Korean", ja: "Japanese"}[lang] || lang;
-        const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
         extra.push(el("li", {}, `Google Slides (${langName}): `,
           el("a", {href: deck.url, target: "_blank", rel: "noopener"}, deck.title || "open"),
-          " · ",
-          el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF"),
           ` (${deck.slide_count} slides, script in the speaker notes)`));
       }
     }
   } else if (o.deck && o.deck.url) {
-    const pdfUrl = o.deck.url.replace(/\/edit.*$/, "/export/pdf");
     extra.push(el("li", {}, "Google Slides: ",
       el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, o.deck.title || "open"),
-      " · ",
-      el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF"),
       ` (${o.deck.slide_count} slides, script in the speaker notes)`));
   }
   if (o.can_create_deck) {

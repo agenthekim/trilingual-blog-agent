@@ -418,6 +418,184 @@ def test_long_titles_get_a_smaller_font() -> None:
     assert body_points(["a fairly long bullet point " * 3] * 5, beside_image=True) == 14
 
 
+_BULLETS = [
+    "Guardrails intercept policy violations",
+    "Pause execution for human authorization",
+    "Handle budget exceptions like business class",
+    "Resume to Act or Finish upon approval",
+]
+
+
+def _overlap(a: tuple, b: tuple) -> bool:
+    return (
+        a[0] < b[0] + b[2]
+        and b[0] < a[0] + a[2]
+        and a[1] < b[1] + b[3]
+        and b[1] < a[1] + a[3]
+    )
+
+
+def test_a_wide_image_goes_under_the_bullets_and_spans_the_page() -> None:
+    from app.google_slides import slide_layout
+
+    layout = slide_layout("Tool Manager: Routing", _BULLETS, True, aspect=4.1)
+    assert layout.stacked and layout.title_right is None
+    assert layout.image[2] > 8  # was 4.4 inches in the right half
+    assert layout.image[1] >= layout.text[1] + layout.text[3]  # under the bullets
+    assert layout.text[2] == 8.9
+
+
+def test_a_tall_image_takes_the_page_height_and_the_title_makes_room() -> None:
+    from app.google_slides import slide_layout
+
+    layout = slide_layout("Unified End-to-End Architecture", _BULLETS, True, 0.72)
+    left, top, _, height = layout.image
+    assert not layout.stacked and height > 5  # was 3.6 inches under the title
+    assert top < 0.51  # starts above the title line ...
+    assert layout.title_right < left  # ... so the title must end before it
+    assert layout.text[0] + layout.text[2] < left
+    # If the title cannot be narrowed, the image stays under the title.
+    assert layout.fallback_image[1] >= 1.4
+    assert layout.fallback_image[0] >= left
+
+
+def test_image_layouts_stay_on_the_page_and_never_shrink_the_image() -> None:
+    from app.google_slides import slide_layout
+
+    titles = [
+        "Short",
+        "How Guardrails and Human Approval Work Together",
+        "가드레일과 사람의 승인이 함께 동작하는 방식을 단계별로 살펴보기",
+    ]
+    for title in titles:
+        for aspect in (0.3, 0.45, 0.72, 1.0, 1.16, 1.38, 1.6, 2.2, 2.9, 4.1, 7.0):
+            for bullets in (_BULLETS[:2], _BULLETS, _BULLETS + _BULLETS):
+                layout = slide_layout(title, bullets, True, aspect)
+                left, top, width, height = layout.image
+                where = (title, aspect, len(bullets))
+                assert abs(width / height - aspect) < 0.01 * aspect, where
+                assert left >= 0.55 - 0.002 and left + width <= 9.45 + 0.002, where
+                assert top >= 0.35 - 0.002 and top + height <= 5.4 + 0.002, where
+                assert not _overlap(layout.text, layout.image), where
+                assert layout.text[2] >= 3.3 - 0.001, where
+                # The old placement fitted the image into 4.4 x 3.6 inches.
+                assert width >= min(4.4, 3.6 * aspect) * 0.999, where
+
+
+def test_an_image_of_unknown_shape_keeps_the_right_half() -> None:
+    from app.google_slides import image_request, slide_layout
+
+    layout = slide_layout("Some title", ["a", "b"], True, None)
+    assert layout.text == (0.55, 1.65, 4.3, 3.6) and layout.title_right is None
+    assert layout.image[0] == 5.05 and layout.image[2] == 4.4
+    size = image_request(3, "https://img.example.com/a.png", layout.image)[
+        "createImage"
+    ]["elementProperties"]["size"]
+    assert size["width"]["magnitude"] == round(4.4 * 914400)
+    # Without an image nothing changes: full width, same place as before.
+    assert slide_layout("Some title", ["a", "b"], False).text == (0.55, 1.65, 8.9, 3.6)
+
+
+def test_title_is_narrowed_using_the_geometry_google_reports() -> None:
+    from app.google_slides import slide_layout, title_width_requests
+
+    layouts = {
+        1: slide_layout("Unified End-to-End Architecture", _BULLETS, True, 0.72),
+        2: slide_layout("Tool Manager: Routing", _BULLETS, True, 4.1),  # not narrowed
+        3: slide_layout("Unified End-to-End Architecture", _BULLETS, True, 0.72),
+    }
+    title = {
+        "objectId": "slide_001_title",
+        "size": {
+            "width": {"magnitude": 3000000, "unit": "EMU"},
+            "height": {"magnitude": 3000000, "unit": "EMU"},
+        },
+        "transform": {
+            "scaleX": 2.84,
+            "scaleY": 0.19,
+            "translateX": 311700,
+            "translateY": 445025,
+            "unit": "EMU",
+        },
+    }
+    presentation = {
+        "slides": [
+            {"pageElements": [title]},
+            {"pageElements": [{**title, "objectId": "slide_002_title"}]},
+            # A title whose geometry is not reported is left alone.
+            {"pageElements": [{"objectId": "slide_003_title"}]},
+        ]
+    }
+    requests = title_width_requests(layouts, presentation)
+    assert list(requests) == [1]
+    update = requests[1]["updatePageElementTransform"]
+    assert update["objectId"] == "slide_001_title" and update["applyMode"] == "ABSOLUTE"
+    moved = update["transform"]
+    right_edge = (moved["translateX"] + 3000000 * moved["scaleX"]) / 914400
+    assert abs(right_edge - layouts[1].title_right) < 0.001
+    assert (moved["scaleY"], moved["translateY"]) == (0.19, 445025)  # only the width
+
+
+def test_png_size_reads_the_header() -> None:
+    import struct
+
+    from app.google_slides import png_size
+
+    header = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR"
+    assert png_size(header + struct.pack(">II", 1200, 311)) == (1200, 311)
+    assert png_size(b"<html>503 Service Temporarily Unavailable</html>") is None
+    assert png_size(header) is None
+
+
+@pytest.mark.asyncio
+async def test_diagram_sizes_are_read_one_at_a_time_and_retried(monkeypatch) -> None:
+    import struct
+
+    import httpx
+
+    from app import google_slides
+
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I", 13)
+        + b"IHDR"
+        + struct.pack(">II", 1200, 300)
+    )
+    calls: list[str] = []
+    busy = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal busy
+        busy += 1
+        assert busy == 1  # the renderer refuses requests that arrive together
+        await asyncio.sleep(0)
+        busy -= 1
+        calls.append(str(request.url))
+        assert "authorization" not in request.headers
+        if str(request.url).endswith("second") and calls.count(str(request.url)) == 1:
+            return httpx.Response(503, text="<html>503</html>")
+        return httpx.Response(200, content=png)
+
+    pauses: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def no_wait(seconds: float) -> None:
+        pauses.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr(google_slides.asyncio, "sleep", no_wait)
+    images = {
+        4: google_slides.MERMAID_RENDER_URL + "first",
+        7: "https://img.example.com/from-the-article.png",  # never fetched here
+        9: google_slides.MERMAID_RENDER_URL + "second",
+    }
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        aspects = await google_slides.image_aspects(client, images)
+    assert aspects == {4: 4.0, 9: 4.0}
+    assert [c.rsplit(":", 1)[-1] for c in calls] == ["first", "second", "second"]
+    assert pauses.count(2) == 1  # one pause before the retry
+
+
 def test_images_are_found_in_markdown_and_html_but_not_in_code() -> None:
     from app.markdown_checks import extract_images
 

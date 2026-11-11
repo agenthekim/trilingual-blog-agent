@@ -78,6 +78,7 @@
   table.results td { padding:12px 10px 12px 0; border-top:1px solid var(--line); vertical-align:top; }
   table.results td:last-child, table.results th:last-child { padding-right:0; }
   table.results .who { font-weight:600; white-space:nowrap; }
+  table.results .lang .badge { display:inline-block; margin-top:6px; }
   table.results .title { font-weight:600; min-width:180px; }
   table.results .files a { display:inline-block; }
   table.results .files div { display:flex; align-items:center; gap:4px; min-height:24px; white-space:nowrap; }
@@ -89,12 +90,8 @@
   .next .inline { display:flex; gap:6px; }
   .next .inline input { flex:1; min-width:0; }
   .tablewrap { overflow-x:auto; }
-  .deliver li { display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:26px; }
   label.check { display:flex; gap:8px; align-items:center; margin-top:12px; font-size:13px; }
   label.check input { width:16px; height:16px; }
-  .deliver { list-style:none; margin:10px 0 0; padding:0; display:grid; gap:4px; }
-  .deliver li { border-top:1px solid var(--line); padding-top:6px; }
-  .deliver li:first-child { border-top:0; padding-top:0; }
   .askrow { display:flex; gap:8px; }
 
   details summary { cursor:pointer; color:var(--muted); font-weight:500; }
@@ -161,7 +158,7 @@
 
     <fieldset>
       <legend>Slide options</legend>
-      <p class="muted small" style="margin:0 0 10px">Choose the slide length to create Google Slides and PDFs in your configured Google Drive.</p>
+      <p class="muted small" style="margin:0 0 10px">Choose the slide length to create Google Slides in your configured Google Drive.</p>
       <div class="grid3">
         <label class="field">Length
           <select id="minutes">
@@ -209,14 +206,9 @@
   <section class="card hidden" id="langs">
     <div class="tablewrap">
       <table class="results">
-        <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Next step</th><th>Slides</th></tr></thead>
+        <thead><tr><th>Language</th><th>Title</th><th>Files</th><th>Next step</th><th>Slides</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
-    </div>
-    <div id="manifestBar" class="hidden" style="margin-top:12px; padding:8px 12px; background:#f6f8fa; border:1px solid #d0d7de; border-radius:6px; font-size:12.5px; display:flex; align-items:center; gap:8px">
-      <span style="font-weight:600">Artifact manifest:</span>
-      <a id="manifestLink" target="_blank" rel="noopener">manifest.md</a>
-      <span class="muted small">(summary of all generated blog posts, drafts, and presentation decks)</span>
     </div>
   </section>
 
@@ -320,7 +312,7 @@ const STATUS = {
 };
 const SETTINGS_KEY = "tba.settings";
 let jobId = null, timer = null, state = null;
-let busySince = null, lastLogAt = Date.now(), lastLogLength = 0;
+let busySince = null, lastLogAt = Date.now(), lastLogLength = 0, liveKey = null;
 const typed = {};  // values typed into cards survive re-rendering
 
 function el(tag, attrs = {}, ...children) {
@@ -409,11 +401,8 @@ function languageRow(row, o, busy) {
   const slideItems = [];
   const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
   if (deck && deck.url) {
-    const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
     slideItems.push(el("div", {},
-      el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides"),
-      " · ",
-      el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF")));
+      el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
   }
   const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
   if (slideFile) {
@@ -440,9 +429,8 @@ function languageRow(row, o, busy) {
     }
   }
   return el("tr", {},
-    el("td", {}, el("div", {class: "who"}, row.language_name)),
+    el("td", {class: "lang"}, el("div", {class: "who"}, row.language_name), el("span", {class: "badge " + tone}, label)),
     el("td", {class: "title"}, row.title),
-    el("td", {}, el("span", {class: "badge " + tone}, label)),
     files,
     el("td", {}, next),
     slidesCol);
@@ -470,19 +458,16 @@ function render(data) {
     el("span", {class: "grow"}, hint),
     el("button", {type: "button", onclick: () => act("approval", {confirmed: false})}, "Decline"),
     el("button", {type: "button", class: "primary", onclick: () => act("approval", {confirmed: true})}, "Approve")));
+  const hasDeck = Boolean(o.deck) || Object.keys(o.decks || {}).length > 0;
+  if (!busy && o.can_create_deck && !hasDeck && data.approvals.length === 0) notices.push(el("div", {class: "notice note"},
+    el("span", {class: "grow"}, "No Google Slides deck was created in this run."),
+    el("button", {type: "button", onclick: createDeck}, "Create it now…")));
   $("notices").replaceChildren(...notices);
 
-  const rows = o.rows.filter((r) => r.title);
+  const rows = o.rows.filter((r) => r.title)
+    .sort((a, b) => (b.language === o.source_language) - (a.language === o.source_language));
   $("langs").classList.toggle("hidden", rows.length === 0);
   if (!$("rows").contains(document.activeElement)) $("rows").replaceChildren(...rows.map((row) => languageRow(row, o, busy)));
-
-  if (o.manifest) {
-    $("manifestBar").classList.remove("hidden");
-    $("manifestLink").href = fileUrl(o.manifest);
-    $("manifestLink").textContent = o.manifest;
-  } else {
-    $("manifestBar").classList.add("hidden");
-  }
 
   $("askCard").classList.toggle("hidden", !o.title);
   $("run").disabled = busy;
@@ -494,12 +479,19 @@ function drawLive() {
   if (!state || !jobId) return;
   const lastLine = (state.log && state.log.length ? state.log[state.log.length - 1] : "").split("\n")[0];
   if (state.busy) {
+    liveKey = null;
     $("elapsed").textContent = `${clock(Date.now() - (busySince || Date.now()))} elapsed`;
     $("live").replaceChildren(el("span", {class: "spinner"}), el("span", {}, "Working"),
       el("span", {class: "last"}, `· ${lastLine || "starting"} · quiet for ${clock(Date.now() - lastLogAt)} (long text shows up only when it is finished)`));
   } else {
+    const manifest = state.overview && state.overview.manifest;
+    const key = `${jobId}|${state.error ? "stopped" : "finished"}|${manifest || ""}`;
+    if (key === liveKey) return;   // keep the link in place; a rebuilt link can swallow a click
+    liveKey = key;
     $("elapsed").textContent = "";
-    $("live").replaceChildren(el("span", {class: "muted"}, state.error ? "Stopped." : "Finished. Review the results below."));
+    const done = [el("span", {class: "muted"}, state.error ? "Stopped." : "Finished. Review the results below.")];
+    if (manifest) done.push(el("span", {class: "muted"}, "· Summary of this run: ", el("a", {href: fileUrl(manifest), target: "_blank", rel: "noopener"}, manifest)));
+    $("live").replaceChildren(...done);
   }
 }
 setInterval(drawLive, 1000);
