@@ -209,15 +209,15 @@
   <section class="card hidden" id="langs">
     <div class="tablewrap">
       <table class="results">
-        <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Slides</th><th>Next step</th></tr></thead>
+        <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Next step</th><th>Slides</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
-  </section>
-
-  <section class="card hidden" id="deliverCard">
-    <h2>Talk and summary</h2>
-    <ul class="deliver" id="deliver"></ul>
+    <div id="manifestBar" class="hidden" style="margin-top:12px; padding:8px 12px; background:#f6f8fa; border:1px solid #d0d7de; border-radius:6px; font-size:12.5px; display:flex; align-items:center; gap:8px">
+      <span style="font-weight:600">Artifact manifest:</span>
+      <a id="manifestLink" target="_blank" rel="noopener">manifest.md</a>
+      <span class="muted small">(summary of all generated blog posts, drafts, and presentation decks)</span>
+    </div>
   </section>
 
   <section class="card hidden" id="askCard">
@@ -225,8 +225,8 @@
       <span class="hint">For example “shorten the English title” or “make the Korean intro less formal”.</span>
     </label>
     <div class="askrow" style="margin-top:6px">
-      <input type="text" id="message">
-      <button id="send" type="button">Send</button>
+      <input type="text" id="message" placeholder="Ask the agent for a change (e.g. replace examples, adjust tone)...">
+      <button id="send" type="button" class="primary">Send</button>
     </div>
     <details style="margin-top:14px" id="logBox">
       <summary>Agent activity log</summary>
@@ -444,8 +444,8 @@ function languageRow(row, o, busy) {
     el("td", {class: "title"}, row.title),
     el("td", {}, el("span", {class: "badge " + tone}, label)),
     files,
-    slidesCol,
-    el("td", {}, next));
+    el("td", {}, next),
+    slidesCol);
 }
 
 function render(data) {
@@ -476,41 +476,18 @@ function render(data) {
   $("langs").classList.toggle("hidden", rows.length === 0);
   if (!$("rows").contains(document.activeElement)) $("rows").replaceChildren(...rows.map((row) => languageRow(row, o, busy)));
 
-  const items = [];
-  for (const name of o.slides) items.push(el("li", {},
-    el("span", {}, "Slide plan with speaker script · ", el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name)),
-    !busy && (o.editable || []).includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null));
-  if (o.decks && Object.keys(o.decks).length > 0) {
-    for (const [lang, deck] of Object.entries(o.decks)) {
-      if (deck && deck.url) {
-        const langName = {en: "English", ko: "Korean", ja: "Japanese"}[lang] || lang;
-        const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
-        items.push(el("li", {},
-          el("span", {}, `Google Slides (${langName}) · `,
-            el("a", {href: deck.url, target: "_blank", rel: "noopener"}, deck.title || "Open deck"),
-            " · ",
-            el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF"),
-            el("span", {class: "muted small"}, `  ${deck.slide_count} slides` + (deck.images_inserted ? `, ${deck.images_inserted} images` : "")))));
-      }
-    }
-  } else if (o.deck && o.deck.url) {
-    const pdfUrl = o.deck.url.replace(/\/edit.*$/, "/export/pdf");
-    items.push(el("li", {},
-      el("span", {}, "Google Slides · ",
-        el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, o.deck.title || "Open deck"),
-        " · ",
-        el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF"),
-        el("span", {class: "muted small"}, `  ${o.deck.slide_count} slides` + (o.deck.images_inserted ? `, ${o.deck.images_inserted} images` : "")))));
-  } else if (o.can_create_deck && !busy) {
-    items.push(el("li", {},
-      el("span", {class: "muted"}, "Google Slides deck · not created in this run"),
-      el("button", {class: "ghost", type: "button", onclick: createDeck}, "Create it now")));
+  if (o.manifest) {
+    $("manifestBar").classList.remove("hidden");
+    $("manifestLink").href = fileUrl(o.manifest);
+    $("manifestLink").textContent = o.manifest;
+  } else {
+    $("manifestBar").classList.add("hidden");
   }
-  if (o.manifest) items.push(el("li", {}, el("span", {}, "Summary of everything produced · ", el("a", {href: fileUrl(o.manifest), target: "_blank", rel: "noopener"}, o.manifest))));
-  $("deliver").replaceChildren(...items);
-  $("deliverCard").classList.toggle("hidden", items.length === 0);
+
   $("askCard").classList.toggle("hidden", !o.title);
-  $("run").disabled = busy; $("send").disabled = busy;
+  $("run").disabled = busy;
+  $("send").disabled = busy;
+  $("send").title = busy ? "Agent is busy processing. Please wait..." : "Send modification request to the agent";
 }
 
 function drawLive() {
@@ -603,8 +580,18 @@ zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.ad
 zone.addEventListener("dragleave", () => zone.classList.remove("over"));
 zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
 
-$("send").addEventListener("click", () => { const text = $("message").value.trim(); if (text) { $("message").value = ""; act("message", {text}); } });
-$("message").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("send").click(); } });
+function submitMessage() {
+  const text = $("message").value.trim();
+  if (!text) return;
+  if (state && state.busy) {
+    toast("The agent is currently busy processing. Please wait until the current task finishes.");
+    return;
+  }
+  $("message").value = "";
+  act("message", {text});
+}
+$("send").addEventListener("click", submitMessage);
+$("message").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submitMessage(); } });
 
 function watch(id) {
   jobId = id; lastLogLength = 0; lastLogAt = Date.now(); busySince = null;
