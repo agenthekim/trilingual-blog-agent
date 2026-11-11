@@ -190,7 +190,8 @@ class LocalizationReportAgent(BaseAgent):
             final_report[language] = check
             if text and project_id:
                 store.add_version(project_id, language, "localized", text)
-                file = write_workspace_file(project_id, f"post.{language}.md", text)
+                file = f"post.{language}.md"
+                write_workspace_file(project_id, file, text)
             else:
                 file = "(not written)"
             status = (
@@ -326,9 +327,10 @@ class SlideReportAgent(BaseAgent):
             )
             return
         project_id = session_state.get(state.PROJECT_ID) or "unsaved"
-        file = write_workspace_file(
-            project_id, slide_plan_file(language), render_slide_plan_markdown(plan)
-        )
+        # The report names the file, not where it is on this machine: the text
+        # is shown to people and kept in the conversation.
+        file = slide_plan_file(language)
+        write_workspace_file(project_id, file, render_slide_plan_markdown(plan))
         timing = (session_state.get(state.SLIDE_TIMING) or {}).get(language) or {}
         lines = [
             f"Slide plan drafted: '{plan.deck_title}', {len(plan.slides)} slides "

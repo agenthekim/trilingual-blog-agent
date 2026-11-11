@@ -544,3 +544,17 @@ async def test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason(
         "https://qiita.com/user/items/0123456789abcdef0123", talk_minutes=0
     )
     assert stopped == "The post could not be read. No such post." and said == []
+
+
+@pytest.mark.asyncio
+async def test_a_draft_without_a_title_line_says_which_title_was_taken(
+    isolated_workspace,
+) -> None:
+    pipeline = _new_pipeline()
+    _stand_in_agent(pipeline)
+    draft = "## 들어가며\n\n" + "제목 줄이 없는 초안의 본문입니다. " * 5 + "\n"
+    notes = await pipeline.run_stages(draft, talk_minutes=0)
+    assert "has no '# Title' line" in notes and "'들어가며'" in notes
+    current = await pipeline.session_state()
+    assert current[state.SEED_TITLE] == "들어가며"
+    assert current[state.SEED_MARKDOWN] == draft

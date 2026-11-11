@@ -215,6 +215,15 @@ tools/a2a-inspector/
 *.pem
 *-key.json
 credentials*.json
+client_secret*.json
+token.json
+.env.*
+!.env.example
+
+# Local databases (sessions, article store)
+*.sqlite3
+*.sqlite3-journal
+*.db
 
 # Files `scaffold enhance` moved aside from a repo it adopted.
 /.agents-cli-original/

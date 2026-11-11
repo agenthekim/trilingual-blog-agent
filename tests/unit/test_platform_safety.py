@@ -533,6 +533,32 @@ def test_a_qiita_create_without_an_address_is_reported_as_unknown(
     assert platform_error(qiita_create).code == "QIITA_OUTCOME_UNKNOWN"
 
 
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_a_server_error_on_a_create_is_reported_as_unknown(
+    status: int, wire, credentials
+) -> None:
+    """A 5xx says nothing about whether the write went through."""
+    credentials(qiita=True, devto=True)
+    wire(_answer(status, "upstream error"))
+
+    for call, code in (
+        (qiita_create, "QIITA_OUTCOME_UNKNOWN"),
+        (devto_create, "DEVTO_OUTCOME_UNKNOWN"),
+    ):
+        error = platform_error(call)
+        assert error.code == code
+        assert f"HTTP {status}" in error.message
+        assert "Do not retry yet" in error.recovery
+
+
+def test_messages_name_platforms_as_people_know_them(wire, credentials) -> None:
+    credentials(qiita=True, devto=True)
+    wire(_answer(401, "{}"))
+
+    assert platform_error(devto_create).message.startswith("DEV Community rejected")
+    assert platform_error(qiita_create).message.startswith("Qiita rejected")
+
+
 def test_saving_without_a_credential_sends_nothing(wire, credentials) -> None:
     credentials(qiita=False, devto=False)
     seen = wire(lambda request: httpx.Response(201, json=qiita_item()))

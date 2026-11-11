@@ -45,6 +45,18 @@ DEVTO_API = "https://dev.to/api"
 _USER_AGENT = "trilingual-blog-agent/0.1"
 
 
+_PLATFORM_NAMES = {
+    "qiita": "Qiita",
+    "devto": "DEV Community",
+    "naver_blog": "Naver Blog",
+}
+
+
+def _name(platform: str) -> str:
+    """The name people know a platform by; messages are read by people too."""
+    return _PLATFORM_NAMES.get(platform, platform)
+
+
 class PlatformError(Exception):
     """A platform call failed. ``recovery`` says what can be done about it."""
 
@@ -137,7 +149,7 @@ def _redirect_not_allowed(platform: str, location: str) -> PlatformError:
         where = "an address that could not be read"
     return PlatformError(
         f"{platform.upper()}_REDIRECT_NOT_ALLOWED",
-        f"{platform} redirected the request to {where}, which is not an https "
+        f"{_name(platform)} redirected the request to {where}, which is not an https "
         "address on a supported blog host. The redirect was not followed.",
         "Do not retry with the same URL. Tell the user the page redirects "
         "elsewhere (a moved, private or login-only post does this) and ask for "
@@ -149,7 +161,7 @@ def _unknown_outcome(platform: str, what_happened: str) -> PlatformError:
     """The error for a create or update that may or may not have been applied."""
     return PlatformError(
         f"{platform.upper()}_OUTCOME_UNKNOWN",
-        f"The outcome is unknown: {what_happened}, so {platform} may or may not "
+        f"The outcome is unknown: {what_happened}, so {_name(platform)} may or may not "
         "have saved the article.",
         "Do not retry yet: a retry could create a duplicate. Ask the user to "
         "check their drafts and posts on the platform. Retry only after the user "
@@ -174,13 +186,13 @@ def _transport_error(
     if isinstance(exc, httpx.TimeoutException):
         return PlatformError(
             f"{platform.upper()}_TIMEOUT",
-            f"{platform} did not answer within {HTTP_TIMEOUT_SECONDS:g} seconds "
+            f"{_name(platform)} did not answer within {HTTP_TIMEOUT_SECONDS:g} seconds "
             f"({name}).{not_sent}",
             _RETRY_ONCE,
         )
     return PlatformError(
         f"{platform.upper()}_NETWORK_ERROR",
-        f"{platform} could not be reached ({name}).{not_sent}",
+        f"{_name(platform)} could not be reached ({name}).{not_sent}",
         _RETRY_ONCE,
     )
 
@@ -216,7 +228,7 @@ async def _get_public(
         raise _transport_error(platform, exc) from exc
     raise PlatformError(
         f"{platform.upper()}_TOO_MANY_REDIRECTS",
-        f"{platform} redirected the request more than {MAX_PUBLIC_REDIRECTS} "
+        f"{_name(platform)} redirected the request more than {MAX_PUBLIC_REDIRECTS} "
         "times; it was given up.",
         "Do not retry with the same URL. Ask the user for the current public "
         "URL of the post.",
@@ -243,9 +255,14 @@ async def _send_with_credential(
             response = await client.request(method, url, json=json, params=params)
     except (httpx.HTTPError, httpx.InvalidURL) as exc:
         raise _transport_error(platform, exc, saving=saving) from exc
+    if saving and response.status_code >= 500:
+        # A server error says nothing about whether the write went through.
+        raise _unknown_outcome(
+            platform, f"{_name(platform)} answered HTTP {response.status_code}"
+        )
     if 300 <= response.status_code < 400:
         answered = (
-            f"{platform} answered with a redirect (HTTP {response.status_code}), "
+            f"{_name(platform)} answered with a redirect (HTTP {response.status_code}), "
             "which is never followed for a request that carries a credential"
         )
         if saving:
@@ -262,7 +279,7 @@ async def _send_with_credential(
 def _bad_response(platform: str, status: int, problem: str) -> PlatformError:
     return PlatformError(
         f"{platform.upper()}_BAD_RESPONSE",
-        f"{platform} answered HTTP {status} but {problem}.",
+        f"{_name(platform)} answered HTTP {status} but {problem}.",
         "Retry once. If it happens again, tell the user the platform's answer "
         "could not be read; do not guess the missing content.",
     )
@@ -315,7 +332,7 @@ def _json_record(
     status = response.status_code
     if saving:
         raise _unknown_outcome(
-            platform, f"{platform} answered HTTP {status} but {problem}"
+            platform, f"{_name(platform)} answered HTTP {status} but {problem}"
         )
     raise _bad_response(platform, status, problem)
 
@@ -327,26 +344,26 @@ def _raise_for_status(platform: str, response: httpx.Response) -> None:
     if status in (401, 403):
         raise PlatformError(
             f"{platform.upper()}_UNAUTHORIZED",
-            f"{platform} rejected the credential (HTTP {status}).",
+            f"{_name(platform)} rejected the credential (HTTP {status}).",
             "Tell the user the stored credential is invalid or lacks write scope; "
             "do not retry.",
         )
     if status == 404:
         raise PlatformError(
             f"{platform.upper()}_NOT_FOUND",
-            f"{platform} returned HTTP 404 for the requested article.",
+            f"{_name(platform)} returned HTTP 404 for the requested article.",
             "Check the URL or article ID with the user.",
         )
     if status == 429:
         raise PlatformError(
             f"{platform.upper()}_RATE_LIMITED",
-            f"{platform} rate limit reached (HTTP 429).",
+            f"{_name(platform)} rate limit reached (HTTP 429).",
             "Wait before retrying; tell the user the platform is rate limiting.",
         )
     detail = response.text[:300].replace("\n", " ")
     raise PlatformError(
         f"{platform.upper()}_HTTP_{status}",
-        f"{platform} returned HTTP {status}: {detail}",
+        f"{_name(platform)} returned HTTP {status}: {detail}",
         "If the message names an invalid field (for example tags or title), fix it "
         "and retry once; otherwise report the error to the user.",
     )

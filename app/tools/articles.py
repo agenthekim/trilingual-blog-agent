@@ -45,6 +45,11 @@ def write_workspace_file(project_id: str, name: str, content: str) -> str:
     return str(path)
 
 
+def has_title_line(markdown: str) -> bool:
+    """Whether a Markdown draft names its own title with a level-1 heading."""
+    return bool(re.search(r"^#\s+\S", markdown, flags=re.MULTILINE))
+
+
 def title_of_draft(markdown: str, fallback: str = "Untitled") -> str:
     """Title of a Markdown draft: its first level-1 heading, else its first line."""
     heading = re.search(r"^#\s+(.+)$", markdown, flags=re.MULTILINE)

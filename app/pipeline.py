@@ -48,6 +48,7 @@ from app.settings import (
 from app.tools.articles import (
     fetch_published_article_markdown,
     finalize_seed_article,
+    has_title_line,
     save_seed_article_revision,
     title_of_draft,
 )
@@ -513,6 +514,12 @@ class ArticlePipeline:
         )
         if failure := _failure(result):
             return f"The draft could not be stored. {failure}"
+        if not has_title_line(text):
+            notes.append(
+                "The draft has no '# Title' line, so its first line was taken as "
+                f"the title: '{title_of_draft(text)}'. If that is not the title, "
+                "add a '# Title' line at the top and run again."
+            )
         return None
 
     async def run_stages(

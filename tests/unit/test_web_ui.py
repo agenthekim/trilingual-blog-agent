@@ -514,3 +514,42 @@ def test_a_session_is_read_back_by_a_new_process(tmp_path, monkeypatch) -> None:
         return await second.session_state()
 
     assert asyncio.run(read())[state.SEED_TITLE] == "남아 있는 제목"
+
+
+def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
+    client,
+) -> None:
+    import re
+
+    page = client.get("/").text
+    for text in (
+        "<h1>Trilingual Blog Agent</h1>",
+        "Automatically transform an article in one language into blog posts and "
+        "presentation slides across three languages.",
+        "Source document",
+        "Share a post URL, a .md file, or your document.",
+        "Slide options",
+        "Choose the slide length to create Google Slides in your configured Google Drive.",
+        "Ask the agent for a change",
+    ):
+        assert text in page
+    audiences = re.findall(
+        r'<option value="[^"]+"(?: selected)?>([A-Za-z-]+)</option>', page
+    )
+    assert audiences == [
+        "Developers",
+        "Experts",
+        "Students",
+        "Executives",
+        "Non-technical",
+    ]
+    lengths = re.findall(r'<option value="(\d+)">', page)
+    assert lengths == ["0", "3", "5", "10", "15", "20", "30", "45", "60"]
+    # Columns follow the order of the work, with the next step last.
+    columns = re.findall(r"<th>([^<]+)</th>", page)
+    assert columns == ["Language", "Title", "Files", "Slides", "Next step"]
+    # Links carry no arrow symbol, and nothing is listed under the table.
+    assert "↗" not in page and "Talk and summary" not in page
+    # No name of a secret is written into the page.
+    for word in ("QIITA_", "DEVTO_", "OAUTH"):
+        assert word not in page
