@@ -34,6 +34,15 @@ HTTP_TIMEOUT_SECONDS = float(os.environ.get("BLOG_AGENT_HTTP_TIMEOUT", "20"))
 MAX_ARTICLE_CHARS = int(os.environ.get("BLOG_AGENT_MAX_ARTICLE_CHARS", "60000"))
 
 
+def render_mermaid_enabled() -> bool:
+    """Whether Mermaid diagrams may be sent to mermaid.ink to become slide images.
+
+    Off by default: turning it on sends diagram source, which may come from an
+    unpublished draft, to a third-party service.
+    """
+    return env_flag("BLOG_AGENT_RENDER_MERMAID")
+
+
 def workspace_dir() -> Path:
     """Directory where drafts are read from and generated files are written to."""
     root = Path(os.environ.get("BLOG_AGENT_WORKSPACE_DIR", "workspace")).expanduser()

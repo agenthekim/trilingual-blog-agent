@@ -256,9 +256,9 @@ class SlideSpec(BaseModel):
     )
     image_url: str = Field(
         default="",
-        description="URL of one image from the article that illustrates this "
-        "slide, copied exactly from the list of article images; empty when no "
-        "image fits.",
+        description="One image or diagram from the article that illustrates "
+        "this slide: its URL or its 'mermaid:N' reference, copied exactly from "
+        "the list of article images; empty when none fits.",
     )
 
 

@@ -88,6 +88,36 @@ def extract_images(markdown: str) -> list[tuple[str, str]]:
     return images
 
 
+def extract_mermaid_diagrams(markdown: str) -> list[tuple[str, str]]:
+    """Return (nearest heading above, diagram source) of each Mermaid block, in order."""
+    diagrams: list[tuple[str, str]] = []
+    heading = ""
+    current: list[str] | None = None
+    fence = language = ""
+    for line in (markdown or "").splitlines():
+        match = _FENCE.match(line.strip())
+        if current is None:
+            if match:
+                fence = match.group("fence")
+                info = match.group("info").strip().split()
+                language = info[0].lower() if info else ""
+                current = []
+            elif _HEADING.match(line):
+                heading = line.lstrip("#").strip()
+        elif (
+            match
+            and match.group("fence").startswith(fence[0])
+            and len(match.group("fence")) >= len(fence)
+            and not match.group("info").strip()
+        ):
+            if language == "mermaid" and current:
+                diagrams.append((heading, "\n".join(current)))
+            current = None
+        else:
+            current.append(line)
+    return diagrams
+
+
 def heading_levels(markdown: str) -> list[int]:
     _, prose, _ = split_code_blocks(markdown)
     return [

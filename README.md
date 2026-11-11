@@ -171,6 +171,10 @@ Cautions:
   it is confirmed (or matches `--account`); a refused grant is revoked. The
   approval request for each deck names the account again.
 - The grant covers only files the agent created (`drive.file`).
+- Images already in the article are placed on slides. Mermaid diagrams are
+  placed only when `BLOG_AGENT_RENDER_MERMAID=true`: the diagram source is
+  then sent to mermaid.ink, a third-party service, to be drawn. Leave it off
+  for drafts whose diagrams must not leave your machine.
 - Never paste the client file, the redirected address or a screenshot of the
   client secret into a chat or an issue. If that happens, delete the OAuth
   client, create a new one and authorize again.

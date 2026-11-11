@@ -12,6 +12,7 @@ from app.markdown_checks import (
     SPEECH_UNITS_PER_MINUTE,
     estimate_speaking_seconds,
     extract_images,
+    extract_mermaid_diagrams,
 )
 from app.persistence import get_article_store
 from app.schemas import (
@@ -20,7 +21,12 @@ from app.schemas import (
     tool_error,
     validation_error,
 )
-from app.settings import LANGUAGE_NAMES, LANGUAGES, PLATFORM_FOR_LANGUAGE
+from app.settings import (
+    LANGUAGE_NAMES,
+    LANGUAGES,
+    PLATFORM_FOR_LANGUAGE,
+    render_mermaid_enabled,
+)
 from app.tools.articles import write_workspace_file
 
 MIN_SLIDE_SECONDS = 45
@@ -297,12 +303,19 @@ async def create_google_slides_deck_with_speaker_notes(
         }
     # Only images that really appear in the article may go on a slide.
     article_images = {
-        url
+        url: url
         for language in LANGUAGES
         for _, url in extract_images(
             state.article_markdown(tool_context.state, language) or ""
         )
     }
+    if render_mermaid_enabled():
+        # Diagrams come from the article in the deck's language, so their
+        # labels match the slides. One too large for an image address is skipped.
+        article = state.article_markdown(tool_context.state, plan.language) or ""
+        for number, (_, code) in enumerate(extract_mermaid_diagrams(article), start=1):
+            if rendered := google_slides.mermaid_image_url(code):
+                article_images[google_slides.mermaid_reference(number)] = rendered
     try:
         deck = await google_slides.create_deck(plan, article_images)
     except google_slides.SlidesError as exc:

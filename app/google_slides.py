@@ -15,7 +15,9 @@ new deck names the account again.
 
 from __future__ import annotations
 
+import base64
 import json
+import zlib
 from typing import Any
 
 import httpx
@@ -28,6 +30,8 @@ OAUTH_SECRET_NAME = "GOOGLE_SLIDES_OAUTH"
 OAUTH_SCOPE = "https://www.googleapis.com/auth/drive.file"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SLIDES_API = "https://slides.googleapis.com/v1/presentations"
+MERMAID_RENDER_URL = "https://mermaid.ink/img/pako:"
+MAX_IMAGE_URL_CHARS = 2000
 
 
 class SlidesError(Exception):
@@ -53,8 +57,6 @@ _FULL = (0.55, 8.9)  # left edge and width of the text box without an image
 _LEFT = (0.55, 4.3)  # ... and next to an image
 _RIGHT = (5.05, 4.4)  # left edge and width of the image area
 _ACCENT = {"red": 0.10, "green": 0.45, "blue": 0.91}
-_DARK = {"red": 0.09, "green": 0.11, "blue": 0.16}
-_WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 TITLE_SLIDE_ID = "slide_000"
 
 
@@ -87,6 +89,50 @@ def _font(object_id: str, points: float, **style: Any) -> dict:
     }
 
 
+def _accent_bar(page: str) -> list[dict]:
+    """The coloured bar on the left edge that every slide shares."""
+    bar = f"{page}_bar"
+    return [
+        {
+            "createShape": {
+                "objectId": bar,
+                "shapeType": "RECTANGLE",
+                "elementProperties": _box(page, 0, 0, 0.14, 5.625),
+            }
+        },
+        {
+            "updateShapeProperties": {
+                "objectId": bar,
+                "shapeProperties": {
+                    "shapeBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": _ACCENT}}
+                    },
+                    "outline": {"propertyState": "NOT_RENDERED"},
+                },
+                "fields": "shapeBackgroundFill.solidFill.color,outline.propertyState",
+            }
+        },
+    ]
+
+
+def mermaid_reference(index: int) -> str:
+    """What the slide planner writes to pick the article's N-th Mermaid diagram."""
+    return f"mermaid:{index}"
+
+
+def mermaid_image_url(code: str) -> str | None:
+    """Address at which mermaid.ink renders ``code`` as a PNG, or None if too long.
+
+    The diagram source travels inside the address (compressed), so the external
+    service sees it; this is used only when BLOG_AGENT_RENDER_MERMAID is on.
+    Google Slides accepts image addresses of at most 2,000 characters.
+    """
+    document = json.dumps({"code": code, "mermaid": {"theme": "default"}})
+    packed = base64.urlsafe_b64encode(zlib.compress(document.encode("utf-8"), 9))
+    url = f"{MERMAID_RENDER_URL}{packed.decode('ascii')}?type=png&width=1200"
+    return url if len(url) <= MAX_IMAGE_URL_CHARS else None
+
+
 def display_width(text: str) -> int:
     """Rough width of a line: Korean, Japanese and Chinese characters count double."""
     return sum(2 if ord(char) >= 0x2E80 else 1 for char in text)
@@ -107,16 +153,18 @@ def body_points(bullets: list[str], beside_image: bool) -> int:
     return 18 if lines <= 6 else 16 if lines <= 8 else 14
 
 
-def slide_images(plan: SlideDeckPlan, allowed_images: set[str]) -> dict[int, str]:
-    """Image per slide number, keeping only URLs that really are in the article.
+def slide_images(plan: SlideDeckPlan, allowed_images: dict[str, str]) -> dict[int, str]:
+    """Image address per slide number, keeping only what really is in the article.
 
-    The planner model proposes ``image_url``; anything it did not copy exactly
-    from the article is dropped here, and an image is used on one slide only.
+    ``allowed_images`` maps what the planner may write (an image URL from the
+    article, or a diagram reference such as ``mermaid:2``) to the address to
+    fetch. Anything the model did not copy exactly is dropped here, and an
+    image is used on one slide only.
     """
     chosen: dict[int, str] = {}
     for slide in plan.slides:
-        url = slide.image_url.strip()
-        if url and url in allowed_images and url not in chosen.values():
+        url = allowed_images.get(slide.image_url.strip())
+        if url and url not in chosen.values():
             chosen[slide.number] = url
     return chosen
 
@@ -157,30 +205,18 @@ def slide_requests(
                 ],
             }
         },
-        {
-            "updatePageProperties": {
-                "objectId": TITLE_SLIDE_ID,
-                "pageProperties": {
-                    "pageBackgroundFill": {"solidFill": {"color": {"rgbColor": _DARK}}}
-                },
-                "fields": "pageBackgroundFill.solidFill.color",
-            }
-        },
         {"insertText": {"objectId": cover_title, "text": plan.deck_title}},
         _font(
-            cover_title,
-            36 if display_width(plan.deck_title) <= 60 else 28,
-            bold=True,
-            foregroundColor={"opaqueColor": {"rgbColor": _WHITE}},
+            cover_title, 36 if display_width(plan.deck_title) <= 60 else 28, bold=True
         ),
-        {"insertText": {"objectId": cover_subtitle, "text": plan.audience}},
-        _font(
-            cover_subtitle, 16, foregroundColor={"opaqueColor": {"rgbColor": _WHITE}}
-        ),
+        # The cover carries the title only; an empty subtitle box would show
+        # "Click to add subtitle" while editing.
+        {"deleteObject": {"objectId": cover_subtitle}},
+        *_accent_bar(TITLE_SLIDE_ID),
     ]
     for index, slide in enumerate(plan.slides, start=1):
         page = _slide_id(slide.number)
-        title, body, bar = f"{page}_title", f"{page}_body", f"{page}_bar"
+        title, body = f"{page}_title", f"{page}_body"
         has_image = slide.number in images
         left, width = _LEFT if has_image else _FULL
         requests += [
@@ -196,25 +232,7 @@ def slide_requests(
             },
             {"insertText": {"objectId": title, "text": slide.title}},
             _font(title, title_points(slide.title), bold=True),
-            {
-                "createShape": {
-                    "objectId": bar,
-                    "shapeType": "RECTANGLE",
-                    "elementProperties": _box(page, 0, 0, 0.14, 5.625),
-                }
-            },
-            {
-                "updateShapeProperties": {
-                    "objectId": bar,
-                    "shapeProperties": {
-                        "shapeBackgroundFill": {
-                            "solidFill": {"color": {"rgbColor": _ACCENT}}
-                        },
-                        "outline": {"propertyState": "NOT_RENDERED"},
-                    },
-                    "fields": "shapeBackgroundFill.solidFill.color,outline.propertyState",
-                }
-            },
+            *_accent_bar(page),
         ]
         bullets = [b.strip() for b in slide.bullets if b.strip()]
         if bullets:
@@ -358,15 +376,15 @@ def _checked(response: httpx.Response, doing: str) -> dict[str, Any]:
 
 
 async def create_deck(
-    plan: SlideDeckPlan, allowed_images: set[str] | None = None
+    plan: SlideDeckPlan, allowed_images: dict[str, str] | None = None
 ) -> dict[str, Any]:
     """Create the deck and return its id, URL and what went into it.
 
-    ``allowed_images`` are the image URLs found in the article; only those may
-    be placed on slides. An image Google cannot fetch is skipped and counted,
+    ``allowed_images`` maps the references the planner may use to the image
+    addresses found in (or rendered from) the article; only those are placed. An image Google cannot fetch is skipped and counted,
     it does not fail the deck.
     """
-    images = slide_images(plan, allowed_images or set())
+    images = slide_images(plan, allowed_images or {})
     async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
         headers = {"Authorization": f"Bearer {await _access_token(client)}"}
         created = _checked(

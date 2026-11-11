@@ -358,7 +358,9 @@ def test_slide_requests_build_a_cover_and_one_slide_per_plan_entry() -> None:
     plan = SlideDeckPlan.model_validate(raw)
 
     # A URL the model made up is dropped; only article images are placed.
-    images = slide_images(plan, {"https://img.example.com/real.png"})
+    images = slide_images(
+        plan, {"https://img.example.com/real.png": "https://img.example.com/real.png"}
+    )
     assert images == {2: "https://img.example.com/real.png"}
 
     requests = slide_requests(plan, "p", images)
@@ -370,6 +372,8 @@ def test_slide_requests_build_a_cover_and_one_slide_per_plan_entry() -> None:
     assert {"objectId": "slide_001_title", "text": "Slide 1"} in texts
     assert {"objectId": "slide_002_body", "text": "first point\nsecond point"} in texts
     assert requests[-1] == {"deleteObject": {"objectId": "p"}}  # placeholder slide
+    assert {"deleteObject": {"objectId": "slide_000_subtitle"}} in requests
+    assert not any("updatePageProperties" in r for r in requests)  # plain cover
 
     widths = {
         r["createShape"]["objectId"]: r["createShape"]["elementProperties"]["size"][
@@ -475,3 +479,53 @@ async def test_google_slides_without_a_grant_gives_guidance(
     result = await slides.create_google_slides_deck_with_speaker_notes(tool_context)
     assert result["error_code"] == "SLIDES_NOT_AUTHORIZED"
     assert "authorize_google_slides.py" in result["recovery_instruction"]
+
+
+def test_mermaid_diagrams_become_references_and_image_addresses(monkeypatch) -> None:
+    import base64
+    import json
+    import zlib
+
+    from app.google_slides import mermaid_image_url, slide_images
+    from app.markdown_checks import extract_mermaid_diagrams
+    from app.schemas import SlideDeckPlan
+
+    article = (
+        "# Title\n\n## Loop\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\n"
+        "```python\nprint(1)\n```\n\n## Parts\n\n```mermaid\ngraph LR\n  X --> Y\n```\n"
+    )
+    diagrams = extract_mermaid_diagrams(article)
+    assert diagrams == [
+        ("Loop", "flowchart TD\n  A --> B"),
+        ("Parts", "graph LR\n  X --> Y"),
+    ]
+
+    url = mermaid_image_url(diagrams[0][1])
+    assert url.startswith("https://mermaid.ink/img/pako:") and "type=png" in url
+    packed = url.split("pako:")[1].split("?")[0]
+    assert json.loads(zlib.decompress(base64.urlsafe_b64decode(packed)))["code"] == (
+        "flowchart TD\n  A --> B"
+    )
+    assert (
+        mermaid_image_url(
+            "A --> B\n" + "".join(f"N{i} --> M{i * 7919}\n" for i in range(900))
+        )
+        is None
+    )
+
+    raw = _deck_plan()
+    raw["slides"][0]["image_url"] = "mermaid:2"
+    raw["slides"][1]["image_url"] = "mermaid:9"  # no such diagram
+    plan = SlideDeckPlan.model_validate(raw)
+    assert slide_images(plan, {"mermaid:2": "https://mermaid.ink/img/x"}) == {
+        1: "https://mermaid.ink/img/x"
+    }
+
+
+def test_mermaid_rendering_is_off_unless_enabled(monkeypatch) -> None:
+    from app.settings import render_mermaid_enabled
+
+    monkeypatch.delenv("BLOG_AGENT_RENDER_MERMAID", raising=False)
+    assert render_mermaid_enabled() is False
+    monkeypatch.setenv("BLOG_AGENT_RENDER_MERMAID", "true")
+    assert render_mermaid_enabled() is True
