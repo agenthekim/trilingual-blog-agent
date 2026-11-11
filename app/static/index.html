@@ -329,7 +329,10 @@ function remembered(key, placeholder) {
 function nextStep(row, busy) {
   const box = el("div", {class: "action"});
   if (row.status === "existing_source" || !row.title) return box;
-  if (row.can_post_draft && row.status !== "published") {
+  if (row.status !== "published" && !row.finalized) {
+    // Nothing is posted from text nobody signed off: review it, then finalize.
+    box.append(el("button", {class: "go", disabled: busy, onclick: () => act("finalize", {language: row.language})}, "Finalize"));
+  } else if (row.can_post_draft && row.status !== "published") {
     const update = row.status === "draft";
     const tags = remembered(`tags:${row.platform}`, "tags: ai, agents");
     box.append(tags, el("button", {class: update ? "" : "go", disabled: busy, onclick: () => postDraft(row, tags.value, update)},

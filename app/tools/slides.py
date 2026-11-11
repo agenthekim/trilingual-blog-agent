@@ -109,7 +109,18 @@ def slide_timing_report(plan: SlideDeckPlan, expected_slides: int) -> dict[str, 
             {"number": slide.number, "estimated_seconds": seconds, "verdict": verdict}
         )
 
-    passed = not too_short and not too_long and len(plan.slides) == expected_slides
+    # The title slide and the thank-you slide each need something to say.
+    unspoken = [
+        name
+        for name in ("opening_script", "closing_script")
+        if not getattr(plan, name).strip()
+    ]
+    passed = (
+        not too_short
+        and not too_long
+        and not unspoken
+        and len(plan.slides) == expected_slides
+    )
     report: dict[str, Any] = {
         "status": "success",
         "passed": passed,
@@ -129,6 +140,8 @@ def slide_timing_report(plan: SlideDeckPlan, expected_slides: int) -> dict[str, 
             fixes.append(f"lengthen the scripts of slides {too_short}")
         if too_long:
             fixes.append(f"shorten the scripts of slides {too_long}")
+        if unspoken:
+            fixes.append(f"write {' and '.join(unspoken)}")
         report["recovery_instruction"] = (
             "Ask slide_planning_pipeline to "
             + "; ".join(fixes)
@@ -164,6 +177,10 @@ def render_slide_plan_markdown(plan: SlideDeckPlan) -> str:
         f"- Audience: {plan.audience}",
         f"- Slides: {len(plan.slides)} (one per minute)",
         "",
+        _OPENING_HEADING,
+        "",
+        plan.opening_script,
+        "",
     ]
     for slide in plan.slides:
         seconds = estimate_speaking_seconds(slide.speaker_script, plan.language)
@@ -179,10 +196,16 @@ def render_slide_plan_markdown(plan: SlideDeckPlan) -> str:
             slide.speaker_script,
             "",
         ]
+    lines += [_CLOSING_HEADING, "", plan.closing_script, ""]
     return "\n".join(lines)
 
 
 _SLIDE_HEADING = re.compile(r"^## (\d+)\. (.+)$")
+# What is said on the two slides that have no number.
+_OPENING_HEADING = "Opening (title slide):"
+_CLOSING_HEADING = "Closing (thank-you slide):"
+_OPENING_LINE = re.compile(r"^Opening \(title slide\):\s*$", re.I)
+_CLOSING_LINE = re.compile(r"^Closing \(thank-you slide\):\s*$", re.I)
 _SCRIPT_HEADING = re.compile(r"^Speaker script\b.*:\s*$")
 
 
@@ -204,6 +227,27 @@ def parse_slide_plan_markdown(text: str, language: str) -> SlideDeckPlan:
     starts = [i for i, ln in enumerate(lines) if _SLIDE_HEADING.match(ln)]
     if not starts:
         raise ValueError("No slide heading ('## 1. Title') was found.")
+    opening_at = next(
+        (i for i, ln in enumerate(lines[: starts[0]]) if _OPENING_LINE.match(ln)), None
+    )
+    opening = (
+        "\n".join(lines[opening_at + 1 : starts[0]]).strip()
+        if opening_at is not None
+        else ""
+    )
+    # The closing words follow the last slide; they are not part of its script.
+    closing_at = next(
+        (
+            i
+            for i in range(len(lines) - 1, starts[-1], -1)
+            if _CLOSING_LINE.match(lines[i])
+        ),
+        None,
+    )
+    closing = ""
+    if closing_at is not None:
+        closing = "\n".join(lines[closing_at + 1 :]).strip()
+        lines = lines[:closing_at]
     slides = []
     for start, end in zip(starts, [*starts[1:], len(lines)], strict=True):
         number, title = _SLIDE_HEADING.match(lines[start]).groups()
@@ -238,7 +282,9 @@ def parse_slide_plan_markdown(text: str, language: str) -> SlideDeckPlan:
                 "language": language,
                 "deck_title": deck_title,
                 "audience": audience,
+                "opening_script": opening,
                 "slides": slides,
+                "closing_script": closing,
             }
         )
     except ValidationError as exc:
@@ -342,7 +388,8 @@ async def create_google_slides_deck_with_speaker_notes(
 ) -> dict[str, Any]:
     """Create a Google Slides deck from the slide plan, after human approval.
 
-    Makes a title slide and one slide per planned slide, places the article
+    Makes a title slide, one slide per planned slide and a thank-you slide,
+    places the article
     image chosen for a slide next to its bullets, and puts each slide's
     speaker script (and the note on what to show) into its speaker notes. The
     deck is a new file in the Drive of the Google account that granted access;

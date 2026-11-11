@@ -41,6 +41,8 @@ Reply in the language the user writes in.
 - Languages and platforms are fixed pairs: Korean (ko) -> Naver Blog,
   English (en) -> DEV Community (dev.to), Japanese (ja) -> Qiita.
 - Qiita and DEV Community are posted through their APIs as non-public drafts.
+  The user may ask for a public post instead, but only in the approval they
+  give; you cannot choose it and must not promise it.
   Naver Blog has no write API: you export an HTML file and the user posts it.
 - The "seed" is the single finalized source article. The other two languages
   are always produced from the seed, never from each other.
@@ -294,6 +296,39 @@ def critic_instruction(ctx: ReadonlyContext) -> str:
     )
 
 
+def _talk_structure(slides: int, language_name: str) -> str:
+    """Rules for the first and last numbered slides, by the length of the talk."""
+    rules = ""
+    if slides >= 5:
+        rules += (
+            f"- Slide 1 is the agenda. Its title is the usual {language_name} word "
+            "for 'Agenda'. Its bullets, six at most, are the parts of the talk in "
+            "the order they come, and its script walks through them. It does not "
+            "greet again and does not explain the topic.\n"
+        )
+    else:
+        rules += (
+            "- The talk is too short for an agenda slide: slide 1 starts with "
+            "the content.\n"
+        )
+    rules += (
+        f"- The conclusion has its own slide, titled with the usual {language_name} "
+        "word for 'Conclusion' or 'Summary'. It only sums up what the article "
+        "established.\n"
+    )
+    if slides >= 6:
+        rules += (
+            "- If the article also names next steps, future work or a follow-up, "
+            "they get their own slide after the conclusion, titled with the usual "
+            f"{language_name} words for 'Next steps'. Never mix conclusion and next "
+            "steps on one slide. If the article names none, there is no such slide "
+            "and the conclusion is the last numbered slide; do not invent any.\n"
+        )
+    else:
+        rules += "- The conclusion is the last numbered slide. Leave next steps out.\n"
+    return rules
+
+
 def slide_planner_instruction(ctx: ReadonlyContext) -> str:
     brief = ctx.state.get(state.PRESENTATION_BRIEF) or {}
     language = brief.get("language") or ctx.state.get(state.SOURCE_LANGUAGE) or "ko"
@@ -325,9 +360,22 @@ def slide_planner_instruction(ctx: ReadonlyContext) -> str:
         f"Language of slides and script: {LANGUAGE_NAMES[language]} ('{language}').\n"
         f"Audience: {brief.get('audience') or 'software engineers'}.\n"
         f"Talk length: {minutes} minutes, so exactly {minutes} slides, numbered from 1.\n\n"
+        "The deck opens with a title slide and ends with a thank-you slide. Both "
+        "are added for you and are not among the numbered slides; you only write "
+        "what is said on them.\n\n"
         "Rules:\n"
-        "- One slide covers one idea. First slide: title and why it matters. "
-        "Last slide: summary and next steps.\n"
+        "- opening_script: what is said on the title slide. Greet the audience, "
+        "say the talk title, then say in one or two sentences what the title "
+        "means and what the audience will understand or be able to do "
+        "afterwards. About 20 seconds. This is the only greeting in the talk.\n"
+        "- closing_script: what is said on the thank-you slide. Thank the "
+        "audience and invite questions, in one or two sentences. This is the "
+        "only goodbye in the talk; no numbered slide thanks the audience.\n"
+        "- One slide covers one idea, and its title names that idea plainly, so "
+        "that someone who reads only the titles can follow the talk. Do not put "
+        "a label such as 'Concept:' or 'Example:' in front of a title, and never "
+        "reuse or paraphrase the talk title as a slide title.\n"
+        f"{_talk_structure(minutes, LANGUAGE_NAMES[language])}"
         "- bullets: two to five short phrases, not sentences.\n"
         "- visual_note: the diagram, code excerpt or screenshot to show; take code "
         "from the article, never invent it.\n"

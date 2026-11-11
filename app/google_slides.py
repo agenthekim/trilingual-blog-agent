@@ -38,6 +38,7 @@ OAUTH_SCOPE = "https://www.googleapis.com/auth/drive.file"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SLIDES_API = "https://slides.googleapis.com/v1/presentations"
 MERMAID_RENDER_URL = "https://mermaid.ink/img/pako:"
+MERMAID_SVG_URL = "https://mermaid.ink/svg/pako:"
 MAX_IMAGE_URL_CHARS = 2000
 
 
@@ -77,6 +78,11 @@ _TEXT_HEIGHT = 3.3  # the bullets should not need more height than this
 _MIN_STACKED_IMAGE_HEIGHT = 1.2
 _ACCENT = {"red": 0.10, "green": 0.45, "blue": 0.91}
 TITLE_SLIDE_ID = "slide_000"
+# The thank-you slide after the planned slides. Its number is past any a plan
+# can have, so its id sorts last and can never collide with a planned slide.
+CLOSING_SLIDE_NUMBER = 999
+CLOSING_SLIDE_ID = "slide_999"
+THANK_YOU = {"en": "Thank you", "ko": "감사합니다", "ja": "ありがとうございました"}
 
 
 def _emu(inches: float) -> dict[str, Any]:
@@ -139,6 +145,12 @@ def mermaid_reference(index: int) -> str:
     return f"mermaid:{index}"
 
 
+def _packed_diagram(code: str) -> str:
+    document = json.dumps({"code": code, "mermaid": {"theme": "default"}})
+    packed = base64.urlsafe_b64encode(zlib.compress(document.encode("utf-8"), 9))
+    return packed.decode("ascii")
+
+
 def mermaid_image_url(code: str) -> str | None:
     """Address at which mermaid.ink renders ``code`` as a PNG, or None if too long.
 
@@ -146,10 +158,17 @@ def mermaid_image_url(code: str) -> str | None:
     service sees it; this is used only when BLOG_AGENT_RENDER_MERMAID is on.
     Google Slides accepts image addresses of at most 2,000 characters.
     """
-    document = json.dumps({"code": code, "mermaid": {"theme": "default"}})
-    packed = base64.urlsafe_b64encode(zlib.compress(document.encode("utf-8"), 9))
-    url = f"{MERMAID_RENDER_URL}{packed.decode('ascii')}?type=png&width=1200"
+    url = f"{MERMAID_RENDER_URL}{_packed_diagram(code)}?type=png&width=1200"
     return url if len(url) <= MAX_IMAGE_URL_CHARS else None
+
+
+def mermaid_preview_url(code: str) -> str:
+    """Address at which mermaid.ink draws ``code`` as SVG, for showing in a page.
+
+    As with ``mermaid_image_url`` the diagram source is part of the address,
+    so the same setting decides whether this may be used.
+    """
+    return f"{MERMAID_SVG_URL}{_packed_diagram(code)}"
 
 
 def display_width(text: str) -> int:
@@ -473,7 +492,8 @@ def slide_requests(
     images: dict[int, str] | None = None,
     aspects: dict[int, float] | None = None,
 ) -> list[dict]:
-    """Requests that build a title slide and one content slide per planned slide.
+    """Requests that build a title slide, one content slide per planned slide
+    and a thank-you slide.
 
     A content slide has a title sized to fit, an accent bar, and a text box
     with the bullets; ``slide_layout`` decides where the box goes when the
@@ -566,6 +586,33 @@ def slide_requests(
                     }
                 },
             ]
+    closing_title, closing_subtitle = (
+        f"{CLOSING_SLIDE_ID}_title",
+        f"{CLOSING_SLIDE_ID}_subtitle",
+    )
+    requests += [
+        {
+            "createSlide": {
+                "objectId": CLOSING_SLIDE_ID,
+                "insertionIndex": len(plan.slides) + 1 + offset,
+                "slideLayoutReference": {"predefinedLayout": "TITLE"},
+                "placeholderIdMappings": [
+                    {
+                        "layoutPlaceholder": {"type": "CENTERED_TITLE"},
+                        "objectId": closing_title,
+                    },
+                    {
+                        "layoutPlaceholder": {"type": "SUBTITLE"},
+                        "objectId": closing_subtitle,
+                    },
+                ],
+            }
+        },
+        {"insertText": {"objectId": closing_title, "text": THANK_YOU[plan.language]}},
+        _font(closing_title, 36, bold=True),
+        {"deleteObject": {"objectId": closing_subtitle}},
+        *_accent_bar(CLOSING_SLIDE_ID),
+    ]
     if first_slide_id:
         requests.append({"deleteObject": {"objectId": first_slide_id}})
     return requests
@@ -655,13 +702,22 @@ def notes_requests(plan: SlideDeckPlan, presentation: dict[str, Any]) -> list[di
         .get("speakerNotesObjectId")
         for page in presentation.get("slides", [])
     }
-    requests = []
-    for slide in plan.slides:
-        shape = notes_shape.get(_slide_id(slide.number))
-        text = speaker_notes_text(slide.visual_note, slide.speaker_script)
-        if shape and text:
-            requests.append({"insertText": {"objectId": shape, "text": text}})
-    return requests
+    spoken = [
+        (TITLE_SLIDE_ID, plan.opening_script.strip()),
+        *(
+            (
+                _slide_id(slide.number),
+                speaker_notes_text(slide.visual_note, slide.speaker_script),
+            )
+            for slide in plan.slides
+        ),
+        (CLOSING_SLIDE_ID, plan.closing_script.strip()),
+    ]
+    return [
+        {"insertText": {"objectId": notes_shape[page], "text": text}}
+        for page, text in spoken
+        if notes_shape.get(page) and text
+    ]
 
 
 def granted_account() -> str | None:
@@ -803,7 +859,7 @@ async def create_deck(
         "presentation_id": presentation_id,
         "url": deck_url(presentation_id),
         "title": plan.deck_title,
-        "slide_count": len(plan.slides) + 1,
+        "slide_count": len(plan.slides) + 2,  # with the title and thank-you slides
         "slides_with_notes": len(notes),
         "images_inserted": len(images) - images_failed,
         "images_failed": images_failed,

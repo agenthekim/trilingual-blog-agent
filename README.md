@@ -24,8 +24,8 @@ machine to a human:
 | :--- | :--- | :--- |
 | 1. Seed | Loads a Markdown draft, or fetches an already published post from Qiita, DEV Community or Naver Blog. Revises it with the author. | Author finalizes the seed |
 | 2. Localize | Writes the two missing languages and their titles in parallel, checks structure against the seed in code, has a critic model review meaning, fixes only what failed. | Author reviews the files and titles |
-| 3. Publish | Creates a private draft on Qiita (ja) and an unpublished draft on DEV Community (en); exports paste-ready HTML for Naver Blog (ko). Verifies the resulting URLs. | Approval prompt before every write |
-| 4. Present | Plans one slide per minute with a speaker script, checks estimated speaking time, re-plans once if it fails. Writes the plan and an artifact manifest. | Author reviews the plan |
+| 3. Publish | Creates a private draft on Qiita (ja) and an unpublished draft on DEV Community (en); exports paste-ready HTML for Naver Blog (ko). Verifies the resulting URLs. | Approval prompt before every write. The post is a non-public draft unless the person approving asks for a public post in that approval; the model cannot choose it |
+| 4. Present | Plans one slide per minute with a speaker script, checks estimated speaking time, re-plans once if it fails. The deck opens with a title slide (greeting, title and what it means, in its speaker notes), follows with an agenda, ends with a conclusion, next steps on their own slide when the article names any, and a thank-you slide. Writes the plan and an artifact manifest. | Author reviews the plan |
 
 Language to platform mapping: Korean → Naver Blog, English → DEV Community,
 Japanese → Qiita. A post that was fetched from a platform is never written back
@@ -99,13 +99,16 @@ agents-cli run "Hello, what can you help me with?"     # one-shot from the termi
 ```
 
 Or use the web front end: paste a URL or a draft, press one button, and get a
-table with each language's title, status and links to the generated files and
-the slide plan. A draft on Qiita or DEV Community is created only when you press
-its approve button; a Naver Blog URL is registered after you post by hand. Ticking
-"Also create the Google Slides deck" before a run approves, in advance, one new
-Slides file in your own Drive for that run. The
-localized articles, their titles and the slide plan can be edited in the page;
-a saved edit replaces the text the agent posts and re-runs the structure check.
+table with each language's title, status, files, slides and next step. The next
+step follows the order of the work: review the post (Mermaid diagrams are shown
+as drawings in the preview), edit it in the full-page editor if needed, press
+Finalize, then approve the post and choose in that approval whether it is a
+draft or public. Editing a post after it was finalized makes it unfinished
+again. A Naver Blog URL is registered after you post by hand. Choosing a slide
+length before a run approves, in advance, the new Slides files of that run in
+your own Drive. The slide plan can be edited too; its text is carried into the
+existing deck, or pulled back from it, only after an approval that lists the
+slides that change.
 
 ```bash
 uv run python -m app.web_ui                 # http://127.0.0.1:8502
@@ -245,10 +248,13 @@ What has been run for real, and what has not:
 | Google Slides deck with speaker notes | Decks were created through the real Slides API and checked by reading them back and by rendering slide thumbnails: cover slide, titles sized to fit, bullets (Korean and Japanese included), an article image placed beside the bullets, speaker notes. With `BLOG_AGENT_RENDER_MERMAID` on, Mermaid diagrams are rendered by mermaid.ink and placed as images; this ran in real decks. PDF export is not implemented |
 | Image placement by shape (wide under the bullets, tall over the full page height, title narrowed) | Unit-tested, then run against the real Slides API on one ten-slide test deck built from a real slide plan and its rendered diagrams: all nine images were placed, the five titles next to full-height images were narrowed (one of them Korean), and every slide was checked by thumbnail. Images that are not rendered diagrams keep the right half, because their size is not read |
 | Editing a deck's text from its Markdown plan, and pulling deck edits back | Each direction needs an approval that lists the slides that change; only titles, bullets and speaker notes move. The reading, comparing and writing were run against the real Slides API on the test deck: titles, bullets and notes (Korean and an emoji included) arrived intact and kept their font size, weight and bullets, and a note changed in the deck was pulled back. The path through the web page and its approval dialog was exercised in a browser against a stand-in for the Slides API, not against the real one |
+| Talk structure (title-slide greeting, agenda, conclusion, separate next steps, thank-you slide) | Two eight-minute plans were made by the real model, in English and in Korean, and both followed it; one of them was built into a real deck through the Slides API and read back, with the greeting in the title slide's notes and the closing words in the thank-you slide's notes. Longer talks and Japanese were not run |
+| Draft or public, chosen by the person approving | Unit-tested with stand-ins for the platforms: an approval that asks for a public post publishes, any other approval saves a non-public draft, and a post that is already public is not posted again. Not run against the real Qiita or DEV APIs |
+| Mermaid diagrams drawn in the file preview | The twelve diagrams of one real article were drawn through mermaid.ink by the server, all requested at once. The route that serves them is unit-tested with a stand-in drawer; the finished page was not viewed in a browser with the kept images |
 | Naver Blog publishing | Manual by design: Naver has no public write API. The agent exports HTML to paste and then verifies the URL the author gives it |
 | Naver Blog reading | Best effort from the public mobile page; heading levels are not recovered |
 | Speaking-time check | Estimated from script length with assumed rates (140 words/min English, 300 characters/min Korean, 330 characters/min Japanese), not measured |
-| Web front end | Full run, file views and the approval request with a decline were exercised through its HTTP API; creating a draft from it has not been run. The results table and the full-page editor were rendered in headless Chrome against stand-in data, not against a real run |
+| Web front end | Full run, file views and the approval request with a decline were exercised through its HTTP API; creating a draft or a public post from it has not been run against the real platforms. The results table, the next-step states, the draft/public approval dialog and the full-page editor were rendered in headless Chrome against stand-in data, not against a real run |
 | CI/CD pipeline | Not set up |
 
 `ParallelAgent`, `SequentialAgent` and `LoopAgent` print deprecation warnings in

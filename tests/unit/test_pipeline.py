@@ -152,3 +152,39 @@ async def test_source_and_unknown_files_cannot_be_edited(isolated_workspace) -> 
             await pipeline.save_edit(name, "text")
     with pytest.raises(ValueError):
         await pipeline.save_edit("post.ko.md", "   ")
+
+
+@pytest.mark.asyncio
+async def test_finalizing_holds_only_for_the_text_that_was_reviewed(
+    isolated_workspace,
+) -> None:
+    pipeline = await _pipeline_with_article()
+    rows = {row["language"]: row for row in (await pipeline.overview())["rows"]}
+    assert rows["ko"]["finalized"] is False
+
+    done = await pipeline.finalize_post("ko")
+    assert done["finalized"] is True
+    rows = {row["language"]: row for row in (await pipeline.overview())["rows"]}
+    assert rows["ko"]["finalized"] is True and rows["ja"]["finalized"] is False
+
+    # Any change to the text, here an edit by hand, makes it unfinished again.
+    await pipeline.save_edit(
+        "post.ko.md", "# 제목\n\n고친 본문. [링크](https://example.com)"
+    )
+    rows = {row["language"]: row for row in (await pipeline.overview())["rows"]}
+    assert rows["ko"]["finalized"] is False
+
+    for language in ("ja", "en"):  # the source, and a language with no text
+        with pytest.raises(ValueError, match="no localized post"):
+            await pipeline.finalize_post(language)
+
+
+@pytest.mark.asyncio
+async def test_text_with_a_credential_cannot_be_finalized(isolated_workspace) -> None:
+    pipeline = await _pipeline_with_article()
+    key = "AIza" + "B" * 35
+    await pipeline.save_edit(
+        "post.ko.md", f"# 제목\n\n키는 {key} 입니다. [링크](https://example.com)"
+    )
+    with pytest.raises(ValueError, match="credential-looking"):
+        await pipeline.finalize_post("ko")

@@ -194,6 +194,8 @@ def slide_plan(script: str, slides: int) -> dict[str, Any]:
         "deck_title": "Deck",
         "language": "en",
         "audience": "developers",
+        "opening_script": "Welcome. This talk is Deck.",
+        "closing_script": "Thank you. Questions?",
         "slides": [
             {
                 "number": n,

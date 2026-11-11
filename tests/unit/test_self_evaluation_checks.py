@@ -84,6 +84,8 @@ def _plan(scripts: list[str]) -> SlideDeckPlan:
         language="en",
         deck_title="Deck",
         audience="engineers",
+        opening_script="Welcome. This talk is Deck.",
+        closing_script="Thank you. Questions?",
         slides=[
             SlideSpec(
                 number=i,
@@ -100,6 +102,13 @@ def _plan(scripts: list[str]) -> SlideDeckPlan:
 def test_slide_timing_passes_for_one_minute_scripts() -> None:
     report = slide_timing_report(_plan(["word " * 140] * 3), expected_slides=3)
     assert report["passed"] and "recovery_instruction" not in report
+
+
+def test_slide_timing_wants_words_for_the_title_and_thank_you_slides() -> None:
+    plan = _plan(["word " * 140] * 3).model_copy(update={"opening_script": " "})
+    report = slide_timing_report(plan, expected_slides=3)
+    assert not report["passed"]
+    assert "write opening_script" in report["recovery_instruction"]
 
 
 def test_slide_timing_names_the_slides_to_fix() -> None:

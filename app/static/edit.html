@@ -148,7 +148,7 @@ async function save() {
     savedText = $("text").value; savedTitle = $("title").value;
     const notes = ["Saved."];
     good = !data.check || data.check.passed;
-    if (hasTitle) notes.push(good ? "Structure matches the source." : "Differs from the source: " + data.check.errors.join(" "));
+    if (hasTitle) notes.push((good ? "Structure matches the source." : "Differs from the source: " + data.check.errors.join(" ")) + " Finalize the post on the main page before posting it.");
     else if (!good) notes.push("It no longer reads as a slide plan, so the deck cannot be updated from it: " + data.check.errors.join(" "));
     if (data.secrets && data.secrets.length) notes.push("Contains credential-looking text; the agent will refuse to post it.");
     say(notes.join(" "), !good);
@@ -185,8 +185,9 @@ function confirmAction({title, summary, note, okLabel}) {
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const slideNames = (numbers) => numbers.map((n) => (n === 0 ? "title slide" : n === 999 ? "thank-you slide" : String(n)));
 function slideList(numbers) {
-  const names = numbers.map((n) => (n === 0 ? "cover" : String(n)));
+  const names = slideNames(numbers);
   return `${names.slice(0, 12).join(", ")}${names.length > 12 ? ", …" : ""} (${plural(numbers.length, "slide")})`;
 }
 function changeList(s) {
@@ -202,9 +203,9 @@ async function pushToDeck(quietIfSame) {
     const plan = await syncDeck("push", false);
     if (!plan.slides.length) { if (!quietIfSame) say("The deck already has this text. Nothing to update."); return; }
     const notes = [];
-    if (plan.conflicts.length) notes.push(`Also edited in the deck: slide ${plan.conflicts.join(", ")}. Approving replaces that text with this file's; pull from the deck first to keep it.`);
+    if (plan.conflicts.length) notes.push(`Also edited in the deck: ${slideNames(plan.conflicts).join(", ")}. Approving replaces that text with this file's; pull from the deck first to keep it.`);
     if (!plan.baseline_known) notes.push("There is no record of what the deck last held, so every difference is taken from this file.");
-    if (plan.only_in_file.length) notes.push(`Not in the deck, so skipped: slide ${plan.only_in_file.join(", ")}.`);
+    if (plan.only_in_file.length) notes.push(`Not in the deck, so skipped: ${slideNames(plan.only_in_file).join(", ")}.`);
     const ok = await confirmAction({title: "Update the Google Slides deck?",
       summary: [["Slides that change", slideList(plan.slides)], ["What changes", changeList(plan)], ["Stays as it is", "pictures, sizes and positions"]],
       note: notes.join(" "), okLabel: "Approve and update"});
@@ -222,7 +223,7 @@ async function pullFromDeck() {
     const plan = await syncDeck("pull", false);
     if (!plan.slides.length) { say("Nothing was edited in the deck. The file is unchanged."); return; }
     const notes = [];
-    if (plan.conflicts.length) notes.push(`Also edited in this file: slide ${plan.conflicts.join(", ")}. Approving replaces that text with the deck's.`);
+    if (plan.conflicts.length) notes.push(`Also edited in this file: ${slideNames(plan.conflicts).join(", ")}. Approving replaces that text with the deck's.`);
     if (!plan.baseline_known) notes.push("There is no record of what the deck last held, so every difference is taken from the deck.");
     const ok = await confirmAction({title: "Bring the deck's text into this file?",
       summary: [["Slides that change", slideList(plan.slides)], ["What changes", changeList(plan)], ["The deck", "is only read"]],

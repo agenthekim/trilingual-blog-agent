@@ -125,7 +125,8 @@ def _approval(
         action = "update the existing draft on" if updating else "create a draft on"
         tool_context.request_confirmation(
             hint=f"Approve to {action} {platform}: '{title}' ({chars} characters). "
-            "It will be saved as a non-public draft.",
+            "It will be saved as a non-public draft, unless the approval itself "
+            "asks for a public post.",
             payload={"platform": platform, "title": title, "updating": updating},
         )
         return PublishOutput(
@@ -138,6 +139,27 @@ def _approval(
             message=f"The user declined publishing to {platform}. Nothing was sent.",
         ).model_dump()
     return None
+
+
+def _approved_as_public(tool_context: ToolContext) -> bool:
+    """Whether the person who approved asked for a public post rather than a draft.
+
+    The choice travels in the approval a person gives, never in the arguments
+    the model passes, so the model cannot make anything public by itself. An
+    approval that says nothing about it means a non-public draft.
+    """
+    payload = getattr(tool_context.tool_confirmation, "payload", None)
+    return isinstance(payload, dict) and payload.get("visibility") == "public"
+
+
+def _already_public(existing: dict[str, Any], platform: str) -> dict[str, Any] | None:
+    if existing.get("state") != "published":
+        return None
+    return tool_error(
+        "ALREADY_PUBLISHED",
+        f"This article is already public on {platform}: {existing.get('url')}.",
+        "Do not post it again. Tell the user to edit the public post on the site.",
+    )
 
 
 def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, Any]:
@@ -186,8 +208,9 @@ async def publish_qiita_article_draft(
 
     The first call does not send anything: it pauses and asks the user to
     approve. When the run is resumed with approval, the draft is created, or
-    updated if this project already has a Qiita draft. The draft stays private;
-    making it public is done by the user on Qiita.
+    updated if this project already has a Qiita draft. The draft stays private
+    and the user makes it public on Qiita, unless the user asked for a public
+    post in the approval itself. You cannot choose that; never promise it.
 
     Args:
         title: Japanese title of the article, at most 255 characters.
@@ -210,6 +233,8 @@ async def publish_qiita_article_draft(
         return checked
     project_id, language, markdown = checked
     existing = (tool_context.state.get(state.PUBLICATIONS) or {}).get("qiita") or {}
+    if refused := _already_public(existing, "qiita"):
+        return refused
     item_id = existing.get("article_id") if existing.get("state") == "draft" else None
 
     pending = _approval(
@@ -221,12 +246,13 @@ async def publish_qiita_article_draft(
     )
     if pending:
         return pending
+    public = _approved_as_public(tool_context)
     try:
         item = await platforms.qiita_save_item(
             title=request.title,
             body=markdown,
             tags=request.tags,
-            private=True,
+            private=not public,
             item_id=item_id,
         )
     except platforms.PlatformError as exc:
@@ -236,14 +262,16 @@ async def publish_qiita_article_draft(
         language=language,  # type: ignore[arg-type]
         article_id=item["id"],
         url=item["url"],
-        state="draft",
+        state="published" if public else "draft",
         title=request.title,
     )
     _remember_publication(tool_context, project_id, record)
     return PublishOutput(
         status="success",
         publication=record,
-        message="Saved on Qiita as a private draft. The user makes it public on Qiita.",
+        message="Posted on Qiita and public, as the user chose when approving."
+        if public
+        else "Saved on Qiita as a private draft. The user makes it public on Qiita.",
     ).model_dump()
 
 
@@ -255,7 +283,9 @@ async def publish_devto_article_draft(
     The first call does not send anything: it pauses and asks the user to
     approve. When the run is resumed with approval, the draft is created, or
     updated if this project already has a DEV draft. The draft stays
-    unpublished; publishing is done by the user on dev.to.
+    unpublished and the user publishes it on dev.to, unless the user asked for
+    a public post in the approval itself. You cannot choose that; never
+    promise it.
 
     Args:
         title: English title of the article, at most 128 characters.
@@ -281,6 +311,8 @@ async def publish_devto_article_draft(
         return checked
     project_id, language, markdown = checked
     existing = (tool_context.state.get(state.PUBLICATIONS) or {}).get("devto") or {}
+    if refused := _already_public(existing, "devto"):
+        return refused
     article_id = (
         existing.get("article_id") if existing.get("state") == "draft" else None
     )
@@ -294,12 +326,13 @@ async def publish_devto_article_draft(
     )
     if pending:
         return pending
+    public = _approved_as_public(tool_context)
     try:
         article = await platforms.devto_save_article(
             title=request.title,
             body=markdown,
             tags=request.tags,
-            published=False,
+            published=public,
             article_id=article_id,
         )
     except platforms.PlatformError as exc:
@@ -309,14 +342,16 @@ async def publish_devto_article_draft(
         language=language,  # type: ignore[arg-type]
         article_id=str(article["id"]),
         url=article.get("url"),
-        state="draft",
+        state="published" if public else "draft",
         title=request.title,
     )
     _remember_publication(tool_context, project_id, record)
     return PublishOutput(
         status="success",
         publication=record,
-        message="Saved on DEV Community as an unpublished draft. The user publishes "
+        message="Posted on DEV Community and public, as the user chose when approving."
+        if public
+        else "Saved on DEV Community as an unpublished draft. The user publishes "
         "it on dev.to.",
     ).model_dump()
 

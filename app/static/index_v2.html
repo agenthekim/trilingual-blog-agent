@@ -106,6 +106,9 @@
   dialog h2 { font-size:16px; }
   dl.summary { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; }
   dl.summary dt { color:var(--muted); } dl.summary dd { margin:0; font-weight:500; overflow-wrap:anywhere; }
+  #confirmChoices { display:grid; gap:6px; }
+  #confirmChoices:empty { display:none; }
+  label.choice { display:flex; gap:8px; align-items:baseline; cursor:pointer; }
   #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--text); color:var(--bg);
     padding:8px 14px; border-radius:6px; max-width:90vw; z-index:10; }
   footer { color:var(--muted); font-size:12.5px; text-align:center; }
@@ -204,7 +207,7 @@
   <section class="card hidden" id="langs">
     <div class="tablewrap">
       <table class="results">
-        <thead><tr><th>Language</th><th>Title</th><th>Files</th><th>Next step</th><th>Slides</th></tr></thead>
+        <thead><tr><th>Language</th><th>Title</th><th>Files</th><th>Slides</th><th>Next step</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
@@ -231,6 +234,7 @@
   <div class="body">
     <h2 id="confirmTitle"></h2>
     <dl class="summary" id="confirmSummary"></dl>
+    <div id="confirmChoices"></div>
     <p class="muted small" id="confirmNote" style="margin:0"></p>
   </div>
   <div class="foot">
@@ -332,14 +336,22 @@ async function api(path, body, method) {
 const fileUrl = (name) => `/api/jobs/${jobId}/files/${encodeURIComponent(name)}`;
 
 // One dialog for every action that writes outside this machine.
-function confirmAction({title, summary, note, okLabel}) {
+// Resolves to true or false; with ``choices`` to the chosen value, or null when cancelled.
+function confirmAction({title, summary, note, okLabel, choices}) {
   return new Promise((resolve) => {
     $("confirmTitle").textContent = title;
     $("confirmSummary").replaceChildren(...summary.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+    $("confirmChoices").replaceChildren(...(choices || []).map((choice, i) => el("label", {class: "choice"},
+      el("input", {type: "radio", name: "confirmChoice", value: choice.value, checked: i === 0}),
+      el("span", {}, el("strong", {}, choice.label), el("span", {class: "muted"}, " · " + choice.hint)))));
     $("confirmNote").textContent = note || "";
     $("confirmOk").textContent = okLabel;
     const dialog = $("confirmDialog");
-    const done = (value) => { dialog.close(); $("confirmOk").onclick = $("confirmCancel").onclick = dialog.oncancel = null; resolve(value); };
+    const done = (ok) => {
+      const picked = dialog.querySelector("input[name=confirmChoice]:checked");
+      dialog.close(); $("confirmOk").onclick = $("confirmCancel").onclick = dialog.oncancel = null;
+      resolve(choices ? (ok && picked ? picked.value : null) : ok);
+    };
     $("confirmOk").onclick = () => done(true);
     $("confirmCancel").onclick = () => done(false);
     dialog.oncancel = () => done(false);
@@ -394,28 +406,36 @@ function languageRow(row, o, busy) {
   }
   const slidesCol = el("td", {class: "slides-col"}, ...(slideItems.length > 0 ? slideItems : [el("span", {class: "muted"}, "–")]));
 
-  // 3. Next step column
+  // 3. Next step: review, finalize, approve, post. Each step shows only when it is the next one.
   const next = el("div", {class: "next"});
-  if (row.url) next.append(el("a", {href: row.url, target: "_blank", rel: "noopener"},
-    row.status === "existing_source" ? "Open original" : row.status === "draft" ? "Open draft" : "Open post"));
-  if (row.status !== "existing_source" && row.status !== "published") {
-    if (row.can_post_draft) {
-      const update = row.status === "draft";
+  const link = (text) => el("a", {href: row.url, target: "_blank", rel: "noopener"}, text);
+  if (row.status === "existing_source") next.append(link("Open original"));
+  else if (row.status === "published") next.append(link("Open post"));
+  else {
+    const drafted = row.status === "draft";
+    if (row.url) next.append(link(drafted ? "Open draft" : "Open post"));
+    if (!row.finalized) {
+      next.append(el("span", {class: "muted small"}, drafted
+          ? "The text changed after the draft was made. Finalize it to update the post."
+          : `Review post.${row.language}.md and edit it if needed. Finalize it when it is ready.`),
+        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy, onclick: () => finalize(row)}, "Finalize")));
+    } else if (row.can_post_draft) {
       const tags = keep(`tags:${row.platform}`, {placeholder: "Tags: ai, agents", "aria-label": `Tags for ${row.platform_name}`});
-      next.append(el("div", {class: "inline"}, tags, el("button", {class: update ? "" : "primary", type: "button", disabled: busy,
-        onclick: () => postDraft(row, tags.value, update)}, update ? "Update draft…" : "Create draft…")));
+      next.append(el("div", {class: "inline"}, tags, el("button", {class: "primary", type: "button", disabled: busy,
+        onclick: () => postDraft(row, tags.value, drafted)}, drafted ? "Update post…" : "Post…")),
+        el("span", {class: "muted small"}, "Finalized. You choose draft or public when you approve."));
     } else {
       const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
       next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL")),
-        el("span", {class: "muted small"}, "Paste naver_blog.html into the Naver editor, post, then register the URL."));
+        el("span", {class: "muted small"}, "Finalized. Paste naver_blog.html into the Naver editor, post, then register the URL."));
     }
   }
   return el("tr", {},
     el("td", {class: "lang"}, el("div", {class: "who"}, row.language_name), el("span", {class: "badge " + tone}, label)),
     el("td", {class: "title"}, row.title),
     files,
-    el("td", {}, next),
-    slidesCol);
+    slidesCol,
+    el("td", {}, next));
 }
 
 function render(data) {
@@ -489,11 +509,22 @@ async function poll() {
 async function postDraft(row, tagText, update) {
   const tags = tagText.split(",").map((t) => t.trim()).filter(Boolean);
   if (!tags.length || tags.length > 5) { toast("Enter one to five tags, separated by commas."); return; }
-  const ok = await confirmAction({
-    title: `${update ? "Update the draft" : "Create a draft"} on ${row.platform_name}?`,
-    summary: [["Title", row.title], ["Tags", tags.join(", ")], ["Visibility", "Not public. You publish it yourself on the site."]],
-    note: "This uses your account on that platform.", okLabel: update ? "Approve and update" : "Approve and create"});
-  if (ok) act("draft", {platform: row.platform, tags, approved: true});
+  // The person approving decides how far the post goes; the agent cannot.
+  const visibility = await confirmAction({
+    title: `${update ? "Update the post" : "Post"} on ${row.platform_name}?`,
+    summary: [["Title", row.title], ["Tags", tags.join(", ")]],
+    choices: [
+      {value: "draft", label: "Draft", hint: "Not public. You publish it yourself on the site."},
+      {value: "public", label: "Public", hint: "Visible to everyone as soon as you approve."}],
+    note: "This uses your account on that platform.", okLabel: "Approve and post"});
+  if (visibility) act("draft", {platform: row.platform, tags, approved: true, public: visibility === "public"});
+}
+async function finalize(row) {
+  try {
+    const done = await api(`/api/jobs/${jobId}/finalize`, {language: row.language});
+    if (done.check && !done.check.passed) toast(`Finalized. Note: its structure differs from the source: ${done.check.errors.join(" ")}`, 9000);
+    await poll();
+  } catch (error) { toast(error.message); }
 }
 function recordUrl(row, url) {
   if (!/^https:\/\/\S+$/.test(url.trim())) { toast("Enter the https URL of the post."); return; }

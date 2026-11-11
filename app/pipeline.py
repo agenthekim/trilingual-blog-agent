@@ -11,6 +11,7 @@ request on its own; the caller passes on a decision a person made.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from collections.abc import Callable
@@ -95,6 +96,17 @@ def project_file(project_id: str, name: str) -> Path | None:
     return path
 
 
+def text_digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def is_finalized(session_state: dict[str, Any], language: str) -> bool:
+    """Whether a person finalized exactly the text this language has now."""
+    text = state.article_markdown(session_state, language)
+    mark = (session_state.get(state.FINALIZED_POSTS) or {}).get(language)
+    return bool(text) and mark == text_digest(text)
+
+
 def overview(session_state: dict[str, Any]) -> dict[str, Any]:
     """Describe what exists for the article in this session, as plain data."""
     project_id = session_state.get(state.PROJECT_ID) or ""
@@ -121,6 +133,7 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 "platform": platform,
                 "platform_name": PLATFORM_NAMES[platform],
                 "status": publication.get("state") or "not_posted",
+                "finalized": is_finalized(session_state, language),
                 "url": publication.get("url"),
                 "files": [f for f in files if f],
                 "can_post_draft": has_text
@@ -227,15 +240,25 @@ class ArticlePipeline:
             types.Content(role="user", parts=[types.Part.from_text(text=text)])
         )
 
-    async def answer_approvals(self, confirmed: bool) -> None:
-        """Pass a person's yes/no on to every approval the agent is waiting for."""
+    async def answer_approvals(
+        self, confirmed: bool, payload: dict[str, Any] | None = None
+    ) -> None:
+        """Pass a person's yes/no on to every approval the agent is waiting for.
+
+        ``payload`` carries what the person chose along with the yes, for
+        example ``{"visibility": "public"}`` for a post.
+        """
         if not self._pending:
             return
-        self.log(f">>> approval: {'yes' if confirmed else 'no'}")
+        chosen = f" ({payload})" if confirmed and payload else ""
+        self.log(f">>> approval: {'yes' if confirmed else 'no'}{chosen}")
+        response: dict[str, Any] = {"confirmed": confirmed}
+        if confirmed and payload:
+            response["payload"] = payload
         parts = [
             types.Part(
                 function_response=types.FunctionResponse(
-                    id=call.id, name=call.name, response={"confirmed": confirmed}
+                    id=call.id, name=call.name, response=response
                 )
             )
             for call in self._pending
@@ -323,6 +346,30 @@ class ArticlePipeline:
             f"Create the {language} draft on {PLATFORM_NAMES[platform]} from the "
             f"current text, or update the draft if one exists. Tags: {', '.join(tags)}."
         )
+
+    async def finalize_post(self, language: str) -> dict[str, Any]:
+        """Record that a person has reviewed a localized post and calls it final.
+
+        What is remembered is a digest of the text, so any later change to the
+        text, by a person or by the agent, makes the post unfinished again
+        without anyone having to remember to say so. Text that cannot be
+        posted because it holds credential-looking values cannot be finalized.
+        """
+        current = await self.session_state()
+        text = state.article_markdown(current, language)
+        if not text or language == current.get(state.SOURCE_LANGUAGE):
+            raise ValueError("There is no localized post in this language to finalize.")
+        if findings := find_secrets(text):
+            raise ValueError(
+                "The text contains credential-looking values and cannot be "
+                f"posted: {[str(finding) for finding in findings[:5]]}."
+            )
+        marks = dict(current.get(state.FINALIZED_POSTS) or {})
+        marks[language] = text_digest(text)
+        await self._update_state({state.FINALIZED_POSTS: marks})
+        self.log(f">>> {LANGUAGE_NAMES[language]} post finalized by a person")
+        check = (current.get(state.FIDELITY_REPORT) or {}).get(language)
+        return {"language": language, "finalized": True, "check": check}
 
     async def _update_state(self, delta: dict[str, Any]) -> None:
         """Record a change a person made, outside any agent turn."""

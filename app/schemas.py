@@ -268,4 +268,17 @@ class SlideDeckPlan(BaseModel):
     language: LanguageCode
     deck_title: str
     audience: str
+    opening_script: str = Field(
+        default="",
+        description="What the presenter says on the title slide, before slide 1: "
+        "a greeting, the talk title said aloud, then one or two sentences on "
+        "what the title means and what the audience will take away. About 20 "
+        "seconds. No agenda here.",
+    )
     slides: list[SlideSpec]
+    closing_script: str = Field(
+        default="",
+        description="What the presenter says on the final thank-you slide: "
+        "thanks to the audience and an invitation to ask questions. One or two "
+        "sentences.",
+    )

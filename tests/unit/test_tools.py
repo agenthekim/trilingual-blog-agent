@@ -232,6 +232,59 @@ def test_sqlite_store_survives_reopening(tmp_path) -> None:
     assert reopened.list_publications("p1")[0]["state"] == "draft"
 
 
+def test_only_the_approving_person_can_make_a_post_public(
+    finalized_project, monkeypatch
+) -> None:
+    from types import SimpleNamespace
+
+    calls = []
+
+    async def fake_save(**kwargs):
+        calls.append(kwargs)
+        return {"id": 42, "url": "https://dev.to/user/t-42"}
+
+    monkeypatch.setattr(platforms, "devto_save_article", fake_save)
+    # An approval that asks for a public post: the choice rides on the approval.
+    finalized_project.tool_confirmation = SimpleNamespace(
+        confirmed=True, payload={"visibility": "public"}
+    )
+    posted = asyncio.run(
+        publish.publish_devto_article_draft("T", ["ai"], finalized_project)
+    )
+    assert calls[0]["published"] is True
+    assert posted["publication"]["state"] == "published"
+    assert "public" in posted["message"]
+
+    # Once public it is never posted again, whatever the approval says.
+    again = asyncio.run(
+        publish.publish_devto_article_draft("T", ["ai"], finalized_project)
+    )
+    assert again["error_code"] == "ALREADY_PUBLISHED" and len(calls) == 1
+
+
+def test_an_approval_without_a_choice_means_a_private_draft(
+    finalized_project, monkeypatch
+) -> None:
+    from types import SimpleNamespace
+
+    calls = []
+
+    async def fake_save(**kwargs):
+        calls.append(kwargs)
+        return {"id": "abc", "url": "https://qiita.com/u/private/abc"}
+
+    monkeypatch.setattr(platforms, "qiita_save_item", fake_save)
+    for payload in (None, {}, {"visibility": "anything else"}, "public"):
+        finalized_project.tool_confirmation = SimpleNamespace(
+            confirmed=True, payload=payload
+        )
+        saved = asyncio.run(
+            publish.publish_qiita_article_draft("記事", ["AI"], finalized_project)
+        )
+        assert saved["publication"]["state"] == "draft"
+    assert [call["private"] for call in calls] == [True] * 4
+
+
 def test_load_draft_reads_only_inside_workspace(
     tool_context, isolated_workspace
 ) -> None:
@@ -330,6 +383,8 @@ def _deck_plan() -> dict:
         "language": "en",
         "deck_title": "Deck",
         "audience": "developers",
+        "opening_script": "Welcome. This talk is Deck.",
+        "closing_script": "Thank you. Questions?",
         "slides": [
             {
                 "number": n,
@@ -365,11 +420,18 @@ def test_slide_requests_build_a_cover_and_one_slide_per_plan_entry() -> None:
 
     requests = slide_requests(plan, "p", images)
     created = [r["createSlide"] for r in requests if "createSlide" in r]
-    assert [c["objectId"] for c in created] == ["slide_000", "slide_001", "slide_002"]
-    assert [c["insertionIndex"] for c in created] == [1, 2, 3]
+    # A title slide, the planned slides, then a thank-you slide.
+    assert [c["objectId"] for c in created] == [
+        "slide_000",
+        "slide_001",
+        "slide_002",
+        "slide_999",
+    ]
+    assert [c["insertionIndex"] for c in created] == [1, 2, 3, 4]
     texts = [r["insertText"] for r in requests if "insertText" in r]
     assert {"objectId": "slide_000_title", "text": "Deck"} in texts
     assert {"objectId": "slide_001_title", "text": "Slide 1"} in texts
+    assert {"objectId": "slide_999_title", "text": "Thank you"} in texts
     assert {"objectId": "slide_002_body", "text": "first point\nsecond point"} in texts
     assert requests[-1] == {"deleteObject": {"objectId": "p"}}  # placeholder slide
     assert {"deleteObject": {"objectId": "slide_000_subtitle"}} in requests
@@ -398,10 +460,21 @@ def test_slide_requests_build_a_cover_and_one_slide_per_plan_entry() -> None:
             }
             for n in (0, 1, 2)
         ]
+        + [
+            {
+                "objectId": "slide_999",
+                "slideProperties": {
+                    "notesPage": {"notesProperties": {"speakerNotesObjectId": "n9"}}
+                },
+            }
+        ]
     }
     notes = [r["insertText"] for r in notes_requests(plan, presentation)]
-    assert notes[0] == {"objectId": "n1", "text": "Script for slide 1."}
-    assert notes[1]["text"] == "Script for slide 2.\n\n[Visual] architecture diagram"
+    # The greeting is said on the title slide, the goodbye on the thank-you slide.
+    assert notes[0] == {"objectId": "n0", "text": "Welcome. This talk is Deck."}
+    assert notes[1] == {"objectId": "n1", "text": "Script for slide 1."}
+    assert notes[2]["text"] == "Script for slide 2.\n\n[Visual] architecture diagram"
+    assert notes[3] == {"objectId": "n9", "text": "Thank you. Questions?"}
 
 
 def test_long_titles_get_a_smaller_font() -> None:

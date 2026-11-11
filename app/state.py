@@ -21,6 +21,8 @@ PRESENTATION_BRIEF = "presentation_brief"
 SLIDE_DECK_PLAN = "slide_deck_plan"
 LOCALIZED_TITLES = "localized_titles"
 GOOGLE_SLIDES_DECK = "google_slides_deck"
+# Per language, a digest of the localized text a person reviewed and called final.
+FINALIZED_POSTS = "finalized_posts"
 GOOGLE_SLIDES_DECKS = "google_slides_decks"  # the deck of each language
 # Per language, the text on which the deck and its Markdown plan last agreed.
 DECK_TEXT_BASELINE = "google_slides_synced_text"

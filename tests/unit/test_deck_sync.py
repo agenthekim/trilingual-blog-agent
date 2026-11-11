@@ -20,6 +20,8 @@ def _plan() -> SlideDeckPlan:
             "language": "ko",
             "deck_title": "에이전트 런타임",
             "audience": "software engineers",
+            "opening_script": "안녕하세요. 오늘은 에이전트 런타임을 살펴봅니다.",
+            "closing_script": "감사합니다. 질문 받겠습니다.",
             "slides": [
                 {
                     "number": 1,
@@ -47,6 +49,17 @@ def _text(content: str) -> dict[str, Any]:
     }
 
 
+def _notes(number: int, text: str) -> dict[str, Any]:
+    return {
+        "notesPage": {
+            "notesProperties": {"speakerNotesObjectId": f"notes_{number}"},
+            "pageElements": [
+                {"objectId": f"notes_{number}", "shape": {"text": _text(text + "\n")}}
+            ],
+        }
+    }
+
+
 def _presentation(plan: SlideDeckPlan) -> dict[str, Any]:
     """What Google reports for a deck this application made from ``plan``."""
     view = deck_sync.plan_text(plan)
@@ -59,6 +72,7 @@ def _presentation(plan: SlideDeckPlan) -> dict[str, Any]:
                     "shape": {"text": _text(view["0/title"] + "\n")},
                 }
             ],
+            "slideProperties": _notes(0, view["0/notes"]),
         }
     ]
     for slide in plan.slides:
@@ -77,19 +91,21 @@ def _presentation(plan: SlideDeckPlan) -> dict[str, Any]:
                     },
                     {"objectId": f"{page}_image", "image": {}},
                 ],
-                "slideProperties": {
-                    "notesPage": {
-                        "notesProperties": {"speakerNotesObjectId": f"notes_{n}"},
-                        "pageElements": [
-                            {
-                                "objectId": f"notes_{n}",
-                                "shape": {"text": _text(view[f"{n}/notes"] + "\n")},
-                            }
-                        ],
-                    }
-                },
+                "slideProperties": _notes(n, view[f"{n}/notes"]),
             }
         )
+    pages.append(
+        {
+            "objectId": "slide_999",
+            "pageElements": [
+                {
+                    "objectId": "slide_999_title",
+                    "shape": {"text": _text("감사합니다\n")},
+                }
+            ],
+            "slideProperties": _notes(999, view["999/notes"]),
+        }
+    )
     return {"slides": pages}
 
 
@@ -129,6 +145,17 @@ def _edit_deck(presentation: dict[str, Any], object_id: str, content: str) -> No
 def test_slide_plan_markdown_reads_back_as_the_same_plan() -> None:
     plan = _plan()
     assert parse_slide_plan_markdown(render_slide_plan_markdown(plan), "ko") == plan
+    assert "Opening (title slide):" in render_slide_plan_markdown(plan)
+    assert "Closing (thank-you slide):" in render_slide_plan_markdown(plan)
+
+    # A file written before these sections existed still reads; they are empty.
+    older = render_slide_plan_markdown(plan)
+    older = older[: older.index("Closing (thank-you slide):")].replace(
+        "Opening (title slide):\n\n" + plan.opening_script + "\n\n", ""
+    )
+    read = parse_slide_plan_markdown(older, "ko")
+    assert (read.opening_script, read.closing_script) == ("", "")
+    assert read.slides == plan.slides
 
     # Extra blank lines and a script edited by hand are fine.
     edited = render_slide_plan_markdown(plan).replace(
@@ -230,7 +257,7 @@ def test_a_field_edited_on_both_sides_is_reported_as_a_conflict() -> None:
 def test_slides_missing_on_one_side_are_left_alone_and_named() -> None:
     plan = _plan()
     deck = _presentation(plan)
-    deck["slides"].pop()  # slide 2 was deleted in the deck
+    del deck["slides"][2]  # slide 2 was deleted in the deck
     deck["slides"].append({"objectId": "g2f9", "pageElements": []})  # one added by hand
     file_view = deck_sync.plan_text(plan)
     deck_view, _ = deck_sync.deck_text(deck)
@@ -316,18 +343,21 @@ async def test_notes_edited_in_the_deck_are_pulled_into_the_file(
     pipeline, deck, written = await _pipeline_with_deck(monkeypatch, plan)
     _edit_deck(deck, "notes_1", "덱에서 고친 대본")
     _edit_deck(deck, "slide_001_title", "덱에서 고친 제목")
+    _edit_deck(deck, "notes_999", "감사합니다. 덱에서 고친 맺음말입니다.")
     path = workspace_dir() / "proj-9" / "slides.ko.md"
     before = path.read_text(encoding="utf-8")
 
     preview = await pipeline.sync_deck_text("ko", "pull", apply=False)
-    assert (preview["slides"], preview["titles"], preview["notes"]) == ([1], 1, 1)
+    assert (preview["slides"], preview["titles"], preview["notes"]) == ([1, 999], 1, 2)
     assert path.read_text(encoding="utf-8") == before
 
     await pipeline.sync_deck_text("ko", "pull", apply=True)
     pulled = parse_slide_plan_markdown(path.read_text(encoding="utf-8"), "ko")
     assert pulled.slides[0].title == "덱에서 고친 제목"
     assert pulled.slides[0].speaker_script == "덱에서 고친 대본"
+    assert pulled.closing_script == "감사합니다. 덱에서 고친 맺음말입니다."
     assert pulled.slides[1] == plan.slides[1] and written == []  # the deck is only read
+    assert pulled.opening_script == plan.opening_script
     # A push right after has nothing to carry: nothing is written back.
     assert (await pipeline.sync_deck_text("ko", "push", apply=True))["slides"] == []
 

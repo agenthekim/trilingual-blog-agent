@@ -23,14 +23,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.google_slides import TITLE_SLIDE_ID, speaker_notes_text
+from app.google_slides import (
+    CLOSING_SLIDE_NUMBER,
+    TITLE_SLIDE_ID,
+    speaker_notes_text,
+)
 from app.schemas import SlideDeckPlan
 
 _VISUAL_MARK = "\n\n[Visual] "
 
 
 def _key(number: int, field: str) -> str:
-    return f"{number}/{field}"  # slide 0 is the cover
+    return f"{number}/{field}"  # 0 is the title slide, 999 the thank-you slide
 
 
 def _clean(text: str) -> str:
@@ -46,7 +50,12 @@ def _lines(text: str) -> str:
 
 def plan_text(plan: SlideDeckPlan) -> dict[str, str]:
     """The text a deck made from ``plan`` carries, by field."""
-    view = {_key(0, "title"): _clean(plan.deck_title)}
+    view = {
+        _key(0, "title"): _clean(plan.deck_title),
+        _key(0, "notes"): _clean(plan.opening_script),
+        # The words on the thank-you slide are fixed; only what is said is planned.
+        _key(CLOSING_SLIDE_NUMBER, "notes"): _clean(plan.closing_script),
+    }
     for slide in plan.slides:
         view[_key(slide.number, "title")] = _clean(slide.title)
         view[_key(slide.number, "bullets")] = _lines("\n".join(slide.bullets))
@@ -98,13 +107,15 @@ def deck_text(presentation: dict[str, Any]) -> tuple[dict[str, str], dict[str, H
         }
         for field, clean in (("title", _clean), ("bullets", _lines)):
             object_id = f"{page_id}_{'body' if field == 'bullets' else field}"
-            if object_id in shapes and not (number == 0 and field == "bullets"):
+            if number == CLOSING_SLIDE_NUMBER or (number == 0 and field == "bullets"):
+                continue
+            if object_id in shapes:
                 raw = _shape_text(shapes[object_id])
                 view[_key(number, field)] = clean(raw)
                 objects[_key(number, field)] = _holder(object_id, raw)
         notes_page = page.get("slideProperties", {}).get("notesPage", {})
         notes_id = notes_page.get("notesProperties", {}).get("speakerNotesObjectId")
-        if number and notes_id:
+        if notes_id:
             holder = next(
                 (
                     element
@@ -251,7 +262,10 @@ def merged_plan(plan: SlideDeckPlan, carried: list[Difference]) -> SlideDeckPlan
     slides = {slide["number"]: slide for slide in data["slides"]}
     for change in carried:
         if change.number == 0:
-            data["deck_title"] = change.deck
+            name = "deck_title" if change.field == "title" else "opening_script"
+            data[name] = change.deck
+        elif change.number == CLOSING_SLIDE_NUMBER:
+            data["closing_script"] = change.deck
         elif change.field == "title":
             slides[change.number]["title"] = change.deck
         elif change.field == "bullets":
