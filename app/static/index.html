@@ -77,7 +77,7 @@
     </div>
 
     <h3 style="margin-top:20px">2. Slide options</h3>
-    <p class="help">Choose the slide length. Choose “No slides” to skip it.</p>
+    <p class="help">Choose the slide length to create Google Slides and PDFs in your configured Google Drive.</p>
     <div class="fields">
       <label>Talk length
         <select id="minutes">
@@ -98,7 +98,13 @@
         </div>
       </div>
       <label style="flex:1; min-width:220px">Audience
-        <input type="text" id="audience" value="software engineers">
+        <select id="audience">
+          <option value="software engineers" selected>Software engineers & developers</option>
+          <option value="tech leads and architects">Tech leads & architects</option>
+          <option value="students and beginners">Students & beginners</option>
+          <option value="executives and leadership">Executives & C-level</option>
+          <option value="general and non-technical audience">General & non-technical</option>
+        </select>
         <small>Who will listen; sets the level of explanation</small>
       </label>
     </div>
@@ -408,6 +414,7 @@ $("run").addEventListener("click", async () => {
       talk_language: slideLangs[0] || "en",
       talk_languages: slideLangs,
       audience: $("audience").value || "software engineers",
+      create_deck: Number($("minutes").value) > 0 && slideLangs.length > 0,
     });
     jobId = started.job_id; lastLogLength = 0; busySince = Date.now(); lastLogChange = Date.now();
     editing = null; $("editor").classList.add("hidden");

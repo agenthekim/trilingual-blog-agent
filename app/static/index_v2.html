@@ -134,7 +134,7 @@
 
     <fieldset>
       <legend>Slide options</legend>
-      <p class="muted small" style="margin:0 0 10px">Choose the slide length. Choose “No slides” to skip it.</p>
+      <p class="muted small" style="margin:0 0 10px">Choose the slide length to create Google Slides and PDFs in your configured Google Drive.</p>
       <div class="grid3">
         <label class="field">Length
           <select id="minutes">
@@ -152,11 +152,15 @@
           </div>
         </div>
         <label class="field">Audience
-          <input type="text" id="audience" placeholder="software engineers">
+          <select id="audience">
+            <option value="software engineers" selected>Software engineers & developers</option>
+            <option value="tech leads and architects">Tech leads & architects</option>
+            <option value="students and beginners">Students & beginners</option>
+            <option value="executives and leadership">Executives & C-level</option>
+            <option value="general and non-technical audience">General & non-technical</option>
+          </select>
         </label>
       </div>
-      <label class="check"><input type="checkbox" id="createDeck" checked>
-        <span>Create Google Slides and PDFs in your configured Google Drive <span class="muted">(speaker script included in speaker notes)</span></span></label>
     </fieldset>
 
     <div class="formfoot">
@@ -520,8 +524,8 @@ zone.addEventListener("submit", async (e) => {
     talk_minutes: Number($("minutes").value),
     talk_language: slideLangs[0] || "en",
     talk_languages: slideLangs,
-    audience: $("audience").value.trim() || "software engineers",
-    create_deck: $("createDeck").checked && Number($("minutes").value) > 0 && slideLangs.length > 0,
+    audience: $("audience").value || "software engineers",
+    create_deck: Number($("minutes").value) > 0 && slideLangs.length > 0,
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   $("run").disabled = true;
@@ -543,8 +547,7 @@ try {
   $("slideLangEn").checked = savedLangs.includes("en");
   $("slideLangKo").checked = savedLangs.includes("ko");
   $("slideLangJa").checked = savedLangs.includes("ja");
-  $("audience").value = saved.audience && saved.audience !== "software engineers" ? saved.audience : "";
-  $("createDeck").checked = saved.create_deck !== false;
+  if (saved.audience) $("audience").value = saved.audience;
 } catch (e) { $("minutes").value = "5"; }
 if (location.hash.length > 1) { state = {log: []}; watch(location.hash.slice(1)); }
 </script>
