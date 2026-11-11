@@ -82,6 +82,9 @@ class StartRequest(BaseModel):
     talk_minutes: int = Field(default=5, ge=0, le=60)
     talk_language: Literal["ko", "en", "ja"] = "en"
     audience: str = Field(default="software engineers", max_length=200)
+    # Ticked by the person in the form: approval, in advance, to create one
+    # Google Slides file in their own Drive from the slide plan of this run.
+    create_deck: bool = False
 
 
 class DraftRequest(BaseModel):
@@ -175,7 +178,11 @@ async def start_job(request: StartRequest) -> dict[str, str]:
     _start(
         job,
         lambda: job.pipeline.run_stages(
-            request.text, request.talk_minutes, request.talk_language, request.audience
+            request.text,
+            request.talk_minutes,
+            request.talk_language,
+            request.audience,
+            request.create_deck,
         ),
         "run_stages",
     )

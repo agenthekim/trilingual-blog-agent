@@ -101,7 +101,9 @@ agents-cli run "Hello, what can you help me with?"     # one-shot from the termi
 Or use the web front end: paste a URL or a draft, press one button, and get a
 table with each language's title, status and links to the generated files and
 the slide plan. A draft on Qiita or DEV Community is created only when you press
-its approve button; a Naver Blog URL is registered after you post by hand. The
+its approve button; a Naver Blog URL is registered after you post by hand. Ticking
+"Also create the Google Slides deck" before a run approves, in advance, one new
+Slides file in your own Drive for that run. The
 localized articles, their titles and the slide plan can be edited in the page;
 a saved edit replaces the text the agent posts and re-runs the structure check.
 

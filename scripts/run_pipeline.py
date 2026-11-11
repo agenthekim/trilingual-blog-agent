@@ -57,6 +57,12 @@ def parse_args() -> argparse.Namespace:
         help="Create a draft on this platform (repeatable). Asks before each post.",
     )
     parser.add_argument(
+        "--create-deck",
+        action="store_true",
+        help="Also create a Google Slides deck in your Drive from the slide plan. "
+        "Giving this flag is the approval for that one file.",
+    )
+    parser.add_argument(
         "--tags", default="", help="Comma-separated tags for --publish, e.g. ai,agents."
     )
     args = parser.parse_args()
@@ -71,10 +77,14 @@ async def main() -> int:
     source_text = args.url or args.draft.read_text(encoding="utf-8")
 
     stopped = await pipeline.run_stages(
-        source_text, args.talk_minutes, args.talk_language, args.audience
+        source_text,
+        args.talk_minutes,
+        args.talk_language,
+        args.audience,
+        args.create_deck,
     )
     if stopped:
-        print(f"Stopped: {stopped}", file=sys.stderr)
+        print(stopped, file=sys.stderr)
         return 1
 
     tags = [t.strip() for t in args.tags.split(",") if t.strip()]

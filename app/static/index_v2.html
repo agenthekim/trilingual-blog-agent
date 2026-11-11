@@ -69,19 +69,24 @@
   .notice.err { border-color:var(--bad); } .notice.note { border-color:var(--warn); } .notice.ask { border-color:var(--accent); }
   .notice .grow { flex:1; min-width:200px; }
 
-  /* Language cards */
-  .langs { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-  @media (max-width:820px) { .langs { grid-template-columns:1fr; } }
-  .lang { display:flex; flex-direction:column; gap:10px; }
-  .lang .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
-  .lang .who { font-weight:600; }
-  .lang .title { font-size:15px; font-weight:600; line-height:1.35; min-height:2.7em; }
+  /* Results table */
+  table.results { width:100%; border-collapse:collapse; }
+  table.results th { text-align:left; font-size:12px; font-weight:600; color:var(--muted); padding:0 10px 8px 0; white-space:nowrap; }
+  table.results td { padding:12px 10px 12px 0; border-top:1px solid var(--line); vertical-align:top; }
+  table.results td:last-child, table.results th:last-child { padding-right:0; }
+  table.results .who { font-weight:600; white-space:nowrap; }
+  table.results .title { font-weight:600; min-width:180px; }
+  table.results .files a { display:inline-block; }
+  table.results .files div { display:flex; align-items:center; gap:4px; min-height:24px; white-space:nowrap; }
   .badge { font-size:12px; padding:1px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
   .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.warn { color:var(--warn); border-color:var(--warn); }
-  ul.files { list-style:none; margin:0; padding:0; display:grid; gap:2px; }
-  ul.files li, .deliver li { display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:26px; }
-  .lang .act { margin-top:auto; border-top:1px solid var(--line); padding-top:10px; display:grid; gap:8px; }
-  .lang .act button { justify-content:center; }
+  .next { display:grid; gap:6px; min-width:250px; }
+  .next .inline { display:flex; gap:6px; }
+  .next .inline input { flex:1; min-width:0; }
+  .tablewrap { overflow-x:auto; }
+  .deliver li { display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:26px; }
+  label.check { display:flex; gap:8px; align-items:center; margin-top:12px; font-size:13px; }
+  label.check input { width:16px; height:16px; }
   .deliver { list-style:none; margin:10px 0 0; padding:0; display:grid; gap:4px; }
   .deliver li { border-top:1px solid var(--line); padding-top:6px; }
   .deliver li:first-child { border-top:0; padding-top:0; }
@@ -142,6 +147,8 @@
           <input type="text" id="audience" placeholder="software engineers">
         </label>
       </div>
+      <label class="check"><input type="checkbox" id="createDeck" checked>
+        <span>Also create the Google Slides deck in my Google Drive <span class="muted">(a new file; the script goes into the speaker notes)</span></span></label>
     </fieldset>
 
     <div class="formfoot">
@@ -160,7 +167,14 @@
     <div id="notices"></div>
   </section>
 
-  <section class="langs hidden" id="langs"></section>
+  <section class="card hidden" id="langs">
+    <div class="tablewrap">
+      <table class="results">
+        <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Next step</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
 
   <section class="card hidden" id="deliverCard">
     <h2>Talk and summary</h2>
@@ -280,10 +294,10 @@ function steps(o) {
   const wantsSlides = o.can_create_deck || o.slides.length > 0 || Number(state.requestedMinutes || 0) > 0;
   const list = [
     ["Read article", Boolean(o.title)],
-    ["Localize", localized],
+    ["Translate", localized],
     ["Prepare posts", localized && Boolean(o.manifest || o.slides.length || o.rows.some((r) => r.files.includes("naver_blog.html")))],
   ];
-  if (wantsSlides) list.push(["Plan talk", o.slides.length > 0]);
+  if (wantsSlides) list.push(["Prepare slides", o.slides.length > 0 && (!state.wantsDeck || Boolean(o.deck) || Boolean(o.manifest))]);
   list.push(["Summary", Boolean(o.manifest)]);
   return list;
 }
@@ -294,34 +308,33 @@ function keep(key, attrs) {
   return input;
 }
 
-function languageCard(row, o, busy) {
+function languageRow(row, o, busy) {
   const [label, tone] = STATUS[row.status] || [row.status, ""];
   const editable = !busy && (o.editable || []);
-  const files = el("ul", {class: "files"}, ...row.files.map((name) => el("li", {},
+  const files = el("td", {class: "files"}, ...row.files.map((name) => el("div", {},
     el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name),
     editable && editable.includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null)));
-  const action = el("div", {class: "act"});
-  if (row.status === "existing_source") {
-    action.append(el("span", {class: "muted small"}, "This is where the article came from. It is never posted back."),
-      row.url ? el("a", {href: row.url, target: "_blank", rel: "noopener"}, "Open the original ↗") : null);
-  } else if (row.url) {
-    action.append(el("a", {href: row.url, target: "_blank", rel: "noopener"}, row.status === "draft" ? "Open the draft ↗" : "Open the post ↗"));
-  }
+  const next = el("div", {class: "next"});
+  if (row.url) next.append(el("a", {href: row.url, target: "_blank", rel: "noopener"},
+    row.status === "existing_source" ? "Open the original ↗" : row.status === "draft" ? "Open the draft ↗" : "Open the post ↗"));
   if (row.status !== "existing_source" && row.status !== "published") {
     if (row.can_post_draft) {
       const update = row.status === "draft";
-      const tags = keep(`tags:${row.platform}`, {placeholder: "Tags, e.g. ai, agents", "aria-label": `Tags for ${row.platform_name}`});
-      action.append(tags, el("button", {class: update ? "" : "primary", type: "button", disabled: busy,
-        onclick: () => postDraft(row, tags.value, update)}, update ? "Update draft…" : "Create draft…"));
+      const tags = keep(`tags:${row.platform}`, {placeholder: "Tags: ai, agents", "aria-label": `Tags for ${row.platform_name}`});
+      next.append(el("div", {class: "inline"}, tags, el("button", {class: update ? "" : "primary", type: "button", disabled: busy,
+        onclick: () => postDraft(row, tags.value, update)}, update ? "Update draft…" : "Create draft…")));
     } else {
       const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
-      action.append(el("span", {class: "muted small"}, "Open naver_blog.html, copy all, paste into the editor, post, then register the URL."),
-        url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL"));
+      next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL")),
+        el("span", {class: "muted small"}, "Paste naver_blog.html into the Naver editor, post, then register the URL."));
     }
   }
-  return el("article", {class: "card lang"},
-    el("div", {class: "top"}, el("span", {class: "who"}, `${row.language_name} · ${row.platform_name}`), el("span", {class: "badge " + tone}, label)),
-    el("div", {class: "title"}, row.title), files, action);
+  return el("tr", {},
+    el("td", {}, el("div", {class: "who"}, row.language_name), el("div", {class: "muted small"}, row.platform_name)),
+    el("td", {class: "title"}, row.title),
+    el("td", {}, el("span", {class: "badge " + tone}, label)),
+    files,
+    el("td", {}, next));
 }
 
 function render(data) {
@@ -350,7 +363,7 @@ function render(data) {
 
   const rows = o.rows.filter((r) => r.title);
   $("langs").classList.toggle("hidden", rows.length === 0);
-  if (!$("langs").contains(document.activeElement)) $("langs").replaceChildren(...rows.map((row) => languageCard(row, o, busy)));
+  if (!$("rows").contains(document.activeElement)) $("rows").replaceChildren(...rows.map((row) => languageRow(row, o, busy)));
 
   const items = [];
   for (const name of o.slides) items.push(el("li", {},
@@ -358,11 +371,10 @@ function render(data) {
     !busy && (o.editable || []).includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null));
   if (o.deck && o.deck.url) items.push(el("li", {},
     el("span", {}, "Google Slides deck · ", el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, (o.deck.title || "Open") + " ↗"),
-      el("span", {class: "muted small"}, `  ${o.deck.slide_count} slides` + (o.deck.images_inserted ? `, ${o.deck.images_inserted} images` : ""))),
-    el("button", {type: "button", disabled: busy, onclick: createDeck}, "Create again…")));
-  else if (o.can_create_deck) items.push(el("li", {},
-    el("span", {}, "Google Slides deck ", el("span", {class: "muted small"}, "· slides with the script in the speaker notes, in your Google Drive")),
-    el("button", {type: "button", class: "primary", disabled: busy, onclick: createDeck}, "Create deck…")));
+      el("span", {class: "muted small"}, `  ${o.deck.slide_count} slides` + (o.deck.images_inserted ? `, ${o.deck.images_inserted} images` : "")))));
+  else if (o.can_create_deck && !busy) items.push(el("li", {},
+    el("span", {class: "muted"}, "Google Slides deck · not created in this run"),
+    el("button", {class: "ghost", type: "button", onclick: createDeck}, "Create it now")));
   if (o.manifest) items.push(el("li", {}, el("span", {}, "Summary of everything produced · ", el("a", {href: fileUrl(o.manifest), target: "_blank", rel: "noopener"}, o.manifest))));
   $("deliver").replaceChildren(...items);
   $("deliverCard").classList.toggle("hidden", items.length === 0);
@@ -472,14 +484,15 @@ zone.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("source").value.trim();
   if (text.length < 10) { toast("Paste a URL or a draft first."); $("source").focus(); return; }
-  const settings = {talk_minutes: Number($("minutes").value), talk_language: $("talkLanguage").value, audience: $("audience").value.trim() || "software engineers"};
+  const settings = {talk_minutes: Number($("minutes").value), talk_language: $("talkLanguage").value, audience: $("audience").value.trim() || "software engineers",
+    create_deck: $("createDeck").checked && Number($("minutes").value) > 0};
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   $("run").disabled = true;
   try {
     const started = await api("/api/jobs", {text, ...settings});
     for (const key of Object.keys(typed)) delete typed[key];
-    state = {requestedMinutes: settings.talk_minutes, log: []};
-    $("langs").replaceChildren(); $("log").textContent = "";
+    state = {requestedMinutes: settings.talk_minutes, wantsDeck: settings.create_deck, log: []};
+    $("rows").replaceChildren(); $("log").textContent = "";
     await watch(started.job_id);
     $("progress").scrollIntoView({behavior: "smooth", block: "start"});
   } catch (error) { toast(error.message); $("run").disabled = false; }
@@ -491,6 +504,7 @@ try {
   $("minutes").value = String(saved.talk_minutes ?? 5);
   $("talkLanguage").value = saved.talk_language || "en";
   $("audience").value = saved.audience && saved.audience !== "software engineers" ? saved.audience : "";
+  $("createDeck").checked = saved.create_deck !== false;
 } catch (e) { $("minutes").value = "5"; }
 if (location.hash.length > 1) { state = {log: []}; watch(location.hash.slice(1)); }
 </script>
