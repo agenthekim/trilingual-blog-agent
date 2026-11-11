@@ -233,7 +233,7 @@ What has been run for real, and what has not:
 | Cloud DLP path | Implemented behind a flag, not exercised |
 | Refinement branch of the localization loop | Covered by unit tests of the gates. It ran in one real run (two review rounds, both languages refined); most runs pass on the first round |
 | Translated Mermaid diagrams | The structure check confirms node ids and edges are unchanged; the diagrams have not been rendered to confirm they still draw |
-| Google Slides deck with speaker notes | Implemented (`app/google_slides.py`, one-time grant with `scripts/authorize_google_slides.py`), covered by unit tests with a fake API; not yet run against the real Slides API. PDF export is not implemented |
+| Google Slides deck with speaker notes | A deck was created through the real Slides API and read back: titles, bullets (including Korean and Japanese text) and speaker notes were in place. Default theme, text only. PDF export is not implemented |
 | Naver Blog publishing | Manual by design: Naver has no public write API. The agent exports HTML to paste and then verifies the URL the author gives it |
 | Naver Blog reading | Best effort from the public mobile page; heading levels are not recovered |
 | Speaking-time check | Estimated from script length with assumed rates (140 words/min English, 300 characters/min Korean, 330 characters/min Japanese), not measured |
