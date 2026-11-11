@@ -217,15 +217,19 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
     )
 
     rows = [
-        "| Language | Platform | Status | URL | File |",
-        "| :--- | :--- | :--- | :--- | :--- |",
+        "| Language | Title | Platform | Status | URL | File |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
     for language in LANGUAGES:
         platform = PLATFORM_FOR_LANGUAGE[language]
         publication = publications.get(platform, {})
         has_text = bool(store.latest_version(project_id, language))
+        language_title = (
+            state.article_title(tool_context.state, language) if has_text else ""
+        )
         rows.append(
-            f"| {LANGUAGE_NAMES[language]} | {platform} | "
+            f"| {LANGUAGE_NAMES[language]} | {language_title.replace('|', '/')} | "
+            f"{platform} | "
             f"{publication.get('state', 'not posted')} | {publication.get('url') or ''} | "
             f"{f'post.{language}.md' if has_text else ''} |"
         )

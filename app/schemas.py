@@ -144,6 +144,17 @@ class LoadDraftInput(BaseModel):
 # ---------------------------------------------------------------------------
 # Stage 2: localization review (structured model output)
 # ---------------------------------------------------------------------------
+class LocalizedTitles(BaseModel):
+    """Structured output of the title localizer: one title per language.
+
+    The limit is the tightest platform limit (DEV Community: 128 characters).
+    """
+
+    ko: str = Field(max_length=120, description="Korean title for Naver Blog.")
+    en: str = Field(max_length=120, description="English title for DEV Community.")
+    ja: str = Field(max_length=120, description="Japanese title for Qiita.")
+
+
 class LanguageReview(BaseModel):
     language: LanguageCode
     grade: Literal["pass", "fail"]

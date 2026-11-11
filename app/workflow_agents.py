@@ -177,6 +177,10 @@ class LocalizationReportAgent(BaseAgent):
 
         lines = ["Localization finished.", ""]
         final_report: dict[str, Any] = {}
+        source = session_state.get(state.SOURCE_LANGUAGE)
+        titles: dict[str, str] = (
+            {source: state.article_title(session_state, source)} if source else {}
+        )
         for language in session_state.get(state.TARGET_LANGUAGES) or []:
             text = session_state.get(state.localized_key(language)) or ""
             check = check_fidelity(seed, text)
@@ -191,9 +195,11 @@ class LocalizationReportAgent(BaseAgent):
                 if check["passed"]
                 else "structure check FAILED"
             )
+            title = state.article_title(session_state, language)
+            titles[language] = title
             lines.append(
                 f"- {LANGUAGE_NAMES[language]} for {PLATFORM_FOR_LANGUAGE[language]}: "
-                f"{len(text)} chars, {status}. File: {file}"
+                f"'{title}', {len(text)} chars, {status}. File: {file}"
             )
             for error in check["errors"]:
                 lines.append(f"    - unresolved: {error}")
@@ -204,10 +210,12 @@ class LocalizationReportAgent(BaseAgent):
                     f"    - reviewer issue from the last review round (a fix was "
                     f"attempted after it and not re-reviewed): {issue}"
                 )
+        if project_id:
+            store.save_project(project_id, {"titles": titles})
         lines += [
             "",
-            "Please review the files. Tell me what to change, or say which "
-            "platforms to publish to.",
+            "Please review the files and the titles. Tell me what to change, or "
+            "say which platforms to publish to.",
         ]
         yield _text_event(
             self,

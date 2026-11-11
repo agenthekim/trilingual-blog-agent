@@ -149,7 +149,7 @@ def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, A
     then reports the URL with record_manually_posted_url.
 
     Returns:
-        On success: status, file (path of the HTML file), publication and
+        On success: status, file (path of the HTML file), title, publication and
         message with the manual steps. On failure: status 'error' with
         error_code, message and recovery_instruction.
     """
@@ -157,7 +157,7 @@ def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, A
     if isinstance(checked, dict):
         return checked
     project_id, language, markdown = checked
-    title = tool_context.state.get(state.SEED_TITLE) or ""
+    title = state.article_title(tool_context.state, language)
     html = markdown_to_inline_styled_html(markdown)
     file = write_workspace_file(project_id, "naver_blog.html", html)
     record = PublicationRecord(
@@ -170,10 +170,12 @@ def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, A
     return {
         "status": "success",
         "file": file,
+        "title": title,
         "publication": record.model_dump(),
         "message": "Not posted: Naver Blog must be posted by hand. Tell the user to "
         "open the HTML file in a browser, select all, copy, paste it into the Naver "
-        "Blog editor, publish, and then give you the post URL.",
+        "Blog editor, type the title above into the editor's title field, publish, "
+        "and then give you the post URL.",
     }
 
 

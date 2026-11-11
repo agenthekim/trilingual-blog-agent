@@ -23,7 +23,7 @@ machine to a human:
 | Stage | What the agent does | Human checkpoint |
 | :--- | :--- | :--- |
 | 1. Seed | Loads a Markdown draft, or fetches an already published post from Qiita, DEV Community or Naver Blog. Revises it with the author. | Author finalizes the seed |
-| 2. Localize | Writes the two missing languages in parallel, checks structure against the seed in code, has a critic model review meaning, fixes only what failed. | Author reviews the files |
+| 2. Localize | Writes the two missing languages and their titles in parallel, checks structure against the seed in code, has a critic model review meaning, fixes only what failed. | Author reviews the files and titles |
 | 3. Publish | Creates a private draft on Qiita (ja) and an unpublished draft on DEV Community (en); exports paste-ready HTML for Naver Blog (ko). Verifies the resulting URLs. | Approval prompt before every write |
 | 4. Present | Plans one slide per minute with a speaker script, checks estimated speaking time, re-plans once if it fails. Writes the plan and an artifact manifest. | Author reviews the plan |
 
@@ -42,7 +42,7 @@ flowchart TD
     C --> T[13 function tools]
 
     subgraph LP_detail [localization_pipeline]
-        SG[SeedGate] --> FAN[ParallelAgent<br/>ko / en / ja localizers]
+        SG[SeedGate] --> FAN[ParallelAgent<br/>ko / en / ja localizers + titles]
         FAN --> LOOP[LoopAgent, max 2 rounds]
         LOOP --> FC[FidelityCheckAgent<br/>deterministic]
         FC --> CR[critic agent<br/>reasoning model]
@@ -128,6 +128,12 @@ uv run pytest tests/integration   # calls the model; needs credentials
 agents-cli eval run               # golden dataset, two metrics, thresholds in tests/eval/eval_config.yaml
 ```
 
+The structure check (`check_fidelity`) treats code blocks by kind: program code
+must match the source apart from comments; Mermaid diagrams must keep node ids,
+edges and keywords while label text is translated; plain-text blocks may
+translate Korean or Japanese lines only, so an English plain-text block stays
+as written.
+
 - `tests/unit` covers the tools, the structure and timing checks, redaction,
   secret lookup, the policy plugin and the gate agents. Platform HTTP calls are
   replaced with fakes; nothing is posted.
@@ -173,7 +179,8 @@ What has been run for real, and what has not:
 | Deployment to Agent Runtime, Memory Bank in the cloud | Not deployed. Memory wiring is in place; it has only run locally where the default memory service is in-memory |
 | Terraform | Written, never applied or validated with `terraform validate` |
 | Cloud DLP path | Implemented behind a flag, not exercised |
-| Refinement branch of the localization loop | Covered by unit tests of the gates; in real runs the critic has passed on the first round, so the refiner models have not been exercised |
+| Refinement branch of the localization loop | Covered by unit tests of the gates. It ran in one real run (two review rounds, both languages refined); most runs pass on the first round |
+| Translated Mermaid diagrams | The structure check confirms node ids and edges are unchanged; the diagrams have not been rendered to confirm they still draw |
 | Google Slides deck, speaker notes, PDF export | Not implemented. Stage 4 produces a Markdown slide plan with scripts |
 | Naver Blog publishing | Manual by design: Naver has no public write API. The agent exports HTML to paste and then verifies the URL the author gives it |
 | Naver Blog reading | Best effort from the public mobile page; heading levels are not recovered |

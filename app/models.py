@@ -27,6 +27,7 @@ REASONING_MODEL = os.environ.get("REASONING_MODEL_NAME", "gemini-4-argon")
 TaskKind = Literal[
     "coordinate",
     "localize",
+    "localize_titles",
     "refine_localization",
     "summarize_history",
     "revise_seed",
@@ -39,6 +40,7 @@ TaskKind = Literal[
 MODEL_ROUTES: dict[TaskKind, str] = {
     "coordinate": FAST_MODEL,
     "localize": FAST_MODEL,
+    "localize_titles": FAST_MODEL,
     "refine_localization": FAST_MODEL,
     "summarize_history": FAST_MODEL,
     "revise_seed": REASONING_MODEL,

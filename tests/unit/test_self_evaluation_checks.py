@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001  (Japanese fixtures use full-width punctuation on purpose)
 """Deterministic checks used for self-evaluation: structure fidelity and slide timing."""
 
 from __future__ import annotations
@@ -110,3 +111,70 @@ def test_slide_timing_names_the_slides_to_fix() -> None:
     assert "exactly 5 slides" in instruction
     assert "lengthen the scripts of slides [1]" in instruction
     assert "shorten the scripts of slides [3]" in instruction
+
+
+MERMAID_JA = """```mermaid
+flowchart TD
+    Agent["Agent<br/>（目標を確認）"]
+    subgraph Decision["判断"]
+        Selection["Tool Selection"]
+    end
+    Agent -->|選択| Selection
+    Selection --> Done[完了]
+```
+"""
+
+
+def test_mermaid_labels_may_be_translated() -> None:
+    localized = (
+        MERMAID_JA.replace("（目標を確認）", "(목표 확인)")
+        .replace("判断", "판단")
+        .replace("選択", "선택")
+        .replace("完了", "완료")
+    )
+    report = check_fidelity(MERMAID_JA, localized)
+    assert report["passed"], report["errors"]
+
+
+def test_mermaid_structure_must_not_change() -> None:
+    renamed_node = MERMAID_JA.replace("Selection[", "Choice[")
+    dropped_edge = MERMAID_JA.replace("    Selection --> Done[完了]\n", "")
+    for broken in (renamed_node, dropped_edge):
+        report = check_fidelity(MERMAID_JA, broken)
+        assert not report["passed"]
+        assert "mermaid" in report["errors"][0]
+
+
+TEXT_JA = """```text
+search_hotels
+（ホテル候補を検索）
+  ↓
+book_hotel
+```
+"""
+
+
+def test_plain_text_block_translates_prose_lines_only() -> None:
+    translated = TEXT_JA.replace("（ホテル候補を検索）", "(호텔 후보 검색)")
+    assert check_fidelity(TEXT_JA, translated)["passed"]
+
+    renamed_identifier = translated.replace("book_hotel", "호텔_예약")
+    report = check_fidelity(TEXT_JA, renamed_identifier)
+    assert not report["passed"]
+    assert "book_hotel" in report["errors"][0]
+
+    dropped_line = TEXT_JA.replace("  ↓\n", "")
+    assert not check_fidelity(TEXT_JA, dropped_line)["passed"]
+
+
+def test_english_plain_text_block_stays_verbatim() -> None:
+    source = "```text\n$ uv sync\nResolved 12 packages\n```\n"
+    changed = source.replace("Resolved 12 packages", "패키지 12개 확인")
+    assert not check_fidelity(source, changed)["passed"]
+
+
+def test_fence_language_must_not_change() -> None:
+    source = "```python\nprint(1)\n```\n"
+    report = check_fidelity(source, source.replace("python", "text"))
+    assert not report["passed"]
+    assert "fence language" in report["errors"][0]

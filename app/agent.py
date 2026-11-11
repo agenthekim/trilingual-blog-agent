@@ -5,7 +5,7 @@ Structure (see README for the diagram):
     trilingual_blog_agent              coordinator, FAST model, owns the tools
     ├── seed_editor_agent              REASONING model, revises the draft
     ├── localization_pipeline          SequentialAgent, gated on a finalized seed
-    │   ├── localization_fanout        ParallelAgent: ko / en / ja localizers
+    │   ├── localization_fanout        ParallelAgent: ko / en / ja localizers + titles
     │   ├── localization_review_loop   LoopAgent: check -> critic -> gate -> refine
     │   └── localization_report_agent  saves versions, reports to the user
     └── slide_planning_pipeline        SequentialAgent
@@ -33,7 +33,7 @@ from app.memory import schedule_memory_consolidation
 from app.models import model_for
 from app.observability import ObservabilityPlugin
 from app.plugins import ContentPolicyPlugin
-from app.schemas import ReviewVerdict, SlideDeckPlan
+from app.schemas import LocalizedTitles, ReviewVerdict, SlideDeckPlan
 from app.settings import LANGUAGES
 from app.tools.articles import (
     fetch_published_article_markdown,
@@ -114,10 +114,23 @@ def _refiner(language: str) -> LanguageGate:
     )
 
 
+title_localizer_agent = Agent(
+    name="title_localizer_agent",
+    description="Writes the article title in each language.",
+    model=model_for("localize_titles"),
+    instruction=prompts.title_localizer_instruction,
+    include_contents="none",
+    output_schema=LocalizedTitles,
+    output_key=state.LOCALIZED_TITLES,
+)
+
 localization_fanout = ParallelAgent(
     name="localization_fanout",
-    description="Writes every target-language version at the same time.",
-    sub_agents=[_localizer(language) for language in LANGUAGES],
+    description="Writes every target-language version and the titles at the same time.",
+    sub_agents=[
+        *[_localizer(language) for language in LANGUAGES],
+        title_localizer_agent,
+    ],
 )
 
 localization_critic_agent = Agent(

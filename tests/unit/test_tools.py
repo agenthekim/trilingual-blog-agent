@@ -213,10 +213,10 @@ def test_manifest_lists_every_language_and_publication(finalized_project) -> Non
     result = slides.compile_artifact_manifest_markdown(finalized_project)
     manifest = result["manifest"]
     assert (
-        "| Korean | naver_blog | published | https://blog.naver.com/someone/223456789012 |"
+        "| naver_blog | published | https://blog.naver.com/someone/223456789012 |"
         in manifest
     )
-    assert "| English | devto | not posted |" in manifest
+    assert "| devto | not posted |" in manifest
 
 
 def test_sqlite_store_survives_reopening(tmp_path) -> None:
@@ -284,3 +284,42 @@ def test_language_guess() -> None:
         == "ja"
     )
     assert platforms.guess_language("This is an English technical article.") == "en"
+
+
+def test_localized_title_is_used_for_target_languages_only(finalized_project) -> None:
+    from app import state
+
+    session_state = finalized_project.state
+    assert state.article_title(session_state, "en") == "제목"  # fallback: none yet
+    session_state[state.LOCALIZED_TITLES] = {
+        "ko": "모델이 바꾼 제목",
+        "en": "The Title",
+        "ja": "  ",
+    }
+    assert state.article_title(session_state, "ko") == "제목"  # source stays as written
+    assert state.article_title(session_state, "en") == "The Title"
+    assert state.article_title(session_state, "ja") == "제목"  # blank falls back
+
+
+def test_manifest_shows_each_language_title(finalized_project) -> None:
+    from app import state
+    from app.persistence import get_article_store
+
+    finalized_project.state[state.LOCALIZED_TITLES] = {
+        "ko": "제목",
+        "en": "The Title",
+        "ja": "タイトル",
+    }
+    store = get_article_store()
+    project_id = finalized_project.state[state.PROJECT_ID]
+    store.add_version(project_id, "en", "localized", "text")
+    manifest = slides.compile_artifact_manifest_markdown(finalized_project)["manifest"]
+    assert "| English | The Title | devto |" in manifest
+    assert "| Korean | 제목 | naver_blog |" in manifest
+    assert "| Japanese |  | qiita |" in manifest  # no Japanese text stored yet
+
+
+def test_naver_export_reports_the_title_to_type(finalized_project) -> None:
+    result = publish.export_naver_blog_paste_ready_html(finalized_project)
+    assert result["title"] == "제목"
+    assert result["publication"]["title"] == "제목"

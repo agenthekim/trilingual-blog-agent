@@ -19,6 +19,7 @@ REVIEW_VERDICT = "review_verdict"
 PUBLICATIONS = "publications"
 PRESENTATION_BRIEF = "presentation_brief"
 SLIDE_DECK_PLAN = "slide_deck_plan"
+LOCALIZED_TITLES = "localized_titles"
 
 
 def localized_key(language: str) -> str:
@@ -30,3 +31,18 @@ def article_markdown(state: Mapping[str, Any], language: str) -> str | None:
     if state.get(SOURCE_LANGUAGE) == language:
         return state.get(SEED_MARKDOWN)
     return state.get(localized_key(language))
+
+
+def article_title(state: Mapping[str, Any], language: str) -> str:
+    """Title of the article in ``language``.
+
+    The source language always uses the seed title as the author wrote it. A
+    target language uses its localized title, falling back to the seed title
+    when localization has not produced one yet.
+    """
+    seed_title = state.get(SEED_TITLE) or ""
+    if state.get(SOURCE_LANGUAGE) == language:
+        return seed_title
+    return (
+        (state.get(LOCALIZED_TITLES) or {}).get(language) or ""
+    ).strip() or seed_title
