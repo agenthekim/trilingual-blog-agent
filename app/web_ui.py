@@ -34,6 +34,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from app.google_slides import SlidesError
 from app.observability import log_event
 from app.pipeline import API_PLATFORMS, ArticlePipeline, project_file
 from app.redaction import redact_credentials
@@ -114,6 +115,15 @@ class MessageRequest(BaseModel):
 class EditRequest(BaseModel):
     markdown: str = Field(min_length=1, max_length=200_000)
     title: str | None = Field(default=None, max_length=200)
+
+
+class DeckSyncRequest(BaseModel):
+    language: Literal["ko", "en", "ja"]
+    # push: the Markdown plan's text into the deck; pull: the deck's into the file.
+    direction: Literal["push", "pull"]
+    # False asks what would change. True only when a person, having seen
+    # that, pressed the approve button.
+    approved: bool = False
 
 
 class ApprovalRequest(BaseModel):
@@ -262,6 +272,37 @@ async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
 
     _start(job, work, "create_deck")
     return {"accepted": True}
+
+
+@web.post("/api/jobs/{job_id}/deck/sync")
+async def sync_deck(job_id: str, request: DeckSyncRequest) -> dict[str, Any]:
+    """Compare a deck with its slide plan file, or bring one in line with the other.
+
+    Without approval this only reads: it answers how many slides a push or a
+    pull would change. With approval it changes text in the existing deck
+    (push) or in the file (pull); pictures and layout are not touched.
+    """
+    job = _job(job_id)
+    if job.busy:
+        raise HTTPException(409, "Wait until the agent has finished, then try again.")
+    if request.approved:
+        log_event(
+            "deck text sync approved in the web ui",
+            event_phase="HUMAN_APPROVAL",
+            language=request.language,
+            direction=request.direction,
+        )
+    job.busy = request.approved  # nothing else may run while the deck is written
+    try:
+        return await job.pipeline.sync_deck_text(
+            request.language, request.direction, apply=request.approved
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except SlidesError as exc:
+        raise HTTPException(502, exc.message) from exc
+    finally:
+        job.busy = False
 
 
 @web.post("/api/jobs/{job_id}/url")

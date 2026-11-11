@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
 from app import google_slides, state
+from app.deck_sync import plan_text
 from app.markdown_checks import (
     SPEECH_UNITS_PER_MINUTE,
     estimate_speaking_seconds,
@@ -180,6 +182,73 @@ def render_slide_plan_markdown(plan: SlideDeckPlan) -> str:
     return "\n".join(lines)
 
 
+_SLIDE_HEADING = re.compile(r"^## (\d+)\. (.+)$")
+_SCRIPT_HEADING = re.compile(r"^Speaker script\b.*:\s*$")
+
+
+def parse_slide_plan_markdown(text: str, language: str) -> SlideDeckPlan:
+    """Read a slide plan back from the Markdown ``render_slide_plan_markdown`` wrote.
+
+    A person may have edited the file, so the layout is read leniently, but
+    the parts a deck cannot be built without must be there. A file that does
+    not have them raises ValueError saying what is missing and where.
+    """
+    lines = text.splitlines()
+    deck_title = next((ln[2:].strip() for ln in lines if ln.startswith("# ")), "")
+    if not deck_title:
+        raise ValueError("The first heading ('# Deck title') is missing.")
+    audience = next(
+        (ln.split(":", 1)[1].strip() for ln in lines if ln.startswith("- Audience:")),
+        "",
+    )
+    starts = [i for i, ln in enumerate(lines) if _SLIDE_HEADING.match(ln)]
+    if not starts:
+        raise ValueError("No slide heading ('## 1. Title') was found.")
+    slides = []
+    for start, end in zip(starts, [*starts[1:], len(lines)], strict=True):
+        number, title = _SLIDE_HEADING.match(lines[start]).groups()
+        body = lines[start + 1 : end]
+        script_at = next(
+            (i for i, ln in enumerate(body) if _SCRIPT_HEADING.match(ln)), None
+        )
+        if script_at is None:
+            raise ValueError(f"Slide {number} has no 'Speaker script (...):' line.")
+        head = body[:script_at]
+        slides.append(
+            {
+                "number": int(number),
+                "title": title.strip(),
+                "bullets": [ln[2:].strip() for ln in head if ln.startswith("- ")],
+                "visual_note": next(
+                    (ln[7:].strip() for ln in head if ln.startswith("Visual:")),
+                    "text only",
+                ),
+                "image_url": next(
+                    (ln[6:].strip() for ln in head if ln.startswith("Image:")), ""
+                ),
+                "speaker_script": "\n".join(body[script_at + 1 :]).strip(),
+            }
+        )
+    numbers = [slide["number"] for slide in slides]
+    if len(set(numbers)) != len(numbers):
+        raise ValueError("Two slides have the same number.")
+    try:
+        return SlideDeckPlan.model_validate(
+            {
+                "language": language,
+                "deck_title": deck_title,
+                "audience": audience,
+                "slides": slides,
+            }
+        )
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        where = ".".join(str(part) for part in first["loc"])
+        raise ValueError(
+            f"The slide plan is not valid ({where}: {first['msg']})."
+        ) from exc
+
+
 def export_slide_plan_markdown(tool_context: ToolContext) -> dict[str, Any]:
     """Write the slide plan, with its speaker script, to a Markdown file.
 
@@ -333,6 +402,10 @@ async def create_google_slides_deck_with_speaker_notes(
     decks = dict(tool_context.state.get("google_slides_decks") or {})
     decks[plan.language] = deck
     tool_context.state["google_slides_decks"] = decks
+    # What the deck and the plan agree on, for telling later edits apart.
+    synced = dict(tool_context.state.get(state.DECK_TEXT_BASELINE) or {})
+    synced[plan.language] = plan_text(plan)
+    tool_context.state[state.DECK_TEXT_BASELINE] = synced
     project_id = tool_context.state.get(state.PROJECT_ID)
     if project_id:
         get_article_store().save_project(project_id, {"google_slides_url": deck["url"]})

@@ -19,6 +19,7 @@ class FakePipeline:
 
     def __init__(self) -> None:
         self.saved: list[tuple[str, str, str | None]] = []
+        self.synced: list[tuple[str, str, bool]] = []
 
     async def overview(self) -> dict[str, Any]:
         return {
@@ -29,6 +30,12 @@ class FakePipeline:
     async def save_edit(self, name: str, markdown: str, title: str | None = None):
         self.saved.append((name, markdown, title))
         return {"saved": name, "check": None, "secrets": []}
+
+    async def sync_deck_text(self, language: str, direction: str, apply: bool):
+        if language == "en":
+            raise ValueError("There is no Google Slides deck for this language yet.")
+        self.synced.append((language, direction, apply))
+        return {"direction": direction, "slides": [2], "applied": apply}
 
 
 @pytest.fixture
@@ -75,3 +82,31 @@ def test_editor_page_is_served_and_saves_through_the_file_api(client) -> None:
     assert web_ui.JOBS[JOB_ID].pipeline.saved == [
         ("post.ko.md", "# 새 본문\n", "새 제목")
     ]
+
+
+def test_deck_sync_writes_only_when_the_request_says_a_person_approved(client) -> None:
+    url = f"/api/jobs/{JOB_ID}/deck/sync"
+    asked = client.post(url, json={"language": "ko", "direction": "push"})
+    assert asked.json() == {"direction": "push", "slides": [2], "applied": False}
+    done = client.post(
+        url, json={"language": "ko", "direction": "pull", "approved": True}
+    )
+    assert done.json()["applied"] is True
+    job = web_ui.JOBS[JOB_ID]
+    assert job.pipeline.synced == [("ko", "push", False), ("ko", "pull", True)]
+    assert job.busy is False
+
+    assert (
+        client.post(url, json={"language": "en", "direction": "push"}).status_code
+        == 400
+    )
+    assert (
+        client.post(url, json={"language": "ko", "direction": "both"}).status_code
+        == 422
+    )
+    job.busy = True  # the agent is working: the deck is not touched meanwhile
+    assert (
+        client.post(url, json={"language": "ko", "direction": "push"}).status_code
+        == 409
+    )
+    assert job.busy is True and len(job.pipeline.synced) == 2

@@ -218,7 +218,7 @@ as written.
 | Multi-agent patterns | Coordinator with sub-agents, `ParallelAgent`, `LoopAgent`, `SequentialAgent` in `app/agent.py`; custom `BaseAgent` gates in `app/workflow_agents.py` |
 | Model routing | `MODEL_ROUTES`, `model_for` in `app/models.py` |
 | Guardrails and policy | `ContentPolicyPlugin` in `app/plugins.py` (URL allowlist on every tool call, credential scrub on model output); `check_fidelity` in `app/markdown_checks.py`; critic and gates in the review loops |
-| Human in the loop | `_approval` in `app/tools/publish.py` (`request_confirmation`), `ResumabilityConfig` in `app/agent.py` |
+| Human in the loop | `_approval` in `app/tools/publish.py` (`request_confirmation`), `ResumabilityConfig` in `app/agent.py`; changing an existing deck: `sync_deck` in `app/web_ui.py`, `app/deck_sync.py` |
 | Structured logging | `get_logger`, `log_event` in `app/observability.py` (JSON, redaction filter) |
 | Intent and outcome logging | `ObservabilityPlugin` in `app/observability.py` |
 | Tracing | `traced_span` in `app/observability.py`; OpenTelemetry export set up in `app/fast_api_app.py` |
@@ -242,11 +242,13 @@ What has been run for real, and what has not:
 | Cloud DLP path | Implemented behind a flag, not exercised |
 | Refinement branch of the localization loop | Covered by unit tests of the gates. It ran in one real run (two review rounds, both languages refined); most runs pass on the first round |
 | Translated Mermaid diagrams | The structure check confirms node ids and edges are unchanged; the diagrams have not been rendered to confirm they still draw |
-| Google Slides deck with speaker notes | Decks were created through the real Slides API and checked by reading them back and by rendering slide thumbnails: cover slide, titles sized to fit, bullets (Korean and Japanese included), an article image placed beside the bullets, speaker notes. Only images already in the article are used; Mermaid diagrams are not rendered into slides. PDF export is not implemented |
+| Google Slides deck with speaker notes | Decks were created through the real Slides API and checked by reading them back and by rendering slide thumbnails: cover slide, titles sized to fit, bullets (Korean and Japanese included), an article image placed beside the bullets, speaker notes. With `BLOG_AGENT_RENDER_MERMAID` on, Mermaid diagrams are rendered by mermaid.ink and placed as images; this ran in real decks. PDF export is not implemented |
+| Image placement by shape (wide under the bullets, tall over the full page height, title narrowed) | Unit-tested, and drawn to scale from the real rendered diagrams of one article. Not yet run against the real Slides API; if narrowing a title is refused, the image falls back to the place under the title |
+| Editing a deck's text from its Markdown plan, and pulling deck edits back | Each direction needs an approval that lists the slides that change; only titles, bullets and speaker notes move. Unit-tested and exercised in a browser against a stand-in for the Slides API. Not yet run against the real Slides API |
 | Naver Blog publishing | Manual by design: Naver has no public write API. The agent exports HTML to paste and then verifies the URL the author gives it |
 | Naver Blog reading | Best effort from the public mobile page; heading levels are not recovered |
 | Speaking-time check | Estimated from script length with assumed rates (140 words/min English, 300 characters/min Korean, 330 characters/min Japanese), not measured |
-| Web front end | Full run, file views and the approval request with a decline were exercised through its HTTP API; creating a draft from it has not been run, and the page itself was not tested in a browser by automation |
+| Web front end | Full run, file views and the approval request with a decline were exercised through its HTTP API; creating a draft from it has not been run. The results table and the full-page editor were rendered in headless Chrome against stand-in data, not against a real run |
 | CI/CD pipeline | Not set up |
 
 `ParallelAgent`, `SequentialAgent` and `LoopAgent` print deprecation warnings in
@@ -264,6 +266,8 @@ app/
   schemas.py            Pydantic schemas and tool error helpers
   tools/                function tools (articles, publish, slides)
   platforms.py          Qiita, DEV Community and Naver HTTP clients
+  google_slides.py      Google Slides deck creation and image placement
+  deck_sync.py          text kept in step between a deck and its Markdown plan
   markdown_checks.py    structure fidelity and speaking-time checks
   plugins.py            content policy plugin
   observability.py      JSON logging, intent/outcome plugin, spans

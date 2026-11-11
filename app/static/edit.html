@@ -40,6 +40,15 @@
   label.field { display:grid; gap:4px; font-weight:600; font-size:13px; }
   footer { display:flex; align-items:center; gap:8px; }
   footer #result { margin-right:auto; }
+  footer .sep { width:1px; height:20px; background:var(--line); margin:0 4px; }
+  dialog { border:1px solid var(--line); border-radius:8px; padding:0; background:var(--surface); color:var(--text);
+    width:min(560px,92vw); }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  dialog .body { padding:16px; display:grid; gap:10px; }
+  dialog .foot { padding:12px 16px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; }
+  dialog h2 { font-size:16px; margin:0; }
+  dl.summary { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; }
+  dl.summary dt { color:var(--muted); } dl.summary dd { margin:0; font-weight:500; }
 </style>
 </head>
 <body>
@@ -49,10 +58,29 @@
   <textarea id="text" spellcheck="false" aria-label="File text" disabled></textarea>
   <footer>
     <span class="muted small" id="result" role="status">Loading…</span>
+    <span class="hidden" id="deckTools" style="display:flex; align-items:center; gap:8px">
+      <a id="deckLink" target="_blank" rel="noopener" class="small">Open the deck</a>
+      <button type="button" id="pull">Pull from deck…</button>
+      <button type="button" id="push">Update deck…</button>
+      <span class="sep"></span>
+    </span>
     <button type="button" id="cancel">Cancel</button>
     <button type="button" class="primary" id="save" disabled>Save</button>
   </footer>
 </main>
+
+<!-- Shown before anything is written to the deck, or before the deck's text replaces the file's. -->
+<dialog id="confirmDialog">
+  <div class="body">
+    <h2 id="confirmTitle"></h2>
+    <dl class="summary" id="confirmSummary"></dl>
+    <p class="small" id="confirmNote" style="margin:0"></p>
+  </div>
+  <div class="foot">
+    <button type="button" id="confirmCancel">Cancel</button>
+    <button type="button" class="primary" id="confirmOk"></button>
+  </div>
+</dialog>
 
 <script>
 // The file's text is only ever put into a text box, never into the page as HTML.
@@ -61,7 +89,8 @@ const params = new URLSearchParams(location.search);
 const job = params.get("job") || "", name = params.get("file") || "";
 const valid = /^[0-9a-f]{32}$/.test(job) && /^(post|slides)\.(ko|en|ja)\.md$/.test(name);
 const fileUrl = `/api/jobs/${job}/files/${name}`;
-let savedText = "", savedTitle = "", hasTitle = false;
+const language = name.split(".")[1];
+let savedText = "", savedTitle = "", hasTitle = false, hasDeck = false;
 
 const dirty = () => $("text").value !== savedText || (hasTitle && $("title").value !== savedTitle);
 function say(text, bad) { $("result").textContent = text; $("result").classList.toggle("bad", Boolean(bad)); }
@@ -95,32 +124,121 @@ async function load() {
     $("title").value = savedTitle = row ? row.title : "";
     $("text").value = savedText = await (await api(fileUrl + "?raw=1")).text();
     $("text").disabled = false; $("save").disabled = false;
+    // A slide plan whose deck exists can be pushed to it, or refreshed from it.
+    const deck = name.startsWith("slides.") && (state.overview.decks || {})[language];
+    hasDeck = Boolean(deck && deck.url);
+    if (hasDeck) { $("deckLink").href = deck.url; $("deckTools").classList.remove("hidden"); }
     say(hasTitle ? "Saving replaces the text the agent will post."
-      : "Saving changes this Markdown file only. A Google Slides deck is not updated by it.");
+      : hasDeck ? "Saving changes this file. You are then asked whether to update the Google Slides deck."
+      : "Saving changes this file. There is no Google Slides deck for this language yet.");
     // Start at the top: focusing alone would put the caret, and the view, at the end.
     $("text").focus(); $("text").setSelectionRange(0, 0); $("text").scrollTop = 0;
   } catch (error) { say(error.message, true); }
 }
 
+// Saves the text. Returns true when it is saved and, for a slide plan, still reads as one.
 async function save() {
-  if ($("save").disabled) return;
+  if ($("save").disabled) return false;
   const body = {markdown: $("text").value};
   if (hasTitle) body.title = $("title").value;
   $("save").disabled = true; say("Saving…");
+  let good = false;
   try {
     const data = await (await api(fileUrl, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
     savedText = $("text").value; savedTitle = $("title").value;
     const notes = ["Saved."];
-    if (data.check) notes.push(data.check.passed ? "Structure matches the source." : "Differs from the source: " + data.check.errors.join(" "));
+    good = !data.check || data.check.passed;
+    if (hasTitle) notes.push(good ? "Structure matches the source." : "Differs from the source: " + data.check.errors.join(" "));
+    else if (!good) notes.push("It no longer reads as a slide plan, so the deck cannot be updated from it: " + data.check.errors.join(" "));
     if (data.secrets && data.secrets.length) notes.push("Contains credential-looking text; the agent will refuse to post it.");
-    say(notes.join(" "), data.check && !data.check.passed);
+    say(notes.join(" "), !good);
+    // The server keeps a slide plan in its regular form; show that form.
+    if (good && !hasTitle) await reloadText();
   } catch (error) { say(error.message, true); }
   $("save").disabled = false;
+  return good;
 }
 
-$("save").addEventListener("click", save);
+async function reloadText() {
+  const box = $("text"), top = box.scrollTop, at = box.selectionStart;
+  const fresh = await (await api(fileUrl + "?raw=1")).text();
+  if (fresh !== box.value) { box.value = fresh; box.setSelectionRange(at, at); box.scrollTop = top; }
+  savedText = fresh;
+}
+
+function confirmAction({title, summary, note, okLabel}) {
+  return new Promise((resolve) => {
+    $("confirmTitle").textContent = title;
+    $("confirmSummary").replaceChildren(...summary.flatMap(([k, v]) => {
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.textContent = k; dd.textContent = v; return [dt, dd];
+    }));
+    $("confirmNote").textContent = note || "";
+    $("confirmOk").textContent = okLabel;
+    const dialog = $("confirmDialog");
+    const done = (value) => { dialog.close(); $("confirmOk").onclick = $("confirmCancel").onclick = dialog.oncancel = null; resolve(value); };
+    $("confirmOk").onclick = () => done(true);
+    $("confirmCancel").onclick = () => done(false);
+    dialog.oncancel = () => done(false);
+    dialog.showModal();
+  });
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+function slideList(numbers) {
+  const names = numbers.map((n) => (n === 0 ? "cover" : String(n)));
+  return `${names.slice(0, 12).join(", ")}${names.length > 12 ? ", …" : ""} (${plural(numbers.length, "slide")})`;
+}
+function changeList(s) {
+  return [s.titles && plural(s.titles, "title"), s.bullets && `bullets on ${plural(s.bullets, "slide")}`,
+    s.notes && `speaker notes on ${plural(s.notes, "slide")}`].filter(Boolean).join(", ");
+}
+const syncDeck = async (direction, approved) => (await api(`/api/jobs/${job}/deck/sync`, {method: "POST",
+  headers: {"Content-Type": "application/json"}, body: JSON.stringify({language, direction, approved})})).json();
+
+// File to deck. Nothing is written until the person approves what the dialog lists.
+async function pushToDeck(quietIfSame) {
+  try {
+    const plan = await syncDeck("push", false);
+    if (!plan.slides.length) { if (!quietIfSame) say("The deck already has this text. Nothing to update."); return; }
+    const notes = [];
+    if (plan.conflicts.length) notes.push(`Also edited in the deck: slide ${plan.conflicts.join(", ")}. Approving replaces that text with this file's; pull from the deck first to keep it.`);
+    if (!plan.baseline_known) notes.push("There is no record of what the deck last held, so every difference is taken from this file.");
+    if (plan.only_in_file.length) notes.push(`Not in the deck, so skipped: slide ${plan.only_in_file.join(", ")}.`);
+    const ok = await confirmAction({title: "Update the Google Slides deck?",
+      summary: [["Slides that change", slideList(plan.slides)], ["What changes", changeList(plan)], ["Stays as it is", "pictures, sizes and positions"]],
+      note: notes.join(" "), okLabel: "Approve and update"});
+    if (!ok) { say("The deck was not changed."); return; }
+    say("Updating the deck…");
+    const done = await syncDeck("push", true);
+    say(`Deck updated: ${plural(done.slides.length, "slide")}.`);
+  } catch (error) { say(error.message, true); }
+}
+
+// Deck to file. The file is replaced only after the person approves.
+async function pullFromDeck() {
+  if (dirty()) { say("Save or cancel your changes before pulling from the deck.", true); return; }
+  try {
+    const plan = await syncDeck("pull", false);
+    if (!plan.slides.length) { say("Nothing was edited in the deck. The file is unchanged."); return; }
+    const notes = [];
+    if (plan.conflicts.length) notes.push(`Also edited in this file: slide ${plan.conflicts.join(", ")}. Approving replaces that text with the deck's.`);
+    if (!plan.baseline_known) notes.push("There is no record of what the deck last held, so every difference is taken from the deck.");
+    const ok = await confirmAction({title: "Bring the deck's text into this file?",
+      summary: [["Slides that change", slideList(plan.slides)], ["What changes", changeList(plan)], ["The deck", "is only read"]],
+      note: notes.join(" "), okLabel: "Approve and replace"});
+    if (!ok) return;
+    const done = await syncDeck("pull", true);
+    await reloadText();
+    say(`File updated from the deck: ${plural(done.slides.length, "slide")}.`);
+  } catch (error) { say(error.message, true); }
+}
+
+$("save").addEventListener("click", async () => { if (await save() && hasDeck) await pushToDeck(true); });
+$("push").addEventListener("click", async () => { if (!dirty() || await save()) await pushToDeck(false); });
+$("pull").addEventListener("click", pullFromDeck);
 $("cancel").addEventListener("click", () => { location.href = valid ? fileUrl : "/"; });
-document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save(); } });
+document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); $("save").click(); } });
 // Leaving with unsaved changes asks first.
 window.addEventListener("beforeunload", (e) => { if (dirty()) e.preventDefault(); });
 load();

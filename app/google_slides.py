@@ -6,6 +6,10 @@ secret ``GOOGLE_SLIDES_OAUTH`` (client id, client secret, refresh token) and
 is limited to the ``drive.file`` scope: the agent can touch only files it
 created itself, never the rest of the Drive.
 
+A deck, once created, is changed again only by ``update_presentation``, which
+the web front end calls after a person approved the listed text changes (see
+``app/deck_sync.py``).
+
 Use a personal or dedicated account for the grant, not a work or school
 account: the OAuth app is your own unverified app, and the decks are created
 in that account's Drive. The authorization script shows which account granted
@@ -804,3 +808,27 @@ async def create_deck(
         "images_inserted": len(images) - images_failed,
         "images_failed": images_failed,
     }
+
+
+async def read_presentation(presentation_id: str) -> dict[str, Any]:
+    """The deck as Google has it now, including speaker notes. Changes nothing."""
+    async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
+        headers = {"Authorization": f"Bearer {await _access_token(client)}"}
+        return _checked(
+            await client.get(f"{SLIDES_API}/{presentation_id}", headers=headers),
+            "reading the deck",
+        )
+
+
+async def update_presentation(presentation_id: str, requests: list[dict]) -> None:
+    """Apply ``requests`` to an existing deck. All of them take effect, or none."""
+    async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
+        headers = {"Authorization": f"Bearer {await _access_token(client)}"}
+        _checked(
+            await client.post(
+                f"{SLIDES_API}/{presentation_id}:batchUpdate",
+                headers=headers,
+                json={"requests": requests},
+            ),
+            "updating the deck",
+        )

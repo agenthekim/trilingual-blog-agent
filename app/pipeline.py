@@ -23,7 +23,7 @@ from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.genai import types
 
-from app import state
+from app import deck_sync, google_slides, state
 from app.agent import app
 from app.markdown_checks import check_fidelity
 from app.persistence import get_article_store
@@ -35,6 +35,7 @@ from app.settings import (
     PLATFORM_FOR_LANGUAGE,
     workspace_dir,
 )
+from app.tools.slides import parse_slide_plan_markdown, render_slide_plan_markdown
 
 _EDITABLE_FILE = re.compile(r"^(post|slides)\.(ko|en|ja)\.md$")
 MAX_TITLE_CHARS = 120
@@ -283,9 +284,9 @@ class ArticlePipeline:
             await self.say("Export the Naver Blog HTML.")
         problem = None
         if talk_languages is not None:
-            langs = [l for l in talk_languages if l in ("en", "ko", "ja")]
+            langs = [code for code in talk_languages if code in LANGUAGES]
         elif isinstance(talk_language, list):
-            langs = [l for l in talk_language if l in ("en", "ko", "ja")]
+            langs = [code for code in talk_language if code in LANGUAGES]
         elif talk_language:
             langs = [talk_language]
         else:
@@ -323,6 +324,113 @@ class ArticlePipeline:
             f"current text, or update the draft if one exists. Tags: {', '.join(tags)}."
         )
 
+    async def _update_state(self, delta: dict[str, Any]) -> None:
+        """Record a change a person made, outside any agent turn."""
+        session = await self._sessions.get_session(
+            app_name=app.name, user_id=USER_ID, session_id=self.session_id
+        )
+        await self._sessions.append_event(
+            session,
+            Event(
+                author="human_editor",
+                invocation_id=f"edit-{uuid.uuid4().hex[:8]}",
+                actions=EventActions(state_delta=delta),
+            ),
+        )
+
+    async def _save_slide_plan(
+        self, path: Path, text: str, language: str
+    ) -> dict[str, Any]:
+        """Save an edited slide plan and read it back as the plan it describes.
+
+        A file that reads as a plan is stored in its regular form, so the
+        speaking time shown for each slide matches the edited script, and it
+        replaces the agent's plan when that is the plan of this language. A
+        file that does not is saved as typed and the problem is reported: the
+        deck cannot be updated from it until it is fixed.
+        """
+        try:
+            plan = parse_slide_plan_markdown(text, language)
+        except ValueError as exc:
+            path.write_text(text, encoding="utf-8")
+            self.log(f">>> edited {path.name} by hand; it no longer reads as a plan")
+            return {
+                "saved": path.name,
+                "check": {"passed": False, "errors": [str(exc)]},
+                "secrets": [],
+            }
+        path.write_text(render_slide_plan_markdown(plan), encoding="utf-8")
+        current = (await self.session_state()).get(state.SLIDE_DECK_PLAN) or {}
+        if current.get("language") == language:
+            await self._update_state({state.SLIDE_DECK_PLAN: plan.model_dump()})
+        self.log(f">>> edited {path.name} by hand ({len(plan.slides)} slides)")
+        return {
+            "saved": path.name,
+            "check": {"passed": True, "errors": []},
+            "secrets": [],
+        }
+
+    async def sync_deck_text(
+        self, language: str, direction: str, apply: bool
+    ) -> dict[str, Any]:
+        """Compare a deck with its Markdown plan and, if asked, bring one in line.
+
+        ``direction`` is 'push' (file to deck) or 'pull' (deck to file). With
+        ``apply`` false nothing is written anywhere; the result says what an
+        approval would change. With ``apply`` true a person has approved it.
+        Raises ValueError when there is no deck or no readable plan.
+        """
+        if direction not in ("push", "pull"):
+            raise ValueError("Unknown direction.")
+        current = await self.session_state()
+        deck = (current.get(state.GOOGLE_SLIDES_DECKS) or {}).get(language)
+        if not deck or not deck.get("presentation_id"):
+            raise ValueError("There is no Google Slides deck for this language yet.")
+        project_id = current.get(state.PROJECT_ID) or ""
+        path = project_file(project_id, f"slides.{language}.md")
+        if path is None:
+            raise ValueError("The slide plan file of this language is missing.")
+        plan = parse_slide_plan_markdown(path.read_text(encoding="utf-8"), language)
+
+        baselines = dict(current.get(state.DECK_TEXT_BASELINE) or {})
+        baseline = baselines.get(language)
+        file_view = deck_sync.plan_text(plan)
+        presentation = await google_slides.read_presentation(deck["presentation_id"])
+        deck_view, holders = deck_sync.deck_text(presentation)
+        carried = deck_sync.to_carry(
+            deck_sync.differences(file_view, deck_view, baseline), direction
+        )
+        result = deck_sync.describe(direction, carried, file_view, deck_view, baseline)
+        result.update(language=language, deck_url=deck.get("url"), applied=False)
+        if not apply or not carried:
+            return result
+
+        if direction == "push":
+            await google_slides.update_presentation(
+                deck["presentation_id"], deck_sync.update_requests(carried, holders)
+            )
+            deck_view.update({change.key: change.file for change in carried})
+        else:
+            plan = deck_sync.merged_plan(plan, carried)
+            path.write_text(render_slide_plan_markdown(plan), encoding="utf-8")
+            file_view = deck_sync.plan_text(plan)
+        delta: dict[str, Any] = {
+            state.DECK_TEXT_BASELINE: {
+                **baselines,
+                language: deck_sync.agreed(file_view, deck_view, baseline),
+            }
+        }
+        if (current.get(state.SLIDE_DECK_PLAN) or {}).get("language") == language:
+            delta[state.SLIDE_DECK_PLAN] = plan.model_dump()
+        await self._update_state(delta)
+        where = "deck from the file" if direction == "push" else "file from the deck"
+        self.log(
+            f">>> updated the {LANGUAGE_NAMES[language]} {where}: "
+            f"{len(result['slides'])} slides, approved by a person"
+        )
+        result["applied"] = True
+        return result
+
     async def request_slides_deck(self) -> None:
         """Ask for a Google Slides deck; the agent stops at the approval request."""
         await self.say("Create the Google Slides deck from the slide plan.")
@@ -356,8 +464,7 @@ class ArticlePipeline:
         kind, language = match.groups()
         path = workspace_dir() / project_id / name
         if kind == "slides":
-            path.write_text(text, encoding="utf-8")
-            return {"saved": name, "check": None, "secrets": []}
+            return await self._save_slide_plan(path, text, language)
         if language == current.get(state.SOURCE_LANGUAGE):
             raise ValueError(
                 "This is the source article. Edit it where it was written and "
@@ -377,17 +484,7 @@ class ArticlePipeline:
                 **(current.get(state.LOCALIZED_TITLES) or {}),
                 language: title.strip()[:MAX_TITLE_CHARS],
             }
-        session = await self._sessions.get_session(
-            app_name=app.name, user_id=USER_ID, session_id=self.session_id
-        )
-        await self._sessions.append_event(
-            session,
-            Event(
-                author="human_editor",
-                invocation_id=f"edit-{uuid.uuid4().hex[:8]}",
-                actions=EventActions(state_delta=delta),
-            ),
-        )
+        await self._update_state(delta)
         get_article_store().add_version(project_id, language, "edited", text)
         path.write_text(text, encoding="utf-8")
         if language == "ko" and project_file(project_id, "naver_blog.html"):
