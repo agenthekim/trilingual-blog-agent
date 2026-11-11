@@ -5,6 +5,12 @@ once with ``scripts/authorize_google_slides.py``. That grant is stored as the
 secret ``GOOGLE_SLIDES_OAUTH`` (client id, client secret, refresh token) and
 is limited to the ``drive.file`` scope: the agent can touch only files it
 created itself, never the rest of the Drive.
+
+Use a personal or dedicated account for the grant, not a work or school
+account: the OAuth app is your own unverified app, and the decks are created
+in that account's Drive. The authorization script shows which account granted
+access and stores nothing until that is confirmed; the approval request for a
+new deck names the account again.
 """
 
 from __future__ import annotations
@@ -105,6 +111,15 @@ def notes_requests(plan: SlideDeckPlan, presentation: dict[str, Any]) -> list[di
         if shape and text:
             requests.append({"insertText": {"objectId": shape, "text": text}})
     return requests
+
+
+def granted_account() -> str | None:
+    """Address of the account whose Drive receives the decks, if it is known."""
+    try:
+        account = json.loads(get_secret(OAUTH_SECRET_NAME)).get("account")
+    except (MissingSecretError, ValueError, AttributeError):
+        return None
+    return account if isinstance(account, str) and account else None
 
 
 def _credentials() -> dict[str, str]:

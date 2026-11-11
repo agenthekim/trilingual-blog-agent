@@ -145,6 +145,33 @@ Files are written under `workspace/<project-id>/` (`BLOG_AGENT_WORKSPACE_DIR`).
 | `agents-cli infra single-project` | Apply `deployment/terraform/single-project` |
 | `agents-cli deploy` | Deploy to Agent Runtime |
 
+### Google Slides (optional)
+
+To let the agent create a Google Slides deck with speaker notes, grant access
+once. Enable the Slides API, create an OAuth client of type "Desktop app" in
+the console, then:
+
+```bash
+uv run python scripts/authorize_google_slides.py \
+    --client-file ~/client_secret.json --account you@example.com
+```
+
+Cautions:
+
+- Use a personal or dedicated Google account, not a work or school account.
+  The OAuth app is your own unverified app, and every deck is created in the
+  granting account's Drive.
+- "Access blocked ... 403 access_denied" during sign-in means the signed-in
+  account is not a test user of your consent screen. Switch accounts; do not
+  add a work account as a test user to get past it.
+- The script names the account that granted access and stores nothing until
+  it is confirmed (or matches `--account`); a refused grant is revoked. The
+  approval request for each deck names the account again.
+- The grant covers only files the agent created (`drive.file`).
+- Never paste the client file, the redirected address or a screenshot of the
+  client secret into a chat or an issue. If that happens, delete the OAuth
+  client, create a new one and authorize again.
+
 ## Tests and evaluation
 
 ```bash

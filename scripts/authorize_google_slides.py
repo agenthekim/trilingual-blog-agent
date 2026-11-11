@@ -12,10 +12,25 @@ What it does:
 The grant uses the drive.file scope only: the agent can see and change files
 it created itself, nothing else in the Drive.
 
+Which account to use:
+  - Use a personal or dedicated Google account, not a work or school account.
+    The OAuth app is your own unverified app; granting it access to an
+    organisation's Drive may break that organisation's rules, and every deck
+    would be created there.
+  - While the consent screen is in "Testing", only accounts listed as test
+    users can grant access. If sign-in ends with "Access blocked ... 403
+    access_denied", you are signed in with an account that is not a test user:
+    switch accounts (a private window helps). Do not add a work account as a
+    test user just to get past the message.
+  - Pass --account so Google preselects it and a grant from any other account
+    is refused. Without it, the script shows the account and asks before
+    storing anything.
+
 Before running: enable the Slides API, and create an OAuth client of type
 "Desktop app" in the Google Cloud console; download its JSON file.
 
-    uv run python scripts/authorize_google_slides.py --client-file ~/client_secret.json
+    uv run python scripts/authorize_google_slides.py \\
+        --client-file ~/client_secret.json --account you@example.com
 """
 
 from __future__ import annotations
@@ -44,6 +59,37 @@ except ImportError:
 from app.google_slides import OAUTH_SCOPE, OAUTH_SECRET_NAME, TOKEN_URL  # noqa: E402
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+ABOUT_URL = "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)"
+
+
+def granting_account(access_token: str) -> str | None:
+    """Address of the account that just granted access, or None if unknown."""
+    try:
+        response = httpx.get(
+            ABOUT_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=30
+        )
+        return response.json()["user"]["emailAddress"]
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return None
+
+
+def account_is_accepted(expected: str | None, actual: str | None) -> bool:
+    """Decide whether a grant may be stored. Asks the person when unsure."""
+    if expected and actual:
+        if expected.strip().lower() == actual.lower():
+            return True
+        print(
+            f"Access was granted by {actual}, not by {expected}. Nothing was stored.",
+            file=sys.stderr,
+        )
+        return False
+    shown = actual or "an account that could not be identified"
+    print(f"\nAccess was granted by: {shown}")
+    print("Decks will be created in that account's Drive. Do not use a work account.")
+    return input("Store this grant? [y/N] ").strip().lower() in ("y", "yes")
+
+
 REDIRECT_URI = "http://localhost:8765"
 
 
@@ -85,6 +131,11 @@ def main() -> int:
         or os.environ.get("GOOGLE_CLOUD_PROJECT"),
         help="Project that holds the secret. Default: GOOGLE_CLOUD_PROJECT.",
     )
+    parser.add_argument(
+        "--account",
+        help="Address of the account that should own the decks. A grant from "
+        "any other account is refused.",
+    )
     args = parser.parse_args()
     if not args.project:
         parser.error("--project is required when GOOGLE_CLOUD_PROJECT is not set")
@@ -109,6 +160,7 @@ def main() -> int:
             "access_type": "offline",
             "prompt": "consent",
             "state": state,
+            **({"login_hint": args.account} if args.account else {}),
         }
     )
     print(
@@ -153,6 +205,13 @@ def main() -> int:
         )
         return 1
 
+    account = granting_account(tokens["access_token"])
+    if not account_is_accepted(args.account, account):
+        # Withdraw the grant so the refused account keeps no link to the app.
+        httpx.post(REVOKE_URL, data={"token": tokens["refresh_token"]}, timeout=30)
+        print("The grant was withdrawn. Run again with the right account.")
+        return 1
+
     store_secret(
         args.project,
         json.dumps(
@@ -160,6 +219,7 @@ def main() -> int:
                 "client_id": client["client_id"],
                 "client_secret": client["client_secret"],
                 "refresh_token": tokens["refresh_token"],
+                "account": account or "",
             }
         ),
     )

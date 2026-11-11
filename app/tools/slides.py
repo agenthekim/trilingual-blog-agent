@@ -272,9 +272,12 @@ async def create_google_slides_deck_with_speaker_notes(
         return plan
     confirmation = tool_context.tool_confirmation
     if confirmation is None:
+        # Name the account, so a deck never lands in a Drive nobody expected.
+        account = google_slides.granted_account()
+        where = f"the Google Drive of {account}" if account else "your Google Drive"
         tool_context.request_confirmation(
             hint=f"Approve to create a Google Slides deck '{plan.deck_title}' "
-            f"({len(plan.slides)} slides with speaker notes) in your Google Drive.",
+            f"({len(plan.slides)} slides with speaker notes) in {where}.",
             payload={"deck_title": plan.deck_title, "slides": len(plan.slides)},
         )
         return {

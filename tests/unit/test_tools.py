@@ -391,8 +391,10 @@ async def test_google_slides_deck_needs_plan_and_human_approval(
     monkeypatch.setattr(google_slides, "create_deck", fake_create)
     tool_context.state[state.SLIDE_DECK_PLAN] = _deck_plan()
 
+    monkeypatch.setattr(google_slides, "granted_account", lambda: "owner@example.com")
     assert (await tool(tool_context))["status"] == "pending_human_approval"
-    assert "2 slides" in tool_context.confirmation_requests[0]["hint"]
+    hint = tool_context.confirmation_requests[0]["hint"]
+    assert "2 slides" in hint and "the Google Drive of owner@example.com" in hint
     tool_context.decline()
     assert (await tool(tool_context))["status"] == "declined"
     assert calls == [] and state.GOOGLE_SLIDES_DECK not in tool_context.state

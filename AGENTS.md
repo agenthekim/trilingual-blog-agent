@@ -71,3 +71,4 @@ Ask the user: Option A (simple single-project) or Option B (full CI/CD pipeline 
 - **Tools**: type hints on every parameter, no default arguments, return a dict; failures go through `tool_error` / `validation_error` in `app/schemas.py` so the model gets an `error_code` and a `recovery_instruction`.
 - **Secrets**: only through `app/secrets.py`. Never put a credential, project id or account name in the repository; `.env` is git-ignored.
 - **Tests**: `tests/unit` must stay free of model and network calls. Model behaviour is checked with `agents-cli eval run`, not with assertions on generated text.
+- **Google account for Slides**: the grant must come from a personal or dedicated account, never a work or school account, and a work account must not be added as an OAuth test user to get past "Access blocked". Keep the account check in `scripts/authorize_google_slides.py` and the account name in the deck approval hint.
