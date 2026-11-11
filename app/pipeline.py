@@ -138,13 +138,18 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
         for row in rows
         if row["language"] != source and f"post.{row['language']}.md" in row["files"]
     ] + slides
+    deck = session_state.get(state.GOOGLE_SLIDES_DECK)
+    decks = dict(session_state.get("google_slides_decks") or {})
+    if deck and not decks:
+        decks[deck.get("language") or "en"] = deck
     return {
         "project_id": project_id,
         "title": session_state.get(state.SEED_TITLE) or "",
         "source_language": session_state.get(state.SOURCE_LANGUAGE),
         "rows": rows,
         "slides": slides,
-        "deck": session_state.get(state.GOOGLE_SLIDES_DECK),
+        "deck": deck,
+        "decks": decks,
         "can_create_deck": bool(session_state.get(state.SLIDE_DECK_PLAN)),
         "editable": editable,
         "manifest": existing("manifest.md"),
@@ -240,16 +245,17 @@ class ArticlePipeline:
         self,
         source_text: str,
         talk_minutes: int,
-        talk_language: str,
-        audience: str,
+        talk_language: str | list[str] = "en",
+        audience: str = "software engineers",
         create_deck: bool = False,
+        talk_languages: list[str] | None = None,
     ) -> str | None:
         """Seed, localize, export, plan the talk, compile the manifest.
 
         Returns None on success or a sentence saying what did not happen.
         Nothing is posted to Qiita or DEV Community here. ``create_deck`` is
-        the person's approval, given with the run options, to create one
-        Google Slides file in their own Drive from the slide plan; without it
+        the person's approval, given with the run options, to create
+        Google Slides files in their own Drive from the slide plans; without it
         the agent's approval request is left for them to answer.
         """
         await self.say(seed_message(source_text))
@@ -276,24 +282,34 @@ class ArticlePipeline:
         if naver.get("state") != "existing_source":
             await self.say("Export the Naver Blog HTML.")
         problem = None
-        if talk_minutes > 0:
-            await self.say(
-                f"Prepare a {talk_minutes} minute talk in language "
-                f"'{talk_language}'. Audience: {audience}."
-            )
-            current = await self.session_state()
-            if create_deck and current.get(state.SLIDE_DECK_PLAN):
-                await self.request_slides_deck()
-                if self.approval_hints:
-                    self.log(
-                        ">>> approval: yes (given in advance with the run options)"
-                    )
-                    await self.answer_approvals(True)
-                if not (await self.session_state()).get(state.GOOGLE_SLIDES_DECK):
-                    problem = (
-                        "Everything else finished, but the Google Slides deck was "
-                        "not created. See the agent's reply in the activity log."
-                    )
+        if talk_languages is not None:
+            langs = [l for l in talk_languages if l in ("en", "ko", "ja")]
+        elif isinstance(talk_language, list):
+            langs = [l for l in talk_language if l in ("en", "ko", "ja")]
+        elif talk_language:
+            langs = [talk_language]
+        else:
+            langs = ["en", "ko", "ja"]
+
+        if talk_minutes > 0 and langs:
+            for lang in langs:
+                await self.say(
+                    f"Prepare a {talk_minutes} minute talk in language "
+                    f"'{lang}'. Audience: {audience}."
+                )
+                current = await self.session_state()
+                if create_deck and current.get(state.SLIDE_DECK_PLAN):
+                    await self.request_slides_deck()
+                    if self.approval_hints:
+                        self.log(
+                            f">>> approval ({lang} deck): yes (given in advance with the run options)"
+                        )
+                        await self.answer_approvals(True)
+                    if not (await self.session_state()).get(state.GOOGLE_SLIDES_DECK):
+                        problem = (
+                            f"Everything else finished, but the Google Slides deck ({lang}) was "
+                            "not created. See the agent's reply in the activity log."
+                        )
         await self.say("Compile the artifact manifest.")
         return problem
 

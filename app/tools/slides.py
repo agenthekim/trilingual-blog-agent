@@ -252,9 +252,17 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
             "- Slides and speaker script: "
             + project["slide_plan_file"].rsplit("/", 1)[-1]
         ]
-    deck = tool_context.state.get(state.GOOGLE_SLIDES_DECK) or {}
-    if deck.get("url"):
-        lines += [f"- Google Slides deck: {deck['url']}"]
+    decks = tool_context.state.get("google_slides_decks") or {}
+    if decks:
+        for lang, d in decks.items():
+            if d.get("url"):
+                lines += [
+                    f"- Google Slides deck ({LANGUAGE_NAMES.get(lang, lang)}): {d['url']}"
+                ]
+    else:
+        deck = tool_context.state.get(state.GOOGLE_SLIDES_DECK) or {}
+        if deck.get("url"):
+            lines += [f"- Google Slides deck: {deck['url']}"]
     manifest = "\n".join(lines) + "\n"
     file = write_workspace_file(project_id, "manifest.md", manifest)
     return {"status": "success", "file": file, "manifest": manifest}
@@ -318,9 +326,13 @@ async def create_google_slides_deck_with_speaker_notes(
                 article_images[google_slides.mermaid_reference(number)] = rendered
     try:
         deck = await google_slides.create_deck(plan, article_images)
+        deck["language"] = plan.language
     except google_slides.SlidesError as exc:
         return tool_error(exc.code, exc.message, exc.recovery)
     tool_context.state[state.GOOGLE_SLIDES_DECK] = deck
+    decks = dict(tool_context.state.get("google_slides_decks") or {})
+    decks[plan.language] = deck
+    tool_context.state["google_slides_decks"] = decks
     project_id = tool_context.state.get(state.PROJECT_ID)
     if project_id:
         get_article_store().save_project(project_id, {"google_slides_url": deck["url"]})

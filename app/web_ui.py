@@ -81,9 +81,12 @@ class StartRequest(BaseModel):
     text: str = Field(min_length=10, max_length=80_000)
     talk_minutes: int = Field(default=5, ge=0, le=60)
     talk_language: Literal["ko", "en", "ja"] = "en"
+    talk_languages: list[Literal["ko", "en", "ja"]] = Field(
+        default_factory=lambda: ["en", "ko", "ja"]
+    )
     audience: str = Field(default="software engineers", max_length=200)
-    # Ticked by the person in the form: approval, in advance, to create one
-    # Google Slides file in their own Drive from the slide plan of this run.
+    # Ticked by the person in the form: approval, in advance, to create
+    # Google Slides files in their own Drive from the slide plans of this run.
     create_deck: bool = False
 
 
@@ -183,6 +186,7 @@ async def start_job(request: StartRequest) -> dict[str, str]:
             request.talk_language,
             request.audience,
             request.create_deck,
+            talk_languages=request.talk_languages,
         ),
         "run_stages",
     )

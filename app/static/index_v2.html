@@ -48,8 +48,11 @@
   .under { display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
   fieldset { border:0; border-top:1px solid var(--line); margin:16px 0 0; padding:14px 0 0; }
   legend { padding:0 8px 0 0; font-weight:600; font-size:13px; }
-  .grid3 { display:grid; grid-template-columns: 180px 180px 1fr; gap:12px; }
+  .grid3 { display:grid; grid-template-columns: 170px auto 1fr; gap:16px; align-items:start; }
   @media (max-width:640px) { .grid3 { grid-template-columns:1fr; } }
+  .lang-checks { display:flex; gap:12px; align-items:center; height:32px; }
+  .check-inline { display:inline-flex; align-items:center; gap:5px; font-size:13px; cursor:pointer; user-select:none; }
+  .check-inline input { margin:0; cursor:pointer; }
   .formfoot { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; }
   #dropZone.over { outline:2px dashed var(--accent); outline-offset:-6px; }
 
@@ -140,9 +143,14 @@
             <option value="30">30 min · 30 slides</option><option value="45">45 min · 45 slides</option><option value="60">60 min · 60 slides</option>
           </select>
         </label>
-        <label class="field">Language
-          <select id="talkLanguage"><option value="en">English</option><option value="ko">Korean</option><option value="ja">Japanese</option></select>
-        </label>
+        <div class="field">
+          <span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px">Languages</span>
+          <div class="lang-checks">
+            <label class="check-inline"><input type="checkbox" id="slideLangEn" value="en" checked><span>English</span></label>
+            <label class="check-inline"><input type="checkbox" id="slideLangKo" value="ko" checked><span>Korean</span></label>
+            <label class="check-inline"><input type="checkbox" id="slideLangJa" value="ja" checked><span>Japanese</span></label>
+          </div>
+        </div>
         <label class="field">Audience
           <input type="text" id="audience" placeholder="software engineers">
         </label>
@@ -369,12 +377,24 @@ function render(data) {
   for (const name of o.slides) items.push(el("li", {},
     el("span", {}, "Slide plan with speaker script · ", el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name)),
     !busy && (o.editable || []).includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null));
-  if (o.deck && o.deck.url) items.push(el("li", {},
-    el("span", {}, "Google Slides deck · ", el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, (o.deck.title || "Open") + " ↗"),
-      el("span", {class: "muted small"}, `  ${o.deck.slide_count} slides` + (o.deck.images_inserted ? `, ${o.deck.images_inserted} images` : "")))));
-  else if (o.can_create_deck && !busy) items.push(el("li", {},
-    el("span", {class: "muted"}, "Google Slides deck · not created in this run"),
-    el("button", {class: "ghost", type: "button", onclick: createDeck}, "Create it now")));
+  if (o.decks && Object.keys(o.decks).length > 0) {
+    for (const [lang, deck] of Object.entries(o.decks)) {
+      if (deck && deck.url) {
+        const langName = {en: "English", ko: "Korean", ja: "Japanese"}[lang] || lang;
+        items.push(el("li", {},
+          el("span", {}, `Google Slides deck (${langName}) · `, el("a", {href: deck.url, target: "_blank", rel: "noopener"}, (deck.title || "Open") + " ↗"),
+            el("span", {class: "muted small"}, `  ${deck.slide_count} slides` + (deck.images_inserted ? `, ${deck.images_inserted} images` : "")))));
+      }
+    }
+  } else if (o.deck && o.deck.url) {
+    items.push(el("li", {},
+      el("span", {}, "Google Slides deck · ", el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, (o.deck.title || "Open") + " ↗"),
+        el("span", {class: "muted small"}, `  ${o.deck.slide_count} slides` + (o.deck.images_inserted ? `, ${o.deck.images_inserted} images` : "")))));
+  } else if (o.can_create_deck && !busy) {
+    items.push(el("li", {},
+      el("span", {class: "muted"}, "Google Slides deck · not created in this run"),
+      el("button", {class: "ghost", type: "button", onclick: createDeck}, "Create it now")));
+  }
   if (o.manifest) items.push(el("li", {}, el("span", {}, "Summary of everything produced · ", el("a", {href: fileUrl(o.manifest), target: "_blank", rel: "noopener"}, o.manifest))));
   $("deliver").replaceChildren(...items);
   $("deliverCard").classList.toggle("hidden", items.length === 0);
@@ -484,8 +504,17 @@ zone.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("source").value.trim();
   if (text.length < 10) { toast("Paste a URL or a draft first."); $("source").focus(); return; }
-  const settings = {talk_minutes: Number($("minutes").value), talk_language: $("talkLanguage").value, audience: $("audience").value.trim() || "software engineers",
-    create_deck: $("createDeck").checked && Number($("minutes").value) > 0};
+  const slideLangs = [];
+  if ($("slideLangEn").checked) slideLangs.push("en");
+  if ($("slideLangKo").checked) slideLangs.push("ko");
+  if ($("slideLangJa").checked) slideLangs.push("ja");
+  const settings = {
+    talk_minutes: Number($("minutes").value),
+    talk_language: slideLangs[0] || "en",
+    talk_languages: slideLangs,
+    audience: $("audience").value.trim() || "software engineers",
+    create_deck: $("createDeck").checked && Number($("minutes").value) > 0 && slideLangs.length > 0,
+  };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   $("run").disabled = true;
   try {
@@ -502,7 +531,10 @@ zone.addEventListener("submit", async (e) => {
 try {
   const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
   $("minutes").value = String(saved.talk_minutes ?? 5);
-  $("talkLanguage").value = saved.talk_language || "en";
+  const savedLangs = Array.isArray(saved.talk_languages) ? saved.talk_languages : (saved.talk_language ? [saved.talk_language] : ["en", "ko", "ja"]);
+  $("slideLangEn").checked = savedLangs.includes("en");
+  $("slideLangKo").checked = savedLangs.includes("ko");
+  $("slideLangJa").checked = savedLangs.includes("ja");
   $("audience").value = saved.audience && saved.audience !== "software engineers" ? saved.audience : "";
   $("createDeck").checked = saved.create_deck !== false;
 } catch (e) { $("minutes").value = "5"; }

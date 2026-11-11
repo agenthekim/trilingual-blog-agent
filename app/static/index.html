@@ -90,12 +90,14 @@
         </select>
         <small>How long you will speak</small>
       </label>
-      <label>Slide language
-        <select id="talkLanguage">
-          <option value="en" selected>English</option><option value="ko">Korean</option><option value="ja">Japanese</option>
-        </select>
-        <small>Language of the slides and the script</small>
-      </label>
+      <div>
+        <label style="display:block;margin-bottom:4px">Slide languages</label>
+        <div style="display:flex;gap:12px;align-items:center;height:38px">
+          <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="slideLangEn" value="en" checked> English</label>
+          <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="slideLangKo" value="ko" checked> Korean</label>
+          <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="slideLangJa" value="ja" checked> Japanese</label>
+        </div>
+      </div>
       <label style="flex:1; min-width:220px">Audience
         <input type="text" id="audience" value="software engineers">
         <small>Who will listen; sets the level of explanation</small>
@@ -298,7 +300,16 @@ function render(data) {
   }
   const extra = [];
   for (const name of o.slides) extra.push(el("li", {}, "Slides and speaker script: ", fileLink(name)));
-  if (o.deck && o.deck.url) {
+  if (o.decks && Object.keys(o.decks).length > 0) {
+    for (const [lang, deck] of Object.entries(o.decks)) {
+      if (deck && deck.url) {
+        const langName = {en: "English", ko: "Korean", ja: "Japanese"}[lang] || lang;
+        extra.push(el("li", {}, `Google Slides deck (${langName}): `,
+          el("a", {href: deck.url, target: "_blank", rel: "noopener"}, deck.title || "open"),
+          ` (${deck.slide_count} slides, script in the speaker notes)`));
+      }
+    }
+  } else if (o.deck && o.deck.url) {
     extra.push(el("li", {}, "Google Slides deck: ",
       el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, o.deck.title || "open"),
       ` (${o.deck.slide_count} slides, script in the speaker notes)`));
@@ -382,10 +393,16 @@ $("run").addEventListener("click", async () => {
   const text = $("text").value.trim();
   if (text.length < 10) { alert("Paste a URL or a draft first."); return; }
   $("run").disabled = true;
+  const slideLangs = [];
+  if ($("slideLangEn").checked) slideLangs.push("en");
+  if ($("slideLangKo").checked) slideLangs.push("ko");
+  if ($("slideLangJa").checked) slideLangs.push("ja");
   try {
     const started = await api("/api/jobs", {
       text, talk_minutes: Number($("minutes").value),
-      talk_language: $("talkLanguage").value, audience: $("audience").value || "software engineers",
+      talk_language: slideLangs[0] || "en",
+      talk_languages: slideLangs,
+      audience: $("audience").value || "software engineers",
     });
     jobId = started.job_id; lastLogLength = 0; busySince = Date.now(); lastLogChange = Date.now();
     editing = null; $("editor").classList.add("hidden");
