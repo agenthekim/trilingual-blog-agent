@@ -118,7 +118,7 @@
     <div id="banners"></div>
     <h2 id="articleTitle"></h2>
     <table id="table" class="hidden">
-      <thead><tr><th>Language</th><th>Title</th><th>Platform</th><th>Status</th><th>URL</th><th>Files</th><th>Next step</th></tr></thead>
+      <thead><tr><th>Language</th><th>Title</th><th>Status</th><th>Files</th><th>Next step</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <ul class="extra" id="extra"></ul>
@@ -293,13 +293,22 @@ function render(data) {
   if (!$("rows").contains(document.activeElement)) {
     $("rows").replaceChildren(...o.rows.filter((r) => r.title).map((row) => {
       const [label, tone] = STATUS[row.status] || [row.status, "muted"];
+      const fileLinks = row.files.map(fileLink);
+      const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
+      if (slideFile) fileLinks.push(fileLink(slideFile));
+      const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
+      if (deck && deck.url) {
+        const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
+        fileLinks.push(el("div", {style: "margin-top:4px"},
+          el("a", {href: deck.url, target: "_blank", rel: "noopener"}, "Google Slides ↗"),
+          " · ",
+          el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗")));
+      }
       return el("tr", {},
         el("td", {}, row.language_name),
         el("td", {class: "title"}, row.title),
-        el("td", {}, row.platform_name),
         el("td", {}, el("span", {class: "pill " + tone}, label)),
-        el("td", {}, row.url ? el("a", {href: row.url, target: "_blank", rel: "noopener"}, "open") : "–"),
-        el("td", {class: "files"}, ...row.files.map(fileLink)),
+        el("td", {class: "files"}, ...fileLinks),
         el("td", {}, nextStep(row, data.busy)));
     }));
   }

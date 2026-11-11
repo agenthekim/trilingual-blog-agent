@@ -112,13 +112,20 @@
   #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--text); color:var(--bg);
     padding:8px 14px; border-radius:6px; max-width:90vw; z-index:10; }
   footer { color:var(--muted); font-size:12.5px; text-align:center; }
+  dialog.modal { border:1px solid var(--line); border-radius:8px; padding:0; background:var(--card); box-shadow:0 12px 32px rgba(0,0,0,.15); max-width:440px; width:90%; color:var(--text); }
+  dialog.modal::backdrop { background:rgba(0,0,0,.35); backdrop-filter:blur(2px); }
+  .modal-card { padding:18px 20px; }
+  .modal-head { display:flex; justify-content:space-between; align-items:center; }
 </style>
 </head>
 <body>
 <main>
-  <header>
-    <h1>Trilingual Blog Agent</h1>
-    <p>Automatically transform an article in one language into blog posts and presentation slides across three languages.</p>
+  <header style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px">
+    <div>
+      <h1>Trilingual Blog Agent</h1>
+      <p>Automatically transform an article in one language into blog posts and presentation slides across three languages.</p>
+    </div>
+    <button type="button" id="openSettings" class="ghost" style="margin-top:4px; font-size:13px">Settings</button>
   </header>
 
   <form class="card" id="dropZone" novalidate>
@@ -222,6 +229,33 @@
   </div>
 </dialog>
 
+<dialog id="settingsModal" class="modal" aria-labelledby="settingsTitle">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="settingsTitle" style="margin:0; font-size:16px">Publishing platforms</h3>
+      <button type="button" class="ghost" onclick="$('settingsModal').close()">✕</button>
+    </div>
+    <div class="body" style="display:grid; gap:12px; margin-top:14px">
+      <p class="muted small" style="margin:0">Platform destinations configured for each target language.</p>
+      <label class="field">Korean
+        <select disabled><option selected>Naver Blog (paste-ready inline HTML)</option></select>
+      </label>
+      <label class="field">English
+        <select disabled><option selected>DEV Community (draft API)</option></select>
+      </label>
+      <label class="field">Japanese
+        <select disabled><option selected>Qiita (draft API)</option></select>
+      </label>
+      <div class="muted small" style="background:#f6f8fa; border:1px solid var(--line); padding:10px 12px; border-radius:6px; margin-top:4px">
+        Credentials are authenticated securely via Secret Manager (<code>QIITA_API_TOKEN</code>, <code>DEVTO_API_KEY</code>, <code>GOOGLE_SLIDES_OAUTH</code>).
+      </div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; margin-top:16px">
+      <button type="button" class="primary" onclick="$('settingsModal').close()">Done</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="editDialog" class="wide">
   <div class="body">
     <h2>Edit <span id="editName"></span></h2>
@@ -305,12 +339,12 @@ function steps(o) {
   const localized = targets.length > 0 && targets.every((r) => r.title);
   const wantsSlides = o.can_create_deck || o.slides.length > 0 || Number(state.requestedMinutes || 0) > 0;
   const list = [
-    ["Read article", Boolean(o.title)],
-    ["Translate", localized],
+    ["Read source document", Boolean(o.title)],
+    ["Transform", localized],
     ["Prepare posts", localized && Boolean(o.manifest || o.slides.length || o.rows.some((r) => r.files.includes("naver_blog.html")))],
   ];
   if (wantsSlides) list.push(["Prepare slides", o.slides.length > 0 && (!state.wantsDeck || Boolean(o.deck) || Boolean(o.manifest))]);
-  list.push(["Summary", Boolean(o.manifest)]);
+  list.push(["Summarize", Boolean(o.manifest)]);
   return list;
 }
 
@@ -323,9 +357,28 @@ function keep(key, attrs) {
 function languageRow(row, o, busy) {
   const [label, tone] = STATUS[row.status] || [row.status, ""];
   const editable = !busy && (o.editable || []);
-  const files = el("td", {class: "files"}, ...row.files.map((name) => el("div", {},
+
+  const fileItems = row.files.map((name) => el("div", {},
     el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name),
-    editable && editable.includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null)));
+    editable && editable.includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null));
+
+  const slideFile = (o.slides || []).find((s) => s === `slides.${row.language}.md`);
+  if (slideFile) {
+    fileItems.push(el("div", {},
+      el("a", {href: fileUrl(slideFile), target: "_blank", rel: "noopener"}, slideFile),
+      editable && editable.includes(slideFile) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(slideFile)}, "Edit") : null));
+  }
+
+  const deck = (o.decks && o.decks[row.language]) || (o.deck && (o.deck.language === row.language || o.slides.length === 1) ? o.deck : null);
+  if (deck && deck.url) {
+    const pdfUrl = deck.url.replace(/\/edit.*$/, "/export/pdf");
+    fileItems.push(el("div", {style: "margin-top:3px"},
+      el("a", {href: deck.url, target: "_blank", rel: "noopener", style: "font-weight:500"}, "Google Slides ↗"),
+      " · ",
+      el("a", {href: pdfUrl, target: "_blank", rel: "noopener"}, "PDF ↗")));
+  }
+
+  const files = el("td", {class: "files"}, ...fileItems);
   const next = el("div", {class: "next"});
   if (row.url) next.append(el("a", {href: row.url, target: "_blank", rel: "noopener"},
     row.status === "existing_source" ? "Open the original ↗" : row.status === "draft" ? "Open the draft ↗" : "Open the post ↗"));
@@ -342,7 +395,7 @@ function languageRow(row, o, busy) {
     }
   }
   return el("tr", {},
-    el("td", {}, el("div", {class: "who"}, row.language_name), el("div", {class: "muted small"}, row.platform_name)),
+    el("td", {}, el("div", {class: "who"}, row.language_name)),
     el("td", {class: "title"}, row.title),
     el("td", {}, el("span", {class: "badge " + tone}, label)),
     files,
@@ -496,6 +549,7 @@ function loadFile(file) {
   reader.onerror = () => toast("The file could not be read.");
   reader.readAsText(file, "utf-8");
 }
+$("openSettings").addEventListener("click", () => $("settingsModal").showModal());
 $("attach").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", (e) => { loadFile(e.target.files[0]); e.target.value = ""; });
 const zone = $("dropZone");
