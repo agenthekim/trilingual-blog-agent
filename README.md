@@ -98,6 +98,18 @@ agents-cli playground                                  # web UI
 agents-cli run "Hello, what can you help me with?"     # one-shot from the terminal
 ```
 
+Or run every stage for one article with a single command:
+
+```bash
+uv run python scripts/run_pipeline.py --url https://qiita.com/<user>/items/<id>
+uv run python scripts/run_pipeline.py --draft post.md --draft-language ko \
+    --talk-minutes 10 --talk-language en --publish devto --tags ai,agents
+```
+
+The script sends the stage prompts in order and stops if the structure check
+fails. Without `--publish` nothing is posted; with it, each post still waits
+for a yes/no answer in the terminal. Logs go to stderr (`2>/dev/null` hides them).
+
 A typical conversation:
 
 1. "Save this draft as the seed article" followed by the Markdown, or "Use this post: https://qiita.com/...".
@@ -211,6 +223,7 @@ app/
   memory.py             background memory consolidation
   app_utils/            scaffolded service wiring, A2A, telemetry
 deployment/terraform/   infrastructure
+scripts/                run_pipeline.py: all stages in one command
 tests/                  unit, integration, eval
 ```
 
