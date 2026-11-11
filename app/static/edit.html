@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edit</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --surface:#fff; --text:#1c2128; --muted:#636c76; --line:#d8dee4;
+    --accent:#0969da; --accent-ink:#fff; --bad:#cf222e; --soft:#f0f3f6; --control:32px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --surface:#161b22; --text:#e6edf3; --muted:#9198a1; --line:#30363d;
+      --accent:#4493f8; --accent-ink:#0d1117; --bad:#f85149; --soft:#21262d; }
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  /* The text box takes whatever height the window has left. */
+  main { height:100%; max-width:1200px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .bar { color:var(--muted); border-bottom:1px solid var(--line); padding-bottom:8px; }
+  .bar strong { color:var(--text); }
+  .muted { color:var(--muted); }
+  .small { font-size:12.5px; }
+  .bad { color:var(--bad); }
+  .hidden { display:none !important; }
+  button { height:var(--control); padding:0 12px; border-radius:6px; border:1px solid var(--line);
+    background:var(--surface); color:var(--text); font:inherit; font-weight:500; cursor:pointer; white-space:nowrap; }
+  button:hover:not(:disabled) { background:var(--soft); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  button.primary:hover:not(:disabled) { filter:brightness(1.08); background:var(--accent); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  input[type=text], textarea { font:inherit; color:var(--text); background:var(--surface);
+    border:1px solid var(--line); border-radius:6px; padding:0 10px; height:var(--control); width:100%; }
+  textarea { flex:1; min-height:0; height:auto; padding:12px; resize:none; line-height:1.6;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13.5px; }
+  label.field { display:grid; gap:4px; font-weight:600; font-size:13px; }
+  footer { display:flex; align-items:center; gap:8px; }
+  footer #result { margin-right:auto; }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar"><strong id="name"></strong> &middot; editing &middot; <a id="view">back to the preview</a></div>
+  <label class="field hidden" id="titleField">Title<input type="text" id="title" maxlength="200"></label>
+  <textarea id="text" spellcheck="false" aria-label="File text" disabled></textarea>
+  <footer>
+    <span class="muted small" id="result" role="status">Loading…</span>
+    <button type="button" id="cancel">Cancel</button>
+    <button type="button" class="primary" id="save" disabled>Save</button>
+  </footer>
+</main>
+
+<script>
+// The file's text is only ever put into a text box, never into the page as HTML.
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const job = params.get("job") || "", name = params.get("file") || "";
+const valid = /^[0-9a-f]{32}$/.test(job) && /^(post|slides)\.(ko|en|ja)\.md$/.test(name);
+const fileUrl = `/api/jobs/${job}/files/${name}`;
+let savedText = "", savedTitle = "", hasTitle = false;
+
+const dirty = () => $("text").value !== savedText || (hasTitle && $("title").value !== savedTitle);
+function say(text, bad) { $("result").textContent = text; $("result").classList.toggle("bad", Boolean(bad)); }
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  if (response.ok) return response;
+  let detail = response.statusText;
+  try {
+    const data = await response.json();
+    if (typeof data.detail === "string") detail = data.detail;
+    else if (Array.isArray(data.detail)) detail = data.detail.map((d) => d.msg).join("; ");
+  } catch (e) {}
+  throw new Error(detail);
+}
+
+async function load() {
+  $("name").textContent = name || "No file";
+  document.title = `Edit ${name}`;
+  if (!valid) { say("This address does not name a file that can be edited.", true); return; }
+  $("view").href = fileUrl;
+  try {
+    const state = await (await api(`/api/jobs/${job}`)).json();
+    if (!state.overview.editable.includes(name)) {
+      say(name.startsWith("post.") ? "This is the source article. Edit it where it was written and run again." : "This file cannot be edited here.", true);
+      return;
+    }
+    const row = state.overview.rows.find((r) => `post.${r.language}.md` === name);
+    hasTitle = Boolean(row);
+    $("titleField").classList.toggle("hidden", !hasTitle);
+    $("title").value = savedTitle = row ? row.title : "";
+    $("text").value = savedText = await (await api(fileUrl + "?raw=1")).text();
+    $("text").disabled = false; $("save").disabled = false;
+    say(hasTitle ? "Saving replaces the text the agent will post."
+      : "Saving changes this Markdown file only. A Google Slides deck is not updated by it.");
+    // Start at the top: focusing alone would put the caret, and the view, at the end.
+    $("text").focus(); $("text").setSelectionRange(0, 0); $("text").scrollTop = 0;
+  } catch (error) { say(error.message, true); }
+}
+
+async function save() {
+  if ($("save").disabled) return;
+  const body = {markdown: $("text").value};
+  if (hasTitle) body.title = $("title").value;
+  $("save").disabled = true; say("Saving…");
+  try {
+    const data = await (await api(fileUrl, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
+    savedText = $("text").value; savedTitle = $("title").value;
+    const notes = ["Saved."];
+    if (data.check) notes.push(data.check.passed ? "Structure matches the source." : "Differs from the source: " + data.check.errors.join(" "));
+    if (data.secrets && data.secrets.length) notes.push("Contains credential-looking text; the agent will refuse to post it.");
+    say(notes.join(" "), data.check && !data.check.passed);
+  } catch (error) { say(error.message, true); }
+  $("save").disabled = false;
+}
+
+$("save").addEventListener("click", save);
+$("cancel").addEventListener("click", () => { location.href = valid ? fileUrl : "/"; });
+document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save(); } });
+// Leaving with unsaved changes asks first.
+window.addEventListener("beforeunload", (e) => { if (dirty()) e.preventDefault(); });
+load();
+</script>
+</body>
+</html>

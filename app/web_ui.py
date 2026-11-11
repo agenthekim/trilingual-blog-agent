@@ -54,7 +54,7 @@ border-radius:6px}}code{{font-family:ui-monospace,monospace;font-size:.9em}}
 table{{border-collapse:collapse}}td,th{{border:1px solid #d0d7de;padding:6px 10px}}
 img{{max-width:100%}}.bar{{font-size:.85em;color:#57606a;border-bottom:1px solid
 #d0d7de;padding-bottom:.5rem;margin-bottom:1rem}}</style></head><body>
-<div class="bar">{title} &middot; <a href="?raw=1">raw text</a></div>{body}</body></html>"""
+<div class="bar">{title} &middot; {edit}<a href="?raw=1">raw text</a></div>{body}</body></html>"""
 
 web = FastAPI(title="Trilingual Blog Agent", docs_url=None, redoc_url=None)
 
@@ -173,6 +173,18 @@ async def new_layout() -> FileResponse:
     return _page("v2")
 
 
+@web.get("/edit", response_class=HTMLResponse)
+async def file_editor() -> FileResponse:
+    """The full-page editor. Which file it edits is in the address; the page
+    loads the text and saves it through the same API as everything else, and
+    shows it only as text in a text box, never as HTML."""
+    return FileResponse(
+        STATIC_DIR / "edit.html",
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @web.post("/api/jobs")
 async def start_job(request: StartRequest) -> dict[str, str]:
     job = Job(id=uuid.uuid4().hex, pipeline=ArticlePipeline())
@@ -285,8 +297,8 @@ async def answer_approval(job_id: str, request: ApprovalRequest) -> dict[str, bo
 @web.get("/api/jobs/{job_id}/files/{name}")
 async def view_file(job_id: str, name: str, raw: int = 0) -> Any:
     job = _job(job_id)
-    project_id = (await job.pipeline.overview())["project_id"]
-    path = project_file(project_id, name)
+    overview = await job.pipeline.overview()
+    path = project_file(overview["project_id"], name)
     if path is None:
         raise HTTPException(404, "No such file for this article.")
     text = path.read_text(encoding="utf-8")
@@ -297,8 +309,15 @@ async def view_file(job_id: str, name: str, raw: int = 0) -> Any:
     body = markdown_lib.markdown(
         text, extensions=["fenced_code", "tables", "sane_lists"]
     )
+    # A file a person may change gets a link to the full-page editor.
+    edit = (
+        f'<a href="/edit?job={job.id}&amp;file={html.escape(name)}">edit</a> &middot; '
+        if name in overview["editable"]
+        else ""
+    )
     return HTMLResponse(
-        _PAGE.format(title=html.escape(name), body=body), headers=_VIEW_HEADERS
+        _PAGE.format(title=html.escape(name), edit=edit, body=body),
+        headers=_VIEW_HEADERS,
     )
 
 
