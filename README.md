@@ -110,6 +110,9 @@ uv run python -m app.web_ui                 # http://127.0.0.1:8502
 ```
 
 The front end has no login, so it listens on localhost unless `--host` is given.
+It has two layouts over the same API: the card layout at `/v2` (default) and the
+earlier table layout at `/v1`. Set `BLOG_AGENT_UI=v1` to make the table layout
+the default again.
 
 Or run every stage for one article with a single command:
 

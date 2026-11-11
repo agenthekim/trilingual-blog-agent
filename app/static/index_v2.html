@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trilingual Blog Agent</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --surface:#fff; --text:#1c2128; --muted:#636c76; --line:#d8dee4;
+    --accent:#0969da; --accent-ink:#fff; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e;
+    --soft:#f0f3f6; --radius:8px; --control:32px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --surface:#161b22; --text:#e6edf3; --muted:#9198a1; --line:#30363d;
+      --accent:#4493f8; --accent-ink:#0d1117; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --soft:#21262d; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:28px 16px 72px; display:grid; gap:16px; }
+  header h1 { font-size:20px; margin:0; }
+  header p { margin:2px 0 0; color:var(--muted); }
+  h2 { font-size:15px; margin:0; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
+  .muted { color:var(--muted); }
+  .small { font-size:12.5px; }
+  .hidden { display:none !important; }
+
+  /* Controls: one height, one radius, three weights. */
+  button, .btn { height:var(--control); padding:0 12px; border-radius:6px; border:1px solid var(--line);
+    background:var(--surface); color:var(--text); font:inherit; font-weight:500; cursor:pointer; white-space:nowrap;
+    display:inline-flex; align-items:center; gap:6px; }
+  button:hover:not(:disabled) { background:var(--soft); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  button.primary:hover:not(:disabled) { filter:brightness(1.08); background:var(--accent); }
+  button.ghost { border-color:transparent; background:transparent; color:var(--accent); padding:0 6px; height:24px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  input[type=text], select, textarea { font:inherit; color:var(--text); background:var(--surface);
+    border:1px solid var(--line); border-radius:6px; padding:0 10px; height:var(--control); width:100%; }
+  textarea { height:auto; padding:10px; resize:vertical; line-height:1.5; }
+  label.field { display:grid; gap:4px; font-weight:600; font-size:13px; }
+  label.field span.hint { font-weight:400; color:var(--muted); font-size:12.5px; }
+
+  /* Input form */
+  #source { min-height:96px; }
+  .under { display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+  fieldset { border:0; border-top:1px solid var(--line); margin:16px 0 0; padding:14px 0 0; }
+  legend { padding:0 8px 0 0; font-weight:600; font-size:13px; }
+  .grid3 { display:grid; grid-template-columns: 180px 180px 1fr; gap:12px; }
+  @media (max-width:640px) { .grid3 { grid-template-columns:1fr; } }
+  .formfoot { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; }
+  #dropZone.over { outline:2px dashed var(--accent); outline-offset:-6px; }
+
+  /* Progress */
+  .runhead { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .runhead h2 { font-size:17px; }
+  ol.steps { list-style:none; display:flex; gap:6px; padding:0; margin:14px 0 0; flex-wrap:wrap; }
+  ol.steps li { flex:1 1 120px; border-top:3px solid var(--line); padding-top:6px; font-size:12.5px; color:var(--muted); }
+  ol.steps li.done { border-color:var(--ok); color:var(--text); }
+  ol.steps li.now { border-color:var(--accent); color:var(--text); font-weight:600; }
+  .live { display:flex; gap:8px; align-items:center; margin-top:12px; min-height:22px; }
+  .live .last { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; }
+  .spinner { width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%;
+    animation:spin 1s linear infinite; flex:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .notice { border-radius:6px; padding:8px 12px; margin-top:12px; border:1px solid; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .notice.err { border-color:var(--bad); } .notice.note { border-color:var(--warn); } .notice.ask { border-color:var(--accent); }
+  .notice .grow { flex:1; min-width:200px; }
+
+  /* Language cards */
+  .langs { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media (max-width:820px) { .langs { grid-template-columns:1fr; } }
+  .lang { display:flex; flex-direction:column; gap:10px; }
+  .lang .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .lang .who { font-weight:600; }
+  .lang .title { font-size:15px; font-weight:600; line-height:1.35; min-height:2.7em; }
+  .badge { font-size:12px; padding:1px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.warn { color:var(--warn); border-color:var(--warn); }
+  ul.files { list-style:none; margin:0; padding:0; display:grid; gap:2px; }
+  ul.files li, .deliver li { display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:26px; }
+  .lang .act { margin-top:auto; border-top:1px solid var(--line); padding-top:10px; display:grid; gap:8px; }
+  .lang .act button { justify-content:center; }
+  .deliver { list-style:none; margin:10px 0 0; padding:0; display:grid; gap:4px; }
+  .deliver li { border-top:1px solid var(--line); padding-top:6px; }
+  .deliver li:first-child { border-top:0; padding-top:0; }
+  .askrow { display:flex; gap:8px; }
+
+  details summary { cursor:pointer; color:var(--muted); font-weight:500; }
+  pre#log { background:#0d1117; color:#c9d1d9; padding:12px; border-radius:6px; max-height:300px; overflow:auto;
+    white-space:pre-wrap; font:12px/1.5 ui-monospace,monospace; margin:10px 0 0; }
+
+  dialog { border:1px solid var(--line); border-radius:var(--radius); padding:0; background:var(--surface); color:var(--text);
+    width:min(560px,92vw); }
+  dialog.wide { width:min(900px,94vw); }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  dialog .body { padding:16px; display:grid; gap:10px; }
+  dialog .foot { padding:12px 16px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; align-items:center; }
+  dialog h2 { font-size:16px; }
+  dl.summary { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; }
+  dl.summary dt { color:var(--muted); } dl.summary dd { margin:0; font-weight:500; overflow-wrap:anywhere; }
+  #editText { min-height:52vh; font:13px/1.5 ui-monospace,monospace; }
+  #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--text); color:var(--bg);
+    padding:8px 14px; border-radius:6px; max-width:90vw; z-index:10; }
+  footer { color:var(--muted); font-size:12.5px; text-align:center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Trilingual Blog Agent</h1>
+    <p>Give one article. Get it in Korean, English and Japanese, with platform drafts and a talk deck. Nothing is posted until you approve it.</p>
+  </header>
+
+  <form class="card" id="dropZone" novalidate>
+    <label class="field" for="source">Article
+      <span class="hint">Paste the URL of a post on Qiita, DEV Community or Naver Blog, or a whole Markdown draft, in any one of the three languages. The agent writes the other two.</span>
+    </label>
+    <textarea id="source" required placeholder="https://qiita.com/you/items/…   or   # My draft …"></textarea>
+    <div class="under">
+      <button type="button" id="attach">Attach .md file</button>
+      <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" class="hidden">
+      <span class="muted small" id="fileInfo">or drop a file anywhere on this card</span>
+    </div>
+
+    <fieldset>
+      <legend>Talk slides</legend>
+      <p class="muted small" style="margin:0 0 10px">A slide plan with a script to read aloud, one slide per minute. Choose “No slides” to skip it.</p>
+      <div class="grid3">
+        <label class="field">Length
+          <select id="minutes">
+            <option value="0">No slides</option><option value="3">3 min · 3 slides</option><option value="5">5 min · 5 slides</option>
+            <option value="10">10 min · 10 slides</option><option value="15">15 min · 15 slides</option><option value="20">20 min · 20 slides</option>
+            <option value="30">30 min · 30 slides</option><option value="45">45 min · 45 slides</option><option value="60">60 min · 60 slides</option>
+          </select>
+        </label>
+        <label class="field">Language
+          <select id="talkLanguage"><option value="en">English</option><option value="ko">Korean</option><option value="ja">Japanese</option></select>
+        </label>
+        <label class="field">Audience
+          <input type="text" id="audience" placeholder="software engineers">
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="formfoot">
+      <span class="muted small">Takes a few minutes. You review everything before anything is posted.</span>
+      <button class="primary" id="run" type="submit">Run</button>
+    </div>
+  </form>
+
+  <section class="card hidden" id="progress" aria-live="polite">
+    <div class="runhead">
+      <h2 id="articleTitle">Starting…</h2>
+      <span class="muted small" id="elapsed"></span>
+    </div>
+    <ol class="steps" id="steps"></ol>
+    <div class="live" id="live"></div>
+    <div id="notices"></div>
+  </section>
+
+  <section class="langs hidden" id="langs"></section>
+
+  <section class="card hidden" id="deliverCard">
+    <h2>Talk and summary</h2>
+    <ul class="deliver" id="deliver"></ul>
+  </section>
+
+  <section class="card hidden" id="askCard">
+    <label class="field" for="message">Ask the agent for a change
+      <span class="hint">For example “shorten the English title” or “make the Korean intro less formal”.</span>
+    </label>
+    <div class="askrow" style="margin-top:6px">
+      <input type="text" id="message">
+      <button id="send" type="button">Send</button>
+    </div>
+    <details style="margin-top:14px" id="logBox">
+      <summary>Agent activity log</summary>
+      <pre id="log"></pre>
+    </details>
+  </section>
+
+  <footer>New layout · <a href="/v1">switch to the classic layout</a></footer>
+</main>
+
+<dialog id="confirmDialog">
+  <div class="body">
+    <h2 id="confirmTitle"></h2>
+    <dl class="summary" id="confirmSummary"></dl>
+    <p class="muted small" id="confirmNote" style="margin:0"></p>
+  </div>
+  <div class="foot">
+    <button type="button" id="confirmCancel">Cancel</button>
+    <button type="button" class="primary" id="confirmOk"></button>
+  </div>
+</dialog>
+
+<dialog id="editDialog" class="wide">
+  <div class="body">
+    <h2>Edit <span id="editName"></span></h2>
+    <label class="field" id="editTitleField">Title<input type="text" id="editTitle"></label>
+    <textarea id="editText" spellcheck="false" aria-label="File text"></textarea>
+  </div>
+  <div class="foot">
+    <span class="muted small" id="editResult" style="margin-right:auto"></span>
+    <button type="button" id="editClose">Close</button>
+    <button type="button" class="primary" id="editSave">Save</button>
+  </div>
+</dialog>
+
+<div id="toast" class="hidden" role="status"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const STATUS = {
+  not_posted: ["Not posted", ""], exported_for_manual_post: ["Ready to paste", "warn"],
+  draft: ["Draft created", "ok"], published: ["Published", "ok"], existing_source: ["Original", "ok"],
+};
+const SETTINGS_KEY = "tba.settings";
+let jobId = null, timer = null, state = null;
+let busySince = null, lastLogAt = Date.now(), lastLogLength = 0;
+const typed = {};  // values typed into cards survive re-rendering
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v === true ? "" : v);
+  }
+  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
+  return node;
+}
+function toast(text, ms = 4000) {
+  $("toast").textContent = text; $("toast").classList.remove("hidden");
+  clearTimeout(toast.t); toast.t = setTimeout(() => $("toast").classList.add("hidden"), ms);
+}
+function clock(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+async function api(path, body, method) {
+  const response = await fetch(path, body === undefined ? {} : {
+    method: method || "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  let data = null;
+  try { data = await response.json(); } catch (e) {}
+  if (!response.ok) {
+    const detail = data && data.detail;
+    throw new Error(typeof detail === "string" ? detail : detail ? detail.map((d) => d.msg).join("; ") : response.statusText);
+  }
+  return data;
+}
+const fileUrl = (name) => `/api/jobs/${jobId}/files/${encodeURIComponent(name)}`;
+
+// One dialog for every action that writes outside this machine.
+function confirmAction({title, summary, note, okLabel}) {
+  return new Promise((resolve) => {
+    $("confirmTitle").textContent = title;
+    $("confirmSummary").replaceChildren(...summary.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+    $("confirmNote").textContent = note || "";
+    $("confirmOk").textContent = okLabel;
+    const dialog = $("confirmDialog");
+    const done = (value) => { dialog.close(); $("confirmOk").onclick = $("confirmCancel").onclick = dialog.oncancel = null; resolve(value); };
+    $("confirmOk").onclick = () => done(true);
+    $("confirmCancel").onclick = () => done(false);
+    dialog.oncancel = () => done(false);
+    dialog.showModal();
+  });
+}
+
+async function act(path, body) {
+  try { await api(`/api/jobs/${jobId}/${path}`, body); busySince = Date.now(); await poll(); }
+  catch (error) { toast(error.message); }
+}
+
+function steps(o) {
+  const targets = o.rows.filter((r) => r.language !== o.source_language);
+  const localized = targets.length > 0 && targets.every((r) => r.title);
+  const wantsSlides = o.can_create_deck || o.slides.length > 0 || Number(state.requestedMinutes || 0) > 0;
+  const list = [
+    ["Read article", Boolean(o.title)],
+    ["Localize", localized],
+    ["Prepare posts", localized && Boolean(o.manifest || o.slides.length || o.rows.some((r) => r.files.includes("naver_blog.html")))],
+  ];
+  if (wantsSlides) list.push(["Plan talk", o.slides.length > 0]);
+  list.push(["Summary", Boolean(o.manifest)]);
+  return list;
+}
+
+function keep(key, attrs) {
+  const input = el("input", {type: "text", value: typed[key] || "", ...attrs});
+  input.addEventListener("input", () => { typed[key] = input.value; });
+  return input;
+}
+
+function languageCard(row, o, busy) {
+  const [label, tone] = STATUS[row.status] || [row.status, ""];
+  const editable = !busy && (o.editable || []);
+  const files = el("ul", {class: "files"}, ...row.files.map((name) => el("li", {},
+    el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name),
+    editable && editable.includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null)));
+  const action = el("div", {class: "act"});
+  if (row.status === "existing_source") {
+    action.append(el("span", {class: "muted small"}, "This is where the article came from. It is never posted back."),
+      row.url ? el("a", {href: row.url, target: "_blank", rel: "noopener"}, "Open the original ↗") : null);
+  } else if (row.url) {
+    action.append(el("a", {href: row.url, target: "_blank", rel: "noopener"}, row.status === "draft" ? "Open the draft ↗" : "Open the post ↗"));
+  }
+  if (row.status !== "existing_source" && row.status !== "published") {
+    if (row.can_post_draft) {
+      const update = row.status === "draft";
+      const tags = keep(`tags:${row.platform}`, {placeholder: "Tags, e.g. ai, agents", "aria-label": `Tags for ${row.platform_name}`});
+      action.append(tags, el("button", {class: update ? "" : "primary", type: "button", disabled: busy,
+        onclick: () => postDraft(row, tags.value, update)}, update ? "Update draft…" : "Create draft…"));
+    } else {
+      const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
+      action.append(el("span", {class: "muted small"}, "Open naver_blog.html, copy all, paste into the editor, post, then register the URL."),
+        url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL"));
+    }
+  }
+  return el("article", {class: "card lang"},
+    el("div", {class: "top"}, el("span", {class: "who"}, `${row.language_name} · ${row.platform_name}`), el("span", {class: "badge " + tone}, label)),
+    el("div", {class: "title"}, row.title), files, action);
+}
+
+function render(data) {
+  state = {...state, ...data};
+  const o = data.overview, busy = data.busy;
+  if (busy && !busySince) busySince = Date.now();
+  if (!busy) busySince = null;
+  if (data.log.length !== lastLogLength) { lastLogLength = data.log.length; lastLogAt = Date.now(); $("log").textContent = data.log.join("\n\n"); $("log").scrollTop = $("log").scrollHeight; }
+
+  $("progress").classList.remove("hidden");
+  $("articleTitle").textContent = o.title || "Reading the article…";
+  const list = steps(o);
+  const firstOpen = list.findIndex(([, done]) => !done);
+  $("steps").replaceChildren(...list.map(([name, done], i) =>
+    el("li", {class: done ? "done" : (busy && i === firstOpen ? "now" : "")}, (done ? "✓ " : "") + name)));
+  drawLive();
+
+  const notices = [];
+  if (data.error) notices.push(el("div", {class: "notice err"}, el("span", {class: "grow"}, "Stopped with an error: " + data.error)));
+  if (data.notice) notices.push(el("div", {class: "notice note"}, el("span", {class: "grow"}, data.notice)));
+  if (!busy) for (const hint of data.approvals) notices.push(el("div", {class: "notice ask"},
+    el("span", {class: "grow"}, hint),
+    el("button", {type: "button", onclick: () => act("approval", {confirmed: false})}, "Decline"),
+    el("button", {type: "button", class: "primary", onclick: () => act("approval", {confirmed: true})}, "Approve")));
+  $("notices").replaceChildren(...notices);
+
+  const rows = o.rows.filter((r) => r.title);
+  $("langs").classList.toggle("hidden", rows.length === 0);
+  if (!$("langs").contains(document.activeElement)) $("langs").replaceChildren(...rows.map((row) => languageCard(row, o, busy)));
+
+  const items = [];
+  for (const name of o.slides) items.push(el("li", {},
+    el("span", {}, "Slide plan with speaker script · ", el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name)),
+    !busy && (o.editable || []).includes(name) ? el("button", {class: "ghost", type: "button", onclick: () => openEditor(name)}, "Edit") : null));
+  if (o.deck && o.deck.url) items.push(el("li", {},
+    el("span", {}, "Google Slides deck · ", el("a", {href: o.deck.url, target: "_blank", rel: "noopener"}, (o.deck.title || "Open") + " ↗"),
+      el("span", {class: "muted small"}, `  ${o.deck.slide_count} slides` + (o.deck.images_inserted ? `, ${o.deck.images_inserted} images` : ""))),
+    el("button", {type: "button", disabled: busy, onclick: createDeck}, "Create again…")));
+  else if (o.can_create_deck) items.push(el("li", {},
+    el("span", {}, "Google Slides deck ", el("span", {class: "muted small"}, "· slides with the script in the speaker notes, in your Google Drive")),
+    el("button", {type: "button", class: "primary", disabled: busy, onclick: createDeck}, "Create deck…")));
+  if (o.manifest) items.push(el("li", {}, el("span", {}, "Summary of everything produced · ", el("a", {href: fileUrl(o.manifest), target: "_blank", rel: "noopener"}, o.manifest))));
+  $("deliver").replaceChildren(...items);
+  $("deliverCard").classList.toggle("hidden", items.length === 0);
+  $("askCard").classList.toggle("hidden", !o.title);
+  $("run").disabled = busy; $("send").disabled = busy;
+}
+
+function drawLive() {
+  if (!state || !jobId) return;
+  const lastLine = (state.log && state.log.length ? state.log[state.log.length - 1] : "").split("\n")[0];
+  if (state.busy) {
+    $("elapsed").textContent = `${clock(Date.now() - (busySince || Date.now()))} elapsed`;
+    $("live").replaceChildren(el("span", {class: "spinner"}), el("span", {}, "Working"),
+      el("span", {class: "last"}, `· ${lastLine || "starting"} · quiet for ${clock(Date.now() - lastLogAt)} (long text shows up only when it is finished)`));
+  } else {
+    $("elapsed").textContent = "";
+    $("live").replaceChildren(el("span", {class: "muted"}, state.error ? "Stopped." : "Finished. Review the results below."));
+  }
+}
+setInterval(drawLive, 1000);
+
+async function poll() {
+  if (!jobId) return;
+  try { render(await api(`/api/jobs/${jobId}`)); }
+  catch (error) {
+    if (/Unknown job/.test(error.message)) { clearInterval(timer); history.replaceState(null, "", location.pathname); toast("That run is gone: the server was restarted. Files remain in the workspace folder.", 8000); jobId = null; }
+  }
+}
+
+async function postDraft(row, tagText, update) {
+  const tags = tagText.split(",").map((t) => t.trim()).filter(Boolean);
+  if (!tags.length || tags.length > 5) { toast("Enter one to five tags, separated by commas."); return; }
+  const ok = await confirmAction({
+    title: `${update ? "Update the draft" : "Create a draft"} on ${row.platform_name}?`,
+    summary: [["Title", row.title], ["Tags", tags.join(", ")], ["Visibility", "Not public. You publish it yourself on the site."]],
+    note: "This uses your account on that platform.", okLabel: update ? "Approve and update" : "Approve and create"});
+  if (ok) act("draft", {platform: row.platform, tags, approved: true});
+}
+function recordUrl(row, url) {
+  if (!/^https:\/\/\S+$/.test(url.trim())) { toast("Enter the https URL of the post."); return; }
+  act("url", {platform: row.platform, url: url.trim()});
+}
+async function createDeck() {
+  const ok = await confirmAction({
+    title: "Create a Google Slides deck?",
+    summary: [["From", "the current slide plan"], ["Where", "a new file in your Google Drive"], ["Contains", "one slide per minute, script in the speaker notes"]],
+    okLabel: "Approve and create"});
+  if (ok) act("deck", {approved: true});
+}
+
+let editing = null;
+async function openEditor(name) {
+  try {
+    const response = await fetch(fileUrl(name) + "?raw=1");
+    if (!response.ok) throw new Error("The file could not be loaded.");
+    const row = state.overview.rows.find((r) => `post.${r.language}.md` === name);
+    editing = name;
+    $("editName").textContent = name;
+    $("editTitleField").classList.toggle("hidden", !row);
+    $("editTitle").value = row ? row.title : "";
+    $("editText").value = await response.text();
+    $("editResult").textContent = row ? "Saving replaces the text the agent will post." : "Saving changes this file only.";
+    $("editDialog").showModal();
+  } catch (error) { toast(error.message); }
+}
+$("editClose").addEventListener("click", () => $("editDialog").close());
+$("editSave").addEventListener("click", async () => {
+  const body = {markdown: $("editText").value};
+  if (!$("editTitleField").classList.contains("hidden")) body.title = $("editTitle").value;
+  try {
+    const data = await api(fileUrl(editing), body, "PUT");
+    const notes = ["Saved."];
+    if (data.check) notes.push(data.check.passed ? "Structure matches the source." : "Differs from the source: " + data.check.errors.join(" "));
+    if (data.secrets && data.secrets.length) notes.push("Contains credential-looking text; the agent will refuse to post it.");
+    $("editResult").textContent = notes.join(" ");
+    await poll();
+  } catch (error) { $("editResult").textContent = error.message; }
+});
+
+const MAX_FILE_BYTES = 80000;
+function loadFile(file) {
+  if (!file) return;
+  if (!/\.(md|markdown|txt)$/i.test(file.name)) { toast("Attach a Markdown (.md) or text file."); return; }
+  if (file.size > MAX_FILE_BYTES) { toast("The file is larger than 80 KB, the limit for one article."); return; }
+  const reader = new FileReader();
+  reader.onload = () => { $("source").value = reader.result; $("fileInfo").textContent = `${file.name} loaded (${reader.result.length.toLocaleString()} characters). You can edit it above.`; };
+  reader.onerror = () => toast("The file could not be read.");
+  reader.readAsText(file, "utf-8");
+}
+$("attach").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", (e) => { loadFile(e.target.files[0]); e.target.value = ""; });
+const zone = $("dropZone");
+zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("over"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
+
+$("send").addEventListener("click", () => { const text = $("message").value.trim(); if (text) { $("message").value = ""; act("message", {text}); } });
+$("message").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("send").click(); } });
+
+function watch(id) {
+  jobId = id; lastLogLength = 0; lastLogAt = Date.now(); busySince = null;
+  history.replaceState(null, "", "#" + id);   // a reload comes back to the same run
+  clearInterval(timer); timer = setInterval(poll, 2000);
+  return poll();
+}
+zone.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("source").value.trim();
+  if (text.length < 10) { toast("Paste a URL or a draft first."); $("source").focus(); return; }
+  const settings = {talk_minutes: Number($("minutes").value), talk_language: $("talkLanguage").value, audience: $("audience").value.trim() || "software engineers"};
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  $("run").disabled = true;
+  try {
+    const started = await api("/api/jobs", {text, ...settings});
+    for (const key of Object.keys(typed)) delete typed[key];
+    state = {requestedMinutes: settings.talk_minutes, log: []};
+    $("langs").replaceChildren(); $("log").textContent = "";
+    await watch(started.job_id);
+    $("progress").scrollIntoView({behavior: "smooth", block: "start"});
+  } catch (error) { toast(error.message); $("run").disabled = false; }
+});
+
+// Restore the last settings and, after a reload, the run in the address bar.
+try {
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+  $("minutes").value = String(saved.talk_minutes ?? 5);
+  $("talkLanguage").value = saved.talk_language || "en";
+  $("audience").value = saved.audience && saved.audience !== "software engineers" ? saved.audience : "";
+} catch (e) { $("minutes").value = "5"; }
+if (location.hash.length > 1) { state = {log: []}; watch(location.hash.slice(1)); }
+</script>
+</body>
+</html>

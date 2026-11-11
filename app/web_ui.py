@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import html
+import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -138,9 +139,32 @@ def _start(job: Job, work: Any, what: str) -> None:
     job.task = asyncio.create_task(runner())
 
 
+# Two layouts of the same page talk to the same API. BLOG_AGENT_UI picks the one
+# served at "/"; both stay reachable, so switching back is a link or one setting.
+_LAYOUTS = {"v1": "index.html", "v2": "index_v2.html"}
+_DEFAULT_LAYOUT = os.environ.get("BLOG_AGENT_UI", "v2")
+
+
+def _page(layout: str) -> FileResponse:
+    name = _LAYOUTS.get(layout, _LAYOUTS["v2"])
+    return FileResponse(
+        STATIC_DIR / name, media_type="text/html", headers={"Cache-Control": "no-store"}
+    )
+
+
 @web.get("/", response_class=HTMLResponse)
 async def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+    return _page(_DEFAULT_LAYOUT)
+
+
+@web.get("/v1", response_class=HTMLResponse)
+async def classic_layout() -> FileResponse:
+    return _page("v1")
+
+
+@web.get("/v2", response_class=HTMLResponse)
+async def new_layout() -> FileResponse:
+    return _page("v2")
 
 
 @web.post("/api/jobs")
