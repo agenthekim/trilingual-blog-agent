@@ -60,7 +60,9 @@ def set_presentation_brief(
         'error' with error_code, message and recovery_instruction.
     """
     prev_brief = tool_context.state.get(state.PRESENTATION_BRIEF) or {}
-    existing_plan = (tool_context.state.get(state.SLIDE_PLANS) or {}).get(language) or {}
+    existing_plan = (tool_context.state.get(state.SLIDE_PLANS) or {}).get(
+        language
+    ) or {}
     resolved_audience = (
         audience.strip()
         if audience and audience.strip()
@@ -70,9 +72,7 @@ def set_presentation_brief(
         minutes
         if minutes and minutes > 0
         else int(
-            len(existing_plan.get("slides") or [])
-            or prev_brief.get("minutes")
-            or 15
+            len(existing_plan.get("slides") or []) or prev_brief.get("minutes") or 15
         )
     )
     try:

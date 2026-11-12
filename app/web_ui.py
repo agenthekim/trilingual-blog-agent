@@ -324,7 +324,6 @@ class PromptLocalizeRequest(BaseModel):
     texts: list[str] = Field(default_factory=list, max_length=20)
 
 
-
 class EditRequest(BaseModel):
     markdown: str = Field(min_length=1, max_length=200_000)
     title: str | None = Field(default=None, max_length=120)
@@ -559,7 +558,6 @@ async def localize_prompts(request: PromptLocalizeRequest) -> dict[str, Any]:
         return {"translations": {}}
 
 
-
 @web.post("/api/jobs")
 async def start_job(request: StartRequest) -> dict[str, str]:
     wants_slides = request.talk_minutes > 0 and bool(request.talk_languages)
@@ -771,7 +769,18 @@ _LANG_MENTIONS: dict[str, tuple[str, ...]] = {
 
 def _requested_slide_languages(text: str) -> list[str]:
     lower = text.lower()
-    if any(w in lower for w in ("all three", "all languages", "모든 언어", "전체 언어", "3개 국어", "3言語", "すべて")):
+    if any(
+        w in lower
+        for w in (
+            "all three",
+            "all languages",
+            "모든 언어",
+            "전체 언어",
+            "3개 국어",
+            "3言語",
+            "すべて",
+        )
+    ):
         return ["en", "ko", "ja"]
     found: list[str] = []
     for lang, words in _LANG_MENTIONS.items():

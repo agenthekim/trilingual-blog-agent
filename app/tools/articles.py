@@ -502,7 +502,9 @@ def update_article_post(
             "Localize the seed article first.",
         )
     old_title = state.article_title(tool_context.state, language)
-    new_title = title.strip()[:max_title_chars] if title and title.strip() else old_title
+    new_title = (
+        title.strip()[:max_title_chars] if title and title.strip() else old_title
+    )
     new_text = (markdown.rstrip() + "\n") if markdown and markdown.strip() else old_text
     if new_title != old_title and not (markdown and markdown.strip()):
         new_text = re.sub(r"\A(\s*#\s+)[^\n]+", rf"\g<1>{new_title}", new_text, count=1)
@@ -517,7 +519,9 @@ def update_article_post(
         get_article_store().save_project(project_id, {"title": new_title})
     else:
         tool_context.state[state.localized_key(language)] = new_text
-        check = check_fidelity(tool_context.state.get(state.SEED_MARKDOWN) or "", new_text)
+        check = check_fidelity(
+            tool_context.state.get(state.SEED_MARKDOWN) or "", new_text
+        )
         reports = dict(tool_context.state.get(state.FIDELITY_REPORT) or {})
         reports[language] = check
         tool_context.state[state.FIDELITY_REPORT] = reports

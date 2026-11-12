@@ -181,7 +181,8 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 # Any post with text in the workspace (including the source
                 # document) can be edited locally; an existing source keeps
                 # its 'original' step so it is never re-posted to its blog.
-                "can_edit": has_text and step in ("original", "review", "post", "paste"),
+                "can_edit": has_text
+                and step in ("original", "review", "post", "paste"),
                 "slides_file": existing(slide_plan_file(language))
                 if language in plans
                 else None,

@@ -172,7 +172,9 @@ async def test_source_and_unknown_files_cannot_be_edited(
 ) -> None:
     pipeline = await _pipeline_with_article()
     saved = await pipeline.save_edit(
-        "post.ja.md", "# 新しい見出し\n\n修正した本文です。[リンク](https://example.com)", title="新しい見出し"
+        "post.ja.md",
+        "# 新しい見出し\n\n修正した本文です。[リンク](https://example.com)",
+        title="新しい見出し",
     )
     assert saved["saved"] == "post.ja.md"
     rows = {row["language"]: row for row in (await pipeline.overview())["rows"]}

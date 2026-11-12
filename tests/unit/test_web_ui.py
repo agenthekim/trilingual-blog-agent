@@ -490,7 +490,13 @@ def test_a_deck_can_be_recreated_with_replan(real, monkeypatch) -> None:
     client, job = real
     called: list[tuple[str, bool]] = []
 
-    async def fake_prepare(language, minutes=15, audience="software engineers", create_deck=True, replan=False):
+    async def fake_prepare(
+        language,
+        minutes=15,
+        audience="software engineers",
+        create_deck=True,
+        replan=False,
+    ):
         called.append((language, replan))
         return None
 
