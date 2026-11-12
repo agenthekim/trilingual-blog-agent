@@ -149,6 +149,10 @@ function languageRow(row, slidesBusy, pBusy) {
   const next = el("div", {class: "next"});
   const link = (text) => el("a", {href: row.url, target: "_blank", rel: "noopener"}, text);
   const drafted = row.status === "draft";
+  // A draft read from an address (Google Docs, Medium): the address it came
+  // from, beside whatever the next step is (WEB-6).
+  let original = row.original_url
+    ? el("a", {href: row.original_url, target: "_blank", rel: "noopener"}, t("openOriginal")) : null;
   if (row.next === "original") next.append(link(t("openOriginal")));
   else if (row.next === "public") next.append(link(t("openPost")));
   else {
@@ -161,13 +165,15 @@ function languageRow(row, slidesBusy, pBusy) {
       next.append(
         el("span", {class: "muted small"}, t("postHint")),
         el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: pBusy,
-          onclick: () => postDraft(row, drafted)}, drafted ? t("updatePostBtn") : t("postBtn"))));
+          onclick: () => postDraft(row, drafted)}, drafted ? t("updatePostBtn") : t("postBtn")), original));
+      original = null;
     } else if (row.next === "paste") {
       const url = keep(`url:${row.platform}`, {placeholder: t("urlPlaceholder"), "aria-label": t("urlAria", {platform: row.platform_name})});
       next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: pBusy, onclick: () => recordUrl(row, url.value)}, t("registerUrlBtn"))),
         el("span", {class: "muted small"}, t("pasteHint")));
     }
   }
+  if (original) next.append(original);
   // A localization made from an earlier text of the source says so, and
   // offers to make it again: the request is put in the message box, unsent.
   const stale = row.older_than_source ? el("div", {class: "stale"},

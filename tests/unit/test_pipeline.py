@@ -1199,3 +1199,43 @@ def test_the_slides_step_is_one_step_for_the_languages_asked_for() -> None:
         ["ko"],
         [{"name": "Prepare slides", "done": False}],
     )
+
+
+def test_a_draft_read_from_an_address_offers_to_open_the_original() -> None:
+    """WEB-6: a Medium or Google Docs source is a draft, and its address is kept."""
+    from pathlib import Path
+
+    from app.pipeline import mark_original_address
+
+    session_state = {
+        state.PROJECT_ID: "proj-y",
+        state.SEED_TITLE: "Title",
+        state.SEED_MARKDOWN: "# Title\n\nBody\n",
+        state.SOURCE_LANGUAGE: "en",
+        state.localized_key("ko"): "# 제목\n\n본문\n",
+    }
+
+    def originals(source_text: str) -> dict[str, str | None]:
+        view = overview(session_state)
+        mark_original_address(view, source_text)
+        return {row["language"]: row["original_url"] for row in view["rows"]}
+
+    medium = "https://aimldl.medium.com/a-post-e36858b1b25e"
+    assert originals(medium) == {"ko": None, "en": medium, "ja": None}
+    gdoc = "https://docs.google.com/document/d/1AbCdEfGhIjKlMnOp/edit"
+    assert originals(f"  {gdoc}\n")["en"] == gdoc
+    # Text that was pasted has no address; a post read from a blog platform
+    # has "Open original" as its next step already.
+    assert set(originals("# Title\n\n" + "Body. " * 30).values()) == {None}
+    assert set(
+        originals("https://qiita.com/u/items/0123456789abcdef0123").values()
+    ) == {None}
+    assert set(originals("https://elsewhere.example.com/post").values()) == {None}
+
+    # The page puts the link beside the next step, with the text it has
+    # always used for an original.
+    script = (Path(__file__).resolve().parents[2] / "app/static/app.js").read_text(
+        encoding="utf-8"
+    )
+    assert "row.original_url" in script
+    assert script.count('t("openOriginal")') == 2

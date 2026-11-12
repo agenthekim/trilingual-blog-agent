@@ -609,6 +609,24 @@ def describe_source(text: str) -> tuple[str, str, str]:
     return known.name, known.label, stripped[:500]
 
 
+def mark_original_address(view: dict[str, Any], source_text: str) -> None:
+    """Put the address a draft was read from on the row of its language (WEB-6).
+
+    A Google Docs document or a Medium post is a draft: no blog platform is
+    the source, so its row goes on to "Finalize" and "Post…" like any other.
+    The address it was read from is still worth opening; the row of the
+    source language carries it as ``original_url``. A post read from a blog
+    platform already has "Open original" as its one next step and gets none.
+    """
+    kind, _, address = describe_source(source_text)
+    known = sources.SOURCE_KINDS.get(kind)
+    for row in view["rows"]:
+        is_source = row["language"] == view.get("source_language")
+        row["original_url"] = (
+            address if known and known.is_draft and is_source and address else None
+        )
+
+
 class ArticlePipeline:
     """One article, one agent session, driven step by step."""
 

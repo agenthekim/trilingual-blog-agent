@@ -61,6 +61,7 @@ from app.google_slides import SlidesError, granted_account, mermaid_preview_url
 from app.notices import join, notice, parts_of
 from app.observability import log_event, setup_tracing, traced_span
 from app.pipeline import (
+    mark_original_address,
     mark_slide_rows_in_progress,
     missing_slides,
     overview,
@@ -659,6 +660,7 @@ async def job_status(job_id: str) -> dict[str, Any]:
     view = overview(current)
     if job.source_text:
         view["source_text"] = job.source_text
+    mark_original_address(view, job.source_text)
     # The rows of the languages the slides lane works on right now say so
     # (WEB-5); the languages slides were asked for, in the run options or later.
     slides_busy = job.lanes[runs.SLIDES].busy
