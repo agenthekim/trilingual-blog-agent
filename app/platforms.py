@@ -689,3 +689,105 @@ async def fetch_status_and_title(url: str) -> tuple[int, str | None]:
     if match:
         title = match.group(1).strip()
     return response.status_code, title
+
+
+_GDOCS_PATH = re.compile(r"^/document/(?:u/\d+/)?d/([A-Za-z0-9_-]{10,})(?:/.*)?$")
+
+
+def parse_google_doc_id(url: str) -> str:
+    """Return the document id of an https Google Docs document URL, or raise PlatformError."""
+    try:
+        parsed = httpx.URL(url.strip())
+    except (httpx.InvalidURL, TypeError) as exc:
+        raise PlatformError(
+            "GDOCS_URL_FORMAT",
+            "Not a valid Google Docs URL.",
+            "Ask for an https://docs.google.com/document/d/<id>/... URL.",
+        ) from exc
+    host = parsed.host.lower()
+    match = _GDOCS_PATH.match(parsed.path)
+    if (
+        parsed.scheme != "https"
+        or host != "docs.google.com"
+        or parsed.port is not None
+        or parsed.userinfo
+        or not match
+    ):
+        raise PlatformError(
+            "GDOCS_URL_FORMAT",
+            "Not a Google Docs document URL.",
+            "Ask for an https://docs.google.com/document/d/<id>/... URL.",
+        )
+    return match.group(1)
+
+
+def is_google_doc_url(url: str) -> bool:
+    """Whether ``url`` is an https Google Docs document URL."""
+    try:
+        parse_google_doc_id(url)
+        return True
+    except PlatformError:
+        return False
+
+
+def _allowed_gdocs_export_url(url: str | httpx.URL) -> httpx.URL | None:
+    try:
+        parsed = httpx.URL(url)
+    except (httpx.InvalidURL, TypeError):
+        return None
+    host = parsed.host.lower()
+    if parsed.scheme != "https" or parsed.port is not None or parsed.userinfo:
+        return None
+    if host == "docs.google.com" or host.endswith(".googleusercontent.com"):
+        return parsed
+    return None
+
+
+async def google_doc_get_markdown(doc_id: str) -> str:
+    """Export a link-shared Google Docs document as Markdown."""
+    current = httpx.URL(f"https://docs.google.com/document/d/{doc_id}/export?format=md")
+    with traced_span("gdocs.export_markdown", doc_id=doc_id):
+        async with _client() as client:
+            for _hop in range(MAX_PUBLIC_REDIRECTS + 1):
+                try:
+                    response = await client.get(current)
+                except Exception as exc:
+                    raise _transport_error("google_docs", exc) from exc
+                if response.status_code not in _REDIRECT_STATUSES:
+                    break
+                location = response.headers.get("location") or ""
+                next_url = _allowed_gdocs_export_url(current.join(location))
+                if next_url is None:
+                    raise PlatformError(
+                        "GDOCS_NOT_READABLE",
+                        "This Google Docs document requires sign-in. Share it as "
+                        "'Anyone with the link can view', or download it as "
+                        "Markdown (.md) in Google Docs and attach the file.",
+                        "Ask the user to share the Google Doc as 'Anyone with "
+                        "the link can view' or provide a .md or .txt file.",
+                    )
+                current = next_url
+            else:
+                raise PlatformError(
+                    "GDOCS_TOO_MANY_REDIRECTS",
+                    f"Google Docs redirected more than {MAX_PUBLIC_REDIRECTS} times.",
+                    "Ask the user to download the document as Markdown (.md) and attach it.",
+                )
+    content_type = (response.headers.get("content-type") or "").lower()
+    if response.status_code >= 400 or "text/html" in content_type:
+        raise PlatformError(
+            "GDOCS_NOT_READABLE",
+            "This Google Docs document could not be read. Make sure it exists "
+            "and is shared as 'Anyone with the link can view', or download it "
+            "as Markdown (.md) and attach the file.",
+            "Ask the user to share the Google Doc as 'Anyone with the link can "
+            "view' or provide a .md or .txt file.",
+        )
+    text = response.text.lstrip("\ufeff")
+    if not text.strip():
+        raise PlatformError(
+            "GDOCS_EMPTY",
+            "The Google Docs document is empty.",
+            "Ask the user for a document with article text.",
+        )
+    return text

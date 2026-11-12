@@ -108,15 +108,18 @@ def _host(url: str) -> str:
 def classify_source(text: str) -> tuple[str, str]:
     """What a person handed in, and the text to work with.
 
-    'url': a bare address of a post on a supported site, read by code.
-    'request': a short message that contains such an address but says more;
-    it goes to the agent. 'elsewhere': a bare address that cannot be read
+    'url': a bare address of a post on a supported blog site, read by code.
+    'gdoc': a bare address of a Google Docs document, exported as Markdown.
+    'request': a short message that contains a supported blog address but says
+    more; it goes to the agent. 'elsewhere': a bare address that cannot be read
     (another site, or not https). 'draft': everything else, the article
     itself, stored exactly as given.
     """
     stripped = text.strip()
     urls = [u for u in _URL.findall(stripped) if _host(u) in ALLOWED_ARTICLE_HOSTS]
     if re.fullmatch(r"https?://\S+", stripped):
+        if stripped.startswith("https://") and platforms.is_google_doc_url(stripped):
+            return "gdoc", stripped
         readable = bool(urls) and stripped.startswith("https://")
         return ("url" if readable else "elsewhere"), stripped
     if urls and len(stripped) <= _MAX_URL_REQUEST_CHARS:
@@ -172,11 +175,9 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 "next": step,
                 "url": record.get("url"),
                 "files": [f for f in files if f],
-                # A post that is neither the article as it was handed in nor
-                # out of the author's hands can be edited here.
-                "can_edit": has_text
-                and language != source
-                and step in ("review", "post", "paste"),
+                # A post that was not read from a blog platform and is not
+                # already public can be edited here before it is finalized.
+                "can_edit": has_text and step in ("review", "post", "paste"),
                 "slides_file": existing(slide_plan_file(language))
                 if language in plans
                 else None,
@@ -514,9 +515,16 @@ class ArticlePipeline:
         if kind == "elsewhere":
             return (
                 "That address cannot be read: posts are read from Qiita, DEV "
-                "Community and Naver Blog, over https. Hand in a post from one "
-                "of them, or the Markdown text itself."
+                "Community and Naver Blog, and drafts from Google Docs "
+                "(https://docs.google.com/document/d/...), over https. Hand in "
+                "a supported URL, a .md or .txt file, or the Markdown text itself."
             )
+        if kind == "gdoc":
+            try:
+                doc_id = platforms.parse_google_doc_id(text)
+                text = await platforms.google_doc_get_markdown(doc_id)
+            except platforms.PlatformError as exc:
+                return f"The Google Docs document could not be read. {exc.message}"
         # Said in plain words here, before a validator says it in its own.
         if len(text.strip()) < MIN_DRAFT_CHARS:
             return (
@@ -922,11 +930,11 @@ class ArticlePipeline:
         match = _EDITABLE_FILE.match(name)
         if not match or project_file(project_id, name) is None:
             raise ValueError("This file cannot be edited here.")
-        if (
-            match.group(1) == "post"
-            and match.group(2) != current.get(state.SOURCE_LANGUAGE)
-            and name not in overview(current)["editable"]
-        ):
+        if match.group(1) == "post" and name not in overview(current)["editable"]:
+            if policy.next_step(current, match.group(2)) == "original":
+                raise ValueError(
+                    "This post was read from its blog platform and cannot be edited here."
+                )
             # A file left from an earlier text, or a post that is already
             # public: saving it would bring back or change what is settled.
             raise ValueError("This post can no longer be edited here.")
@@ -937,25 +945,32 @@ class ArticlePipeline:
         path = workspace_dir() / project_id / name
         if kind == "slides":
             return await self._save_slide_plan(path, text, language)
-        if language == current.get(state.SOURCE_LANGUAGE):
-            raise ValueError(
-                "This is the source article. Edit it where it was written and "
-                "run the stages again."
-            )
 
-        check = check_fidelity(current.get(state.SEED_MARKDOWN) or "", text)
-        delta: dict[str, Any] = {
-            state.localized_key(language): text,
-            state.FIDELITY_REPORT: {
-                **(current.get(state.FIDELITY_REPORT) or {}),
-                language: check,
-            },
-        }
-        if title and title.strip():
-            delta[state.LOCALIZED_TITLES] = {
-                **(current.get(state.LOCALIZED_TITLES) or {}),
-                language: title.strip()[:MAX_TITLE_CHARS],
+        if language == current.get(state.SOURCE_LANGUAGE):
+            check = {"passed": True, "errors": [], "warnings": [], "stats": {}}
+            delta: dict[str, Any] = {state.SEED_MARKDOWN: text}
+            if title and title.strip():
+                clean_title = title.strip()[:MAX_TITLE_CHARS]
+                delta[state.SEED_TITLE] = clean_title
+                delta[state.LOCALIZED_TITLES] = {
+                    **(current.get(state.LOCALIZED_TITLES) or {}),
+                    language: clean_title,
+                }
+                get_article_store().save_project(project_id, {"title": clean_title})
+        else:
+            check = check_fidelity(current.get(state.SEED_MARKDOWN) or "", text)
+            delta = {
+                state.localized_key(language): text,
+                state.FIDELITY_REPORT: {
+                    **(current.get(state.FIDELITY_REPORT) or {}),
+                    language: check,
+                },
             }
+            if title and title.strip():
+                delta[state.LOCALIZED_TITLES] = {
+                    **(current.get(state.LOCALIZED_TITLES) or {}),
+                    language: title.strip()[:MAX_TITLE_CHARS],
+                }
         await self._update_state(delta)
         get_article_store().add_version(project_id, language, "edited", text)
         path.write_text(text, encoding="utf-8")

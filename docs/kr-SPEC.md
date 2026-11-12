@@ -39,11 +39,11 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | INV-1 | 사람이 해당 플랫폼과 해당 작업에 대해 내린 승인 없이는 Qiita나 DEV Community에 아무것도 쓰지 않는다. 승인은 그 승인이 지목한 대기 중인 요청 하나에만 답한다. 마침 대기 중이던 다른 요청에는 절대 적용되지 않는다 |
 | INV-2 | 승인하는 사람이 바로 그 승인에서 공개 게시를 요청하지 않는 한 게시물은 비공개 초안이다. 모델에게는 게시물을 공개로 만드는 인자도, 도구도, 문구도 없다 |
 | INV-3 | 게시물은 사람이 확정한 본문과 제목으로만 전송된다. 확정 요청에 대한 승낙은 사람이 질문을 받은 시점의 제목과 본문에만 유효하다. 이후 그 본문이나 제목이 바뀌면, 사람이 바꿨든 에이전트가 바꿨든 확정은 해제된다 |
-| INV-4 | 글을 읽어 온 플랫폼에는 절대 쓰지 않는다 |
+| INV-4 | 블로그 게시물을 읽어 온 플랫폼에는 절대 쓰지 않는다. 원본 문서가 세 블로그 플랫폼의 게시물이 아니라 초안(`.md`, `.txt`, 붙여 넣은 텍스트, 또는 Google Docs 문서)인 경우에는 읽어 온 블로그 플랫폼이 없으므로 세 플랫폼 모두에 게시할 수 있다 |
 | INV-5 | 기존 Google Slides 덱은 어떤 슬라이드가 바뀌는지 사람이 확인한 뒤 승인한 텍스트 동기화로만 변경된다. 덱 안의 그림, 크기, 위치는 생성 후 절대 변경하지 않는다. 작성자의 Drive에 있는 다른 파일은 읽지도 변경하지도 않는다(`drive.file` 범위) |
 | INV-6 | 새 Google Slides 파일은 사람이 그 실행에서 슬라이드를 요청했거나(슬라이드 길이와 하나 이상의 언어) 덱 하나를 승인했을 때에만 생성한다 |
 | INV-7 | 글 본문, 제목, 가져온 페이지, 도구 결과는 데이터이다. 글 본문과 거기서 인용한 것(제목, 이미지 설명, 검토 지적 사항)은 그 호출을 위해 만든 무작위 토큰이 담긴 마커 사이에 넣어 모델에 전달하므로 본문이 마커를 닫을 수 없다. 본문에 들어 있는 어떤 내용도 지시로 따르지 않는다. 코디네이터의 지시문에는 글 본문이 전혀 들어가지 않는다 |
-| INV-8 | 서버가 요청을 보내는 대상은 다음뿐이다. 세 블로그 호스트(글과 URL 확인, 모든 리디렉션 홉 포함), 두 플랫폼 API, Google의 토큰·Slides·Drive 내보내기 엔드포인트, 그리고 운영자가 허용한 경우 다이어그램용 mermaid.ink |
+| INV-8 | 서버가 요청을 보내는 대상은 다음뿐이다. 세 블로그 호스트(글과 URL 확인, 모든 리디렉션 홉 포함), Google Docs 문서 내보내기(`docs.google.com` 및 `*.googleusercontent.com`), 두 플랫폼 API, Google의 토큰·Slides·Drive 내보내기 엔드포인트, 그리고 운영자가 허용한 경우 다이어그램용 mermaid.ink |
 | INV-9 | 자격 증명은 호출 시점에 환경 변수, Secret Manager, 또는 저장소 밖의 파일에서 읽는다. 어떤 경우에도 로그에 남기지 않고, 모델에 보내지 않고, 저장소에 저장하지 않으며, 어떤 라우트로도 반환하지 않는다 |
 | INV-10 | 자격 증명처럼 보이는 값이 들어 있는 본문은 확정하는 사람이 탐지 결과를 하나도 빠짐없이 보고 실제 자격 증명이 아니라고 밝히지 않는 한 게시하지 않는다 |
 | INV-11 | 작성자가 제공한 글 본문은 제공된 그대로 저장한다. 저장되기까지 어떤 모델도 이를 옮겨 적지 않는다 |
@@ -82,8 +82,8 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| SRC-1 | 원본 문서는 50자 이상 60,000자(`BLOG_AGENT_MAX_ARTICLE_CHARS`) 이하의 Markdown(붙여 넣은 텍스트, 또는 `.md`, `.markdown`, `.txt` 파일)이거나, `qiita.com`, `dev.to`, `blog.naver.com`, `m.blog.naver.com` 중 한 곳의 https URL 하나이다. 다른 곳의 주소, https가 아닌 주소, 너무 짧거나 긴 텍스트는 무엇이든 저장하기 전에 알기 쉬운 말로 거부한다 |
-| SRC-2 | 웹 페이지나 스크립트에 제출된 Markdown 초안은 코드가 바이트 단위로 그대로 저장하며, 언어는 글이 쓰인 문자 체계로 판별한다. 제목은 코드 블록 밖의 첫 번째 1단계 헤딩이고, 없으면 프런트 매터의 `title`, 그것도 없으면 본문의 첫 줄이다. 뒤의 두 경우에는 어떤 제목을 취했는지 알리는 알림이 실행에 붙는다. 어떤 모델도 관여하지 않는다(INV-11). URL만 있는 입력도 코드가 읽는다. URL 외에 다른 말이 더 있는 짧은 메시지만 에이전트로 간다 |
+| SRC-1 | 원본 문서는 50자 이상 60,000자(`BLOG_AGENT_MAX_ARTICLE_CHARS`) 이하의 Markdown 또는 일반 텍스트(붙여 넣은 텍스트, 또는 `.md`, `.markdown`, `.txt` 파일), Google Docs 문서 URL(`https://docs.google.com/document/d/...`), 또는 `qiita.com`, `dev.to`, `blog.naver.com`, `m.blog.naver.com` 중 한 곳의 게시물 https URL 하나이다. 그 밖의 파일 형식(Microsoft Word 등), 다른 곳의 주소, https가 아닌 주소, 너무 짧거나 긴 텍스트는 무엇이든 저장하기 전에 알기 쉬운 말로 거부한다 |
+| SRC-2 | 웹 페이지나 스크립트에 제출된 초안(붙여 넣은 텍스트, `.md`/`.txt` 파일, 또는 Markdown으로 내보낸 Google Docs URL)은 코드가 바이트 단위로 그대로 저장하며, 언어는 글이 쓰인 문자 체계로 판별한다. 제목은 코드 블록 밖의 첫 번째 1단계 헤딩이고, 없으면 프런트 매터의 `title`, 그것도 없으면 본문의 첫 줄이다. 뒤의 두 경우에는 어떤 제목을 취했는지 알리는 알림이 실행에 붙는다. 어떤 모델도 관여하지 않는다(INV-11). URL만 있는 입력도 코드가 읽는다. URL 외에 다른 말이 더 있는 짧은 메시지만 에이전트로 간다 |
 | SRC-3 | URL은 플랫폼의 API(Qiita, DEV)로 읽거나 공개된 모바일 페이지(Naver)에서 읽는다. 그 플랫폼은 원본으로 기록하고 절대 쓰지 않는다(INV-4). Naver에서 읽은 본문은 헤딩, 목록, 링크가 빠질 수 있으며, 그때는 그 사실을 알리는 알림이 실행에 붙는다 |
 | SRC-4 | 시드는 웹 페이지나 스크립트가 저장하는 시점에 최종본이 된다. 채팅에서는 작성자가 그렇다고 말할 때에만 최종본이 된다 |
 | SRC-5 | 글에 딸린 코드는 선택 사항이며, 어떤 경우에도 요구하지 않는다 |
@@ -104,7 +104,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| PUB-1 | 게시물은 본문이 있고, 해당 플랫폼이 원본이 아니며, 이미 공개된 상태가 아닐 때 확정할 수 있다. 확정하면 제목과 본문의 다이제스트를 기록한다(INV-3) |
+| PUB-1 | 게시물은 본문이 있고, 해당 플랫폼이 글을 읽어 온 블로그 플랫폼(`existing_source`)이 아니며, 이미 공개된 상태가 아닐 때 확정할 수 있다. 원본 문서가 초안(`.md`, `.txt`, 붙여 넣은 텍스트, Google Docs)일 때는 원본 언어의 게시물도 다른 두 언어와 똑같이 확정하고 게시할 수 있다. 확정하면 제목과 본문의 다이제스트를 기록한다(INV-3) |
 | PUB-2 | 자격 증명처럼 보이는 값이 들어 있는 본문의 확정은, 사람이 탐지 결과를 보았다는 내용이 요청에 담기지 않으면 거부한다(INV-10). 페이지와 스크립트는 탐지 결과를 빠짐없이(종류와 줄 번호만, 값은 절대 표시하지 않고) 보여 주고 묻는다. 채팅에서는 승낙만으로 이를 밝힐 수 없으므로 에이전트가 페이지나 스크립트를 안내한다 |
 | PUB-3 | 게시 도구는 다음 경우에 조치 방법을 안내하는 오류와 함께 거부한다. 확정된 시드가 없음, 플랫폼이 원본임, 본문이 없음, 확정되지 않음(PUB-1), 이미 공개됨. 승인이 도착하면 다시 검사한다 |
 | PUB-4 | 전송되는 제목은 확정된 제목이다. 게시 도구는 태그만 받고 그 밖에는 아무것도 받지 않으므로 모델이 다른 제목을 지정할 수 없다 |
@@ -149,9 +149,9 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | WEB-1 | 페이지는 하나이다. 헤딩은 "Trilingual Blog Agent"이고, 그 아래에 "Automatically transform an article in one language into blog posts and presentation slides across three languages."가 온다 |
 | WEB-2 | 폼: 힌트 "Share a post URL, a .md file, or your document."가 붙은 "Source document", 파일 첨부 또는 끌어다 놓기, "Choose the slide length to create Google Slides in your configured Google Drive."가 붙은 "Slide options", Length, Languages(체크박스, 모두 선택됨), Audience(SLD-1), Run 버튼 하나 |
 | WEB-3 | 진행 상황: 단계는 "Source document", "Transform", "Prepare posts", "Prepare slides"(슬라이드를 요청했을 때), "Summarize"이다. 각 단계의 완료 여부는 요청된 언어에 대해 서버가 보고하는 내용으로 정하며, 새로고침 전후가 같다. 그 아래에는 작업 중일 때 경과 시간과 가장 최근 활동을, 끝났을 때 `manifest.md` 링크를 보여 준다 |
-| WEB-4 | 결과 표는 원본 언어를 맨 먼저 두고, 열은 작업 순서대로 Language(이름, 그 아래 상태 배지), Title, Files, Slides, Next step이다. 표 아래에는 아무것도 나열하지 않는다 |
+| WEB-4 | 결과 표는 입력 글의 언어(원본 언어)를 맨 먼저 두고, 열은 작업 순서대로 Language(이름, 그 아래 상태 배지), Title, Files, Slides, Next step이다. 표 아래에는 아무것도 나열하지 않는다 |
 | WEB-5 | Files: `post.<lang>.md`, 그리고 한국어에는 `naver_blog.html`이 있으며 각각 미리보기를 연다. Slides: "Google Slides"(해당 언어의 덱만), "Speaker notes"(`slides.<lang>.md`), 그리고 "PDF"(내보낸 뒤에는 `slides.<lang>.pdf` 링크, 내보내기 전에는 "Export PDF")가 있다. 계획은 있고 덱은 없는 언어에서는 덱 생성을 제안한다 |
-| WEB-6 | Next step은 다음에 할 일 한 가지를 보여 준다. 원본 → "Open original". 공개 → "Open post". 확정 전 → 검토할 대상과 "Finalize". 확정됨, API 플랫폼 → 태그와 "Post…"(또는 "Update post…"), 이어서 제목, 태그, Draft / Public 선택지가 있고 Draft가 미리 선택된 승인 대화상자. 확정됨, Naver → 붙여 넣기 안내, URL 입력란, "Register URL" |
+| WEB-6 | Next step은 다음에 할 일 한 가지를 보여 준다. 블로그 플랫폼에서 읽어 온 기존 게시물(`existing_source`) → "Open original". 공개 → "Open post". 확정 전 → 검토할 대상과 "Finalize". 확정됨, API 플랫폼 → 태그와 "Post…"(또는 "Update post…"), 이어서 제목, 태그, Draft / Public 선택지가 있고 Draft가 미리 선택된 승인 대화상자. 확정됨, Naver → 붙여 넣기 안내, URL 입력란, "Register URL" |
 | WEB-7 | 미리보기: 파일 이름, 파일을 편집할 수 있을 때의 "edit", "raw text"가 있다. Markdown은 렌더링한다. 글 본문에서 온 스크립트는 실행될 수 없고, 폼은 제출될 수 없으며, 기준 주소는 설정될 수 없다. Mermaid 블록은 운영자가 mermaid.ink를 허용했으면 그림으로 나타나고 그 아래에 소스가 붙는다. 그렇지 않으면 코드로 나타난다 |
 | WEB-8 | 편집기: 창 전체를 쓴다. 게시물에는 제목 입력란이 있다. Save가 있다. 저장하지 않은 변경 사항은 보호한다. 게시물을 저장하면 확정이 해제되고 그 사실을 알린다. 덱이 있는 슬라이드 계획의 경우, Save 후 덱과 내용이 다르면 동기화 대화상자가 열린다. "Update deck…"과 "Pull from deck…"은 항상 있다 |
 | WEB-9 | "Ask the agent for a change": 에이전트에게 보내는 한 줄이다. 턴이 끝나면 에이전트의 답이 페이지에 표시된다. 에이전트가 승인을 요청하면 그 요청이 Approve, Decline과 함께 표시된다. 답은 그 요청에만 전달되고(INV-1), 그 시점에 대기 중이던 다른 요청은 거절되며 그 사실이 표시된다. 새 줄을 보낼 때 답하지 않은 채 남아 있던 요청은 사라지며, 알림이 그 사실을 알린다 |
@@ -254,8 +254,10 @@ flowchart TD
 - 채팅에서 같은 대화에 두 번째 초안을 저장하면 첫 번째 초안의 수정으로
   처리된다. 프로젝트가 유지되고 첫 번째 글의 플랫폼 초안이 갱신된다. 승인
   요청은 교체되는 제목을 명시한다(PUB-5). 다른 글은 새 대화에서 시작한다.
-- 시드는 페이지에서 편집할 수 없다. 현지화된 제목은 채팅에서 바꿀 수 없고
-  페이지의 편집기에서만 바꿀 수 있다.
+- 블로그 플랫폼에서 읽어 온 게시물(`existing_source`)이나 이미 공개된 게시물은
+  페이지에서 편집할 수 없으며, 초안으로 입력된 원본 언어 게시물과 현지화된
+  게시물은 공개 전에 페이지에서 편집할 수 있다. 제목은 채팅이 아니라 페이지의
+  편집기에서 바꿀 수 있다.
 - 에이전트는 한 턴의 답을 한꺼번에 받는다. 따라서 승인 요청 하나에 답하면 그
   시점에 대기 중이던 나머지 요청은 거절된다(INV-1). 거절된 요청은 다시 요청해야
   한다.
@@ -320,6 +322,7 @@ flowchart TD
 | 33 | 초안은 제출된 그대로 저장한다 | 모델이 초안을 도구 호출에 옮겨 적던 방식 |
 | 34 | 다시 만든 코드를 독립적으로 검토한 뒤 반영한 사항. 확정에 대한 승낙은 질문받은 본문에만 유효하다. 코디네이터의 지시문에는 글 본문이 들어가지 않는다. 서버는 자기 이름으로 온 요청에만 응답한다. 덱 동기화는 보여 준 변경 사항만 쓴다. 자격 증명 탐지 결과는 빠짐없이 보여 준다 | 이 명세의 첫 번째 코드에서 검토가 찾아낸 빈틈 |
 | 35 | 글의 표를 Google Slides 네이티브 표로 배치(`table:N`, SLD-11). 게시물 확정 시 및 Slides 열에서 요청 시 덱을 PDF로 내보내기(`slides.<lang>.pdf`, SLD-12) | 8절의 열린 항목 1번과 2번 |
+| 36 | INV-4 명확화(블로그 플랫폼 URL에서 읽어 온 경우에만 해당 플랫폼을 `existing_source`로 기록). 초안 원본 언어 게시물도 공개 전에 웹 편집기에서 편집 허용. Google Docs 문서 URL(`https://docs.google.com/document/d/...`)을 Markdown 초안으로 읽기 지원(`.md`, `.txt`, Google Docs만 지원) | 편집할 수 없던 초안 원본 게시물, 블로그 URL과 로컬 파일만 지원하던 입력 |
 
 ## 부록 B. 추적성
 
@@ -336,7 +339,7 @@ flowchart TD
 | INV-1 | `test_posting_pauses_for_human_approval_and_sends_nothing`, `test_an_approval_answers_one_request_and_never_another`, `test_a_declined_request_sends_nothing_and_an_unknown_one_is_refused` |
 | INV-2 | `test_only_the_approving_person_can_make_a_post_public`, `test_an_approval_without_a_choice_means_a_private_draft`, `test_the_models_own_arguments_cannot_make_a_post_public_or_retitle_it` |
 | INV-3 | `test_a_post_nobody_finalized_is_refused_by_the_tool_itself`, `test_a_change_between_request_and_approval_is_caught_when_the_approval_arrives`, `test_changing_the_title_undoes_the_finalization`, `test_finalizing_holds_only_for_the_text_that_was_reviewed`, `test_a_yes_to_finalize_does_not_cover_a_text_swapped_while_it_was_asked` |
-| INV-4 | `test_the_platform_an_article_was_read_from_is_never_written_to`, `test_a_published_post_is_read_by_code_and_its_platform_is_closed` |
+| INV-4 | `test_the_platform_an_article_was_read_from_is_never_written_to`, `test_a_published_post_is_read_by_code_and_its_platform_is_closed`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
 | INV-5 | `test_saved_notes_reach_the_deck_only_after_approval`, `test_deck_sync_writes_only_when_the_request_says_a_person_approved`, `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor` |
 | INV-6 | `test_no_deck_is_created_unless_the_person_asked_for_decks`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval` |
 | INV-7 | `test_article_text_cannot_close_the_markers_it_is_given_between`, `test_a_title_cannot_break_out_of_its_attribute`, `test_no_title_is_written_into_the_coordinators_instruction`, `test_what_is_quoted_from_the_article_stays_between_markers` |
@@ -345,8 +348,8 @@ flowchart TD
 | INV-10 | `test_text_with_a_credential_is_not_finalized_or_sent_unless_acknowledged`, `test_a_plain_yes_does_not_accept_credential_findings`, `test_finalizing_text_with_credential_findings_asks_the_person_first`, `test_every_credential_finding_is_shown_not_only_the_first_few` |
 | INV-11 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_other_text_is_the_draft_itself_exactly_as_given` |
 | INV-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_a_run_stops_and_says_which_language_was_not_written`, `test_a_registered_address_is_recorded_and_checked` |
-| SRC-1 | `test_fetch_accepts_supported_hosts`, `test_fetch_rejects_disallowed_host_without_network`, `test_invalid_seed_returns_recovery_instruction`, `test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason`, `test_an_address_that_cannot_be_read_is_told_apart_from_a_draft`, `test_what_cannot_be_used_as_a_source_is_said_in_plain_words` |
-| SRC-2 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_a_bare_address_is_read_by_code`, `test_a_short_request_with_a_supported_address_goes_to_the_agent`, `test_language_guess`, `test_the_title_of_a_draft_is_never_a_comment_inside_code`, `test_a_draft_without_a_title_line_says_which_title_was_taken` |
+| SRC-1 | `test_fetch_accepts_supported_hosts`, `test_fetch_rejects_disallowed_host_without_network`, `test_invalid_seed_returns_recovery_instruction`, `test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason`, `test_an_address_that_cannot_be_read_is_told_apart_from_a_draft`, `test_what_cannot_be_used_as_a_source_is_said_in_plain_words`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
+| SRC-2 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_a_bare_address_is_read_by_code`, `test_a_short_request_with_a_supported_address_goes_to_the_agent`, `test_language_guess`, `test_the_title_of_a_draft_is_never_a_comment_inside_code`, `test_a_draft_without_a_title_line_says_which_title_was_taken`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
 | SRC-3 | `test_fetched_qiita_post_becomes_final_seed_and_existing_source`, `test_a_post_read_from_the_naver_page_goes_on_with_a_notice`, `test_naver_html_extraction_keeps_paragraphs_and_code` |
 | SRC-4 | `test_seed_gate_blocks_an_unfinalized_seed`, `test_finalize_requires_a_seed`, `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it` |
 | SRC-5 | No unit test: 코드 어디에서도 글에 딸린 코드를 요구하지 않으므로 검사할 동작이 없다 |
@@ -391,7 +394,7 @@ flowchart TD
 | WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
 | WEB-6 | `test_overview_lists_titles_files_and_next_steps`, `test_posting_from_the_page_needs_a_finalized_post_and_carries_the_persons_choice` |
 | WEB-7 | `test_preview_links_to_the_editor_only_for_files_a_person_may_change`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
-| WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again` |
+| WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again`, `test_draft_source_language_post_can_be_edited_before_finalizing` |
 | WEB-9 | `test_the_agents_reply_to_a_request_in_words_is_shown`, `test_an_approval_answers_one_request_and_never_another`, `test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone` |
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
 | WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |

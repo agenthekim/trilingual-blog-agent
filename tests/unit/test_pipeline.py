@@ -634,3 +634,67 @@ async def test_an_edit_the_export_refuses_leaves_no_naver_file_to_paste(
     # Once a person has accepted the findings, the file is written again.
     await pipeline.finalize_post("ko", acknowledge_findings=True)
     assert project_file("proj-3", "naver_blog.html") is not None
+
+
+@pytest.mark.asyncio
+async def test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open(
+    isolated_workspace, monkeypatch
+) -> None:
+    """INV-4, SRC-1, SRC-2: a Google Docs URL is a draft, not an existing blog post."""
+    from app import platforms
+
+    gdoc_url = "https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/edit?usp=sharing"
+    assert classify_source(gdoc_url) == ("gdoc", gdoc_url)
+    assert (
+        classify_source(
+            "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQr/edit"
+        )[0]
+        == "elsewhere"
+    )
+
+    async def fake_gdoc(doc_id: str) -> str:
+        assert doc_id == "1AbCdEfGhIjKlMnOpQrStUvWxYz"
+        return (
+            "# Google Docs 초안 제목\n\n"
+            + "구글 독스에서 작성한 한국어 초안 본문입니다. " * 5
+        )
+
+    monkeypatch.setattr(platforms, "google_doc_get_markdown", fake_gdoc)
+    pipeline = _new_pipeline()
+    _stand_in_agent(pipeline)
+    notes = await pipeline.run_stages(gdoc_url, talk_minutes=0)
+    assert notes is None
+
+    current = await pipeline.session_state()
+    assert current[state.SOURCE_LANGUAGE] == "ko"
+    assert current[state.SEED_TITLE] == "Google Docs 초안 제목"
+    # No platform is marked as existing_source; Korean has naver_blog.html ready to review.
+    pubs = current.get(state.PUBLICATIONS) or {}
+    assert all(p.get("state") != "existing_source" for p in pubs.values())
+    rows = {row["language"]: row for row in (await pipeline.overview())["rows"]}
+    assert rows["ko"]["next"] == "review" and rows["ko"]["can_edit"] is True
+
+
+@pytest.mark.asyncio
+async def test_draft_source_language_post_can_be_edited_before_finalizing(
+    isolated_workspace,
+) -> None:
+    """Option A: when the source is a draft (.md/.txt/Google Docs), its own post is editable."""
+    pipeline = _new_pipeline()
+    _stand_in_agent(pipeline)
+    await pipeline.run_stages(DRAFT_KO, talk_minutes=0)
+
+    view = await pipeline.overview()
+    assert "post.ko.md" in view["editable"]
+    await pipeline.finalize_post("ko")
+    assert {r["language"]: r for r in (await pipeline.overview())["rows"]}["ko"][
+        "finalized"
+    ] is True
+
+    edited = "# 수정된 한국어 제목\n\n다듬은 한국어 초안 본문입니다. " * 4
+    await pipeline.save_edit("post.ko.md", edited, title="수정된 한국어 제목")
+    rows = {r["language"]: r for r in (await pipeline.overview())["rows"]}
+    assert rows["ko"]["title"] == "수정된 한국어 제목"
+    assert rows["ko"]["finalized"] is False  # editing undoes finalization
+    # Localized posts remain intact.
+    assert rows["en"]["title"] and rows["ja"]["title"]

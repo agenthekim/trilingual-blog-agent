@@ -39,11 +39,11 @@ whatever else it improves.
 | INV-1 | Nothing is written to Qiita or DEV Community without an approval given by a person for that platform and that action. An approval answers the one pending request it names; it is never applied to another request that happens to be pending |
 | INV-2 | A post is a non-public draft unless the person approving asks for a public post in that same approval. The model has no argument, tool or wording that makes a post public |
 | INV-3 | A post is sent only from text and a title that a person has finalized. A yes to a request to finalize holds for the title and text as they were when the person was asked. Any later change to that text or title, by a person or by the agent, undoes the finalization |
-| INV-4 | A platform the article was read from is never written to |
+| INV-4 | A blog platform the article was read from is never written to. When the source document is a draft (`.md`, `.txt`, pasted text or a Google Docs document) rather than a post on one of the three blog platforms, no blog platform is the source and all three platforms may be written to |
 | INV-5 | An existing Google Slides deck is changed only by a text sync that a person approved after seeing which slides change. Pictures, sizes and positions in a deck are never changed after creation. No other file in the author's Drive is read or changed (`drive.file` scope) |
 | INV-6 | New Google Slides files are created only when the person asked for slides in that run (a slide length and at least one language) or approved a single deck |
 | INV-7 | Article text, titles, fetched pages and tool results are data. Article text, and what is quoted from it (titles, image descriptions, review findings), is passed to models between markers that carry a random token made for that call, so the text cannot close them; nothing in it is followed as an instruction. The coordinator's instruction carries no article text at all |
-| INV-8 | The server fetches only: the three blog hosts (articles and URL checks, every redirect hop included), the two platform APIs, Google's token, Slides and Drive export endpoints, and mermaid.ink for diagrams when the operator allowed it |
+| INV-8 | The server fetches only: the three blog hosts (articles and URL checks, every redirect hop included), Google Docs document export (`docs.google.com` and `*.googleusercontent.com`), the two platform APIs, Google's token, Slides and Drive export endpoints, and mermaid.ink for diagrams when the operator allowed it |
 | INV-9 | Credentials are read at call time from the environment, Secret Manager or a file outside the repository; they are never logged, never sent to a model, never stored in the repository, and never returned by any route |
 | INV-10 | Text with credential-looking values is not posted unless the person finalizing saw the findings, every one of them, and said they are not real credentials |
 | INV-11 | The article text an author supplied is stored exactly as supplied. No model retypes it on the way in |
@@ -82,8 +82,8 @@ stage at a time and waits.
 
 | | Requirement |
 | :--- | :--- |
-| SRC-1 | A source document is Markdown (pasted, or a `.md`, `.markdown` or `.txt` file) of 50 to 60,000 characters (`BLOG_AGENT_MAX_ARTICLE_CHARS`), or one https URL on `qiita.com`, `dev.to`, `blog.naver.com` or `m.blog.naver.com`. An address elsewhere, an address that is not https, and a text that is too short or too long are refused in plain words before anything is stored |
-| SRC-2 | A Markdown draft handed to the web page or the script is stored by code, byte for byte, with its language detected from the script it is written in. Its title is the first level-1 heading outside code blocks, else the `title` of its front matter, else its first line of prose; in the last two cases the run carries a notice naming the title it took. No model is involved (INV-11). A bare URL is read by code as well; only a short message that says more than a URL goes to the agent |
+| SRC-1 | A source document is Markdown or plain text (pasted, or a `.md`, `.markdown` or `.txt` file) of 50 to 60,000 characters (`BLOG_AGENT_MAX_ARTICLE_CHARS`), a Google Docs document URL (`https://docs.google.com/document/d/...`), or one https URL of a post on `qiita.com`, `dev.to`, `blog.naver.com` or `m.blog.naver.com`. Other file formats (such as Microsoft Word), addresses elsewhere, addresses that are not https, and texts that are too short or too long are refused in plain words before anything is stored |
+| SRC-2 | A draft handed to the web page or the script (pasted text, a `.md`/`.txt` file, or a Google Docs URL exported as Markdown) is stored by code, byte for byte, with its language detected from the script it is written in. Its title is the first level-1 heading outside code blocks, else the `title` of its front matter, else its first line of prose; in the last two cases the run carries a notice naming the title it took. No model is involved (INV-11). A bare URL is read by code as well; only a short message that says more than a URL goes to the agent |
 | SRC-3 | A URL is read through the platform's API (Qiita, DEV) or from the public mobile page (Naver). The platform is recorded as the original and never written to (INV-4). Naver text may lose headings, lists and links; the run then carries a notice saying so |
 | SRC-4 | The seed is final when stored by the web page or the script. In a chat it is final only when the author says so |
 | SRC-5 | Companion code is optional and never required |
@@ -104,7 +104,7 @@ stage at a time and waits.
 
 | | Requirement |
 | :--- | :--- |
-| PUB-1 | A post can be finalized when it has text, its platform is not the original, and it is not already public. Finalizing records a digest of the title and text (INV-3) |
+| PUB-1 | A post can be finalized when it has text, its platform is not a blog platform the article was read from (`existing_source`), and it is not already public. When the source document is a draft (`.md`, `.txt`, pasted text or Google Docs), the source language's post can be finalized and posted like the other two. Finalizing records a digest of the title and text (INV-3) |
 | PUB-2 | Finalizing text with credential-looking values is refused unless the request says the person has seen the findings (INV-10); the page and the script show every one of them (type and line, never the value) and ask. In a chat a yes cannot say that; the agent then points to the page or the script |
 | PUB-3 | The posting tools refuse, with a guided error, when: no finalized seed; the platform is the original; no text; not finalized (PUB-1); already public. They check again when the approval arrives |
 | PUB-4 | The title sent is the finalized title. The posting tools take tags and nothing else, so the model cannot name another title |
@@ -149,9 +149,9 @@ stage at a time and waits.
 | WEB-1 | One page. Heading "Trilingual Blog Agent"; under it "Automatically transform an article in one language into blog posts and presentation slides across three languages." |
 | WEB-2 | Form: "Source document" with the hint "Share a post URL, a .md file, or your document."; attach or drop a file; "Slide options" with "Choose the slide length to create Google Slides in your configured Google Drive."; Length, Languages (checkboxes, all ticked), Audience (SLD-1); one Run button |
 | WEB-3 | Progress: steps "Source document", "Transform", "Prepare posts", "Prepare slides" (when slides were asked for), "Summarize". Each is done by what the server reports for the languages that were asked for, the same before and after a reload. Below: elapsed time and the latest activity while working; when finished, a link to `manifest.md` |
-| WEB-4 | Results table, the original language first, columns in the order of the work: Language (name, status badge under it), Title, Files, Slides, Next step. Nothing is listed under the table |
+| WEB-4 | Results table, the source language first, columns in the order of the work: Language (name, status badge under it), Title, Files, Slides, Next step. Nothing is listed under the table |
 | WEB-5 | Files: `post.<lang>.md` and, for Korean, `naver_blog.html`; each opens a preview. Slides: "Google Slides" (the deck of that language only), "Speaker notes" (`slides.<lang>.md`), and "PDF" (`slides.<lang>.pdf` once exported, or "Export PDF" to export it); a language with a plan and no deck offers to create it |
-| WEB-6 | Next step shows the one thing to do next: original → "Open original"; public → "Open post"; not finalized → what to review and "Finalize"; finalized, API platform → tags and "Post…" (or "Update post…"), then an approval dialog with the title, the tags and the choice Draft / Public, Draft preselected; finalized, Naver → paste instructions, URL field, "Register URL" |
+| WEB-6 | Next step shows the one thing to do next: read from a blog platform (`existing_source`) → "Open original"; public → "Open post"; not finalized → what to review and "Finalize"; finalized, API platform → tags and "Post…" (or "Update post…"), then an approval dialog with the title, the tags and the choice Draft / Public, Draft preselected; finalized, Naver → paste instructions, URL field, "Register URL" |
 | WEB-7 | Preview: the file name, "edit" when the file may be edited, "raw text". Markdown is rendered; no script from article text can run, no form can be submitted and no base address set. Mermaid blocks appear as drawings with their source under them when the operator allowed mermaid.ink; otherwise as code |
 | WEB-8 | Editor: full window; title field for posts; Save; unsaved changes are guarded. Saving a post undoes its finalization and says so. For a slide plan with a deck: after Save the sync dialog opens when the deck differs; "Update deck…" and "Pull from deck…" are always there |
 | WEB-9 | "Ask the agent for a change": one line to the agent; the agent's reply is shown on the page when the turn ends. When the agent asks for an approval, the request is shown with Approve and Decline; an answer goes to that request only (INV-1), and other requests pending at that moment are declined and said to be. Requests left unanswered when a new line is sent are gone, and a notice says so |
@@ -256,8 +256,10 @@ check that the plan it got is in the language it asked for.
   the first: it keeps the project and updates the first one's platform draft.
   The approval names the title that is replaced (PUB-5); start a new
   conversation for another article.
-- The seed cannot be edited on the page; a localized title cannot be changed
-  in a chat, only in the page's editor.
+- A post read from a blog platform (`existing_source`) or already published
+  cannot be edited on the page; a draft source post and localized posts can be
+  edited on the page before publication. Titles can be changed in the page's
+  editor, not in a chat.
 - The agent takes all answers of a turn at once. Answering one approval
   request therefore declines the others pending at that moment (INV-1); they
   have to be asked for again.
@@ -324,6 +326,7 @@ changed or added to it, in order.
 | 33 | A draft is stored exactly as handed in | The model retyped it into a tool call |
 | 34 | After an independent review of the rebuilt code: a yes to finalize holds only for the text that was asked about; no article text in the coordinator's instruction; the server answers only to its own name; a deck sync writes only the changes that were shown; every credential finding is shown | Gaps the review found in the first version of this specification's code |
 | 35 | Article tables placed on slides as native Google Slides tables (`table:N`, SLD-11); PDF export of a deck (`slides.<lang>.pdf`, SLD-12) on finalize and on demand from the Slides column | Open items 1 and 2 of section 8 |
+| 36 | Clarified INV-4 (only blog-platform URLs mark a platform as `existing_source`); draft source-language posts are editable on the page before publication; Google Docs document URLs (`https://docs.google.com/document/d/...`) are read as Markdown drafts (`.md`, `.txt`, Google Docs only) | Uneditable draft source post; blog URLs and local files only |
 
 ## Appendix B. Traceability
 
@@ -340,7 +343,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | INV-1 | `test_posting_pauses_for_human_approval_and_sends_nothing`, `test_an_approval_answers_one_request_and_never_another`, `test_a_declined_request_sends_nothing_and_an_unknown_one_is_refused` |
 | INV-2 | `test_only_the_approving_person_can_make_a_post_public`, `test_an_approval_without_a_choice_means_a_private_draft`, `test_the_models_own_arguments_cannot_make_a_post_public_or_retitle_it` |
 | INV-3 | `test_a_post_nobody_finalized_is_refused_by_the_tool_itself`, `test_a_change_between_request_and_approval_is_caught_when_the_approval_arrives`, `test_changing_the_title_undoes_the_finalization`, `test_finalizing_holds_only_for_the_text_that_was_reviewed`, `test_a_yes_to_finalize_does_not_cover_a_text_swapped_while_it_was_asked` |
-| INV-4 | `test_the_platform_an_article_was_read_from_is_never_written_to`, `test_a_published_post_is_read_by_code_and_its_platform_is_closed` |
+| INV-4 | `test_the_platform_an_article_was_read_from_is_never_written_to`, `test_a_published_post_is_read_by_code_and_its_platform_is_closed`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
 | INV-5 | `test_saved_notes_reach_the_deck_only_after_approval`, `test_deck_sync_writes_only_when_the_request_says_a_person_approved`, `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor` |
 | INV-6 | `test_no_deck_is_created_unless_the_person_asked_for_decks`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval` |
 | INV-7 | `test_article_text_cannot_close_the_markers_it_is_given_between`, `test_a_title_cannot_break_out_of_its_attribute`, `test_no_title_is_written_into_the_coordinators_instruction`, `test_what_is_quoted_from_the_article_stays_between_markers` |
@@ -349,8 +352,8 @@ what the models then did was read in real runs, recorded in `README.md`.
 | INV-10 | `test_text_with_a_credential_is_not_finalized_or_sent_unless_acknowledged`, `test_a_plain_yes_does_not_accept_credential_findings`, `test_finalizing_text_with_credential_findings_asks_the_person_first`, `test_every_credential_finding_is_shown_not_only_the_first_few` |
 | INV-11 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_other_text_is_the_draft_itself_exactly_as_given` |
 | INV-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_a_run_stops_and_says_which_language_was_not_written`, `test_a_registered_address_is_recorded_and_checked` |
-| SRC-1 | `test_fetch_accepts_supported_hosts`, `test_fetch_rejects_disallowed_host_without_network`, `test_invalid_seed_returns_recovery_instruction`, `test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason`, `test_an_address_that_cannot_be_read_is_told_apart_from_a_draft`, `test_what_cannot_be_used_as_a_source_is_said_in_plain_words` |
-| SRC-2 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_a_bare_address_is_read_by_code`, `test_a_short_request_with_a_supported_address_goes_to_the_agent`, `test_language_guess`, `test_the_title_of_a_draft_is_never_a_comment_inside_code`, `test_a_draft_without_a_title_line_says_which_title_was_taken` |
+| SRC-1 | `test_fetch_accepts_supported_hosts`, `test_fetch_rejects_disallowed_host_without_network`, `test_invalid_seed_returns_recovery_instruction`, `test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason`, `test_an_address_that_cannot_be_read_is_told_apart_from_a_draft`, `test_what_cannot_be_used_as_a_source_is_said_in_plain_words`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
+| SRC-2 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_a_bare_address_is_read_by_code`, `test_a_short_request_with_a_supported_address_goes_to_the_agent`, `test_language_guess`, `test_the_title_of_a_draft_is_never_a_comment_inside_code`, `test_a_draft_without_a_title_line_says_which_title_was_taken`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
 | SRC-3 | `test_fetched_qiita_post_becomes_final_seed_and_existing_source`, `test_a_post_read_from_the_naver_page_goes_on_with_a_notice`, `test_naver_html_extraction_keeps_paragraphs_and_code` |
 | SRC-4 | `test_seed_gate_blocks_an_unfinalized_seed`, `test_finalize_requires_a_seed`, `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it` |
 | SRC-5 | No unit test: nothing in the code asks for companion code, so there is no behaviour to check |
@@ -395,7 +398,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
 | WEB-6 | `test_overview_lists_titles_files_and_next_steps`, `test_posting_from_the_page_needs_a_finalized_post_and_carries_the_persons_choice` |
 | WEB-7 | `test_preview_links_to_the_editor_only_for_files_a_person_may_change`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
-| WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again` |
+| WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again`, `test_draft_source_language_post_can_be_edited_before_finalizing` |
 | WEB-9 | `test_the_agents_reply_to_a_request_in_words_is_shown`, `test_an_approval_answers_one_request_and_never_another`, `test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone` |
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
 | WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
