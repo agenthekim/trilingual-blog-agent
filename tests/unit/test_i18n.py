@@ -35,12 +35,14 @@ def _catalog(language: str) -> dict[str, str]:
 
 
 def _script(name: str) -> str:
-    """A script as it is checked: without the part WP-13 takes out, which
-    reads requests typed in three languages and so holds words of them."""
-    text = (STATIC / name).read_text(encoding="utf-8")
-    return re.sub(
-        r"// i18n:legacy-begin\n.*?// i18n:legacy-end\n", "", text, flags=re.S
-    )
+    return (STATIC / name).read_text(encoding="utf-8")
+
+
+def _suggestions() -> list[str]:
+    """The names of the suggestions under the message box, as the page lists them."""
+    listed = re.search(r"const SUGGESTIONS = \[([^\]]*)\];", _script("app.js"))
+    assert listed, "app.js no longer lists its suggestions"
+    return re.findall(r'"(\w+)"', listed.group(1))
 
 
 def _without_comments(script: str) -> str:
@@ -192,7 +194,7 @@ def test_every_text_the_page_asks_for_exists() -> None:
         "step.": {re.sub(r"[^a-z]+", "_", step.lower()) for step in steps},
         "lang.": set(LANGUAGES),
         "tagRule.": set(policy.API_PLATFORMS),
-        "prompt.": {str(number) for number in range(6)},
+        "prompt.": set(_suggestions()),
         "slidePhase.": set(SLIDE_PHASES),
     }
     assert families == set(expected)
@@ -243,6 +245,3 @@ def test_no_sentence_for_people_is_written_in_the_scripts() -> None:
                 assert text in _NAMES_IN_PAGES, (
                     f"{page}: {text!r} is not in the catalog"
                 )
-
-    # 4. The part of app.js left out above is still there to be taken out.
-    assert "// i18n:legacy-begin" in (STATIC / "app.js").read_text("utf-8")

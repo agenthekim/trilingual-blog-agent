@@ -1048,3 +1048,111 @@ def test_each_row_offers_the_slide_action_its_state_allows(real, monkeypatch) ->
     assert re.search(r'"recreate"\)[^\n]*requestSlides\(row\)', script)
     assert 'act("pdf", {language: row.language})' in script
     assert re.search(r'"update_deck"\)[^\n]*/edit\?job=[^\n]*&push=1', script)
+
+
+def test_no_route_translates_what_a_person_typed(client) -> None:
+    """WEB-9: what a person typed is kept as typed; no model rewrites it."""
+    import ast
+
+    # The route that translated typed requests is gone, and no other route
+    # is named for requests, translating or localizing.
+    gone = client.post("/api/prompts/localize", json={"texts": ["Shorten it"]})
+    assert gone.status_code == 404
+    paths = sorted({route.path for route in web_ui.web.routes})
+    assert paths and not [
+        path for path in paths if re.search(r"prompt|locali[sz]e|translat", path)
+    ]
+    assert not hasattr(web_ui, "PromptLocalizeRequest")
+    assert not hasattr(web_ui, "localize_prompts")
+
+    # The web layer has no way to a model: it imports neither a model client
+    # nor the gateway nor the table of models (OPS-4).
+    server = (web_ui.STATIC_DIR.parent / "web_ui.py").read_text(encoding="utf-8")
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(server)):
+        if isinstance(node, ast.Import):
+            imported |= {alias.name for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            imported |= {f"{node.module}.{alias.name}" for alias in node.names}
+            imported.add(node.module or "")
+    for module in ("google.genai", "app.llm", "app.models"):
+        assert not [name for name in imported if name.startswith(module)], module
+
+    # The page asks nobody for a translation, reads no request with regular
+    # expressions to write it again, and keeps no translation of an entry.
+    script = (web_ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    for removed in (
+        "/api/prompts",
+        "parseSlidePromptIntent",
+        "formatSlidePromptIntent",
+        "localizeBuiltInPrompt",
+        "localizePromptItem",
+        "isConversationalReply",
+        "ensurePromptHistoryLocalized",
+        ".i18n",
+        "i18n:legacy",
+    ):
+        assert removed not in script, removed
+    # The only addresses the page calls are the settings and the runs.
+    called = set(re.findall(r"api\([\"`](/api/[a-z]+)", script))
+    assert called == {"/api/config", "/api/jobs"}
+
+
+def test_suggestions_come_from_the_catalogs_and_typed_requests_stay_as_typed(
+    client,
+) -> None:
+    """WEB-9: chips are suggestions; the modal has suggestions and my history."""
+    import json
+
+    script = (web_ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    names = re.findall(
+        r'"(\w+)"', re.search(r"const SUGGESTIONS = \[([^\]]*)\];", script).group(1)
+    )
+    assert names and len(names) == len(set(names))
+    catalogs = {
+        code: json.loads(client.get(f"/static/i18n/{code}.json").text)
+        for code in ("en", "ko", "ja")
+    }
+    for code, texts in catalogs.items():
+        # A suggestion is a text of the catalog, one per name, in each language.
+        assert sorted(key[7:] for key in texts if key.startswith("prompt.")) == sorted(
+            names
+        ), code
+    # Making slides again is a button of the Slides column (WEB-5), not a
+    # suggestion to type.
+    for name in names:
+        assert not re.search(r"slide|deck", catalogs["en"][f"prompt.{name}"], re.I), (
+            name
+        )
+
+    def body(function: str) -> str:
+        found = re.search(
+            rf"\nfunction {function}\([^)]*\) \{{\n(.*?)\n\}}\n", script, re.S
+        )
+        assert found, function
+        return found.group(1)
+
+    # Chips: suggestions only, the most used first; nothing a person typed.
+    chips = body("renderPromptChips")
+    assert "orderedSuggestions()" in chips and "getPromptHistory" not in chips
+    assert "count(b.name) - count(a.name)" in body("orderedSuggestions")
+    # How often a suggestion was sent is counted under its name.
+    record = body("recordPromptUsage")
+    assert "use[name] = " in record and "SUGGESTION_USE_KEY" in record
+    # What a person typed is kept as it was typed: the text, how often and
+    # when, and nothing else; an earlier entry is read without its other fields.
+    assert "list.push({text: clean, count: 1, lastUsed: Date.now()})" in record
+    kept = re.search(r"\.map\(\(item\) => \(\{([^}]*)\}\)\)", body("getPromptHistory"))
+    assert re.findall(r"(\w+):", kept.group(1)) == ["text", "count", "lastUsed"]
+    # Typed text is shown as it is, never through a text of the catalogs.
+    modal = body("renderPromptsModal")
+    assert "fillPromptInput(item.text)}, item.text)" in modal
+
+    # The modal: "Suggestions", then "My history (as typed)".
+    page = client.get("/").text
+    assert (
+        page.index('data-i18n="suggestionsLabel">Suggestions<')
+        < page.index('id="suggestionPromptsList"')
+        < page.index('data-i18n="myHistoryLabel">My history (as typed)<')
+        < page.index('id="historyPromptsList"')
+    )

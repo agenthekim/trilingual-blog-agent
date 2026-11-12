@@ -17,9 +17,6 @@ function applyUiLanguage(lang) {
   if (typeof renderPromptsModal === "function" && $("promptsModal") && $("promptsModal").open) {
     renderPromptsModal();
   }
-  if (typeof ensurePromptHistoryLocalized === "function") {
-    ensurePromptHistoryLocalized();
-  }
   if (typeof renderSourcesModal === "function" && $("sourcesModal") && $("sourcesModal").open) {
     renderSourcesModal();
   }
@@ -555,104 +552,45 @@ zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.ad
 zone.addEventListener("dragleave", () => zone.classList.remove("over"));
 zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
 
+// Under the message box (WEB-9). A suggestion is a text of the catalogs,
+// prompt.<name>, shown in the language of the page; how often each was sent
+// is counted under its name. What a person typed is kept as typed, under its
+// own heading, and is never translated.
+const SUGGESTIONS = ["shorten_title", "informal_intro", "retranslate"];
+const SUGGESTION_USE_KEY = "tba.suggestion_use";
 const PROMPT_HISTORY_KEY = "tba.prompt_history";
-// The suggestions are texts of the catalogs (prompt.0 to prompt.5), in the
-// same order in every language. They are filled in once the catalogs are read.
-const ESSENTIAL_PROMPT_COUNT = 6;
-const ESSENTIAL_PROMPTS_BY_LANG = {en: [], ko: [], ja: []};
-function readEssentialPrompts() {
-  for (const lang of UI_LANGS) {
-    ESSENTIAL_PROMPTS_BY_LANG[lang] = Array.from({length: ESSENTIAL_PROMPT_COUNT}, (_, i) => textIn(lang, "prompt." + i));
+const suggestionText = (name) => t("prompt." + name);
+// The name of the suggestion a text is, in whichever language it was sent.
+function suggestionNamed(text) {
+  return SUGGESTIONS.find((name) => UI_LANGS.some((lang) => textIn(lang, "prompt." + name) === text)) || null;
+}
+function getSuggestionUse() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SUGGESTION_USE_KEY) || "{}");
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  } catch (e) {
+    return {};
   }
 }
-const DEFAULT_QUICK_INDICES = [4, 5, 0];
-
-// i18n:legacy-begin
-// Reading a request typed in words, and writing it again in another language,
-// is taken out by WP-13 together with the words of three languages it needs.
-function parseSlidePromptIntent(text) {
-  const s = (text || "").trim();
-  if (!s || s.length > 90) return null;
-  if (!/(slide|slides|deck|슬라이드|덱|スライド|デッキ)/i.test(s)) return null;
-  if (!/(create|re-create|recreate|generate|make|build|제작|생성|만들|다시|재생성|재제작|作成|再作成|作っ)/i.test(s)) return null;
-  const langHits = [];
-  const patterns = [
-    ["en", /\b(english|en)\b|영어|영문|英語/i],
-    ["ko", /\b(korean|ko)\b|한국어|국문|韓国語/i],
-    ["ja", /\b(japanese|ja)\b|일본어|일문|日本語/i],
-  ];
-  for (const [code, rx] of patterns) {
-    const m = rx.exec(s);
-    if (m) langHits.push([m.index, code]);
-  }
-  if (langHits.length === 0) return null;
-  langHits.sort((a, b) => a[0] - b[0]);
-  const langs = langHits.map((x) => x[1]);
-  const recreate = /(re-create|recreate|again|다시|재생성|재제작|再作成|作り直)/i.test(s);
-  const withDeck = /(google slides|deck|덱|デッキ)/i.test(s);
-  return {langs, recreate, withDeck};
+// The suggestions, the most used first; unused ones stay in their own order.
+function orderedSuggestions() {
+  const use = getSuggestionUse();
+  const count = (name) => (Number.isFinite(use[name]) ? use[name] : 0);
+  return SUGGESTIONS.map((name, at) => ({name, at})).sort((a, b) => count(b.name) - count(a.name) || a.at - b.at).map((s) => s.name);
 }
 
-function formatSlidePromptIntent(intent, targetLang) {
-  const {langs, recreate, withDeck} = intent;
-  if (targetLang === "ko") {
-    const names = {en: "영어", ko: "한국어", ja: "일본어"};
-    const joined = langs.length === 2
-      ? `${names[langs[0]]}와 ${names[langs[1]]}`
-      : langs.map((l) => names[l]).join(", ");
-    const targetObj = withDeck ? "발표 슬라이드와 Google Slides 덱을" : "슬라이드를";
-    return recreate ? `${joined} ${targetObj} 다시 만들어줘` : `${joined} ${targetObj} 제작해`;
-  }
-  if (targetLang === "ja") {
-    const names = {en: "英語", ko: "韓国語", ja: "日本語"};
-    const joined = langs.map((l) => names[l]).join("と");
-    const targetObj = withDeck ? "のスライドとGoogle Slidesデッキを" : "のスライドを";
-    return recreate ? `${joined}${targetObj}再作成して` : `${joined}${targetObj}作成して`;
-  }
-  const names = {en: "English", ko: "Korean", ja: "Japanese"};
-  const joined = langs.length === 1
-    ? names[langs[0]]
-    : langs.length === 2
-      ? `${names[langs[0]]} and ${names[langs[1]]}`
-      : `${names[langs[0]]}, ${names[langs[1]]}, and ${names[langs[2]]}`;
-  const targetObj = withDeck ? "slides and Google Slides deck" : "slides";
-  return `${recreate ? "Re-create" : "Create"} the ${joined} ${targetObj}`;
-}
-
-function localizeBuiltInPrompt(text, targetLang) {
-  const clean = (text || "").trim().toLowerCase();
-  const targetList = ESSENTIAL_PROMPTS_BY_LANG[targetLang] || ESSENTIAL_PROMPTS_BY_LANG.en;
-  for (const list of Object.values(ESSENTIAL_PROMPTS_BY_LANG)) {
-    const idx = list.findIndex((p) => p.toLowerCase() === clean);
-    if (idx >= 0 && targetList[idx]) return targetList[idx];
-  }
-  const intent = parseSlidePromptIntent(text);
-  if (intent) return formatSlidePromptIntent(intent, targetLang);
-  return text;
-}
-
-function localizePromptItem(item, targetLang) {
-  if (!item) return "";
-  const builtIn = localizeBuiltInPrompt(item.text, targetLang);
-  if (builtIn !== item.text) return builtIn;
-  if (item.i18n && typeof item.i18n[targetLang] === "string" && item.i18n[targetLang].trim()) {
-    return item.i18n[targetLang].trim();
-  }
-  return item.text;
-}
-
-function isConversationalReply(text) {
-  return /^(yes|no|ok|okay|sure|네|예|응|아니)\b/i.test(text.trim());
-}
-// i18n:legacy-end
-
+// What a person typed, the most used first. An entry is {text, count,
+// lastUsed}; whatever else an entry of an earlier version holds (it kept
+// translations) is not read and is dropped the next time the list is saved.
+// An earlier entry that is the text of a suggestion is not a typed request.
 function getPromptHistory() {
   try {
     const raw = JSON.parse(localStorage.getItem(PROMPT_HISTORY_KEY) || "[]");
     if (!Array.isArray(raw)) return [];
     return raw
-      .filter((item) => item && typeof item.text === "string" && item.text.trim() && !isConversationalReply(item.text))
-      .sort((a, b) => (b.count || 0) - (a.count || 0) || (b.lastUsed || 0) - (a.lastUsed || 0));
+      .filter((item) => item && typeof item.text === "string" && item.text.trim() && !suggestionNamed(item.text.trim()))
+      .map((item) => ({text: item.text, count: Number.isFinite(item.count) ? item.count : 1, lastUsed: Number.isFinite(item.lastUsed) ? item.lastUsed : 0}))
+      .sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed);
   } catch (e) {
     return [];
   }
@@ -662,77 +600,34 @@ function savePromptHistory(list) {
   try { localStorage.setItem(PROMPT_HISTORY_KEY, JSON.stringify(list.slice(0, 50))); } catch (e) {}
 }
 
-let _localizingPrompts = false;
-async function ensurePromptHistoryLocalized() {
-  if (_localizingPrompts) return;
-  const list = getPromptHistory();
-  const missing = list.filter((item) => {
-    const isStructured = localizeBuiltInPrompt(item.text, "en") !== item.text
-      || localizeBuiltInPrompt(item.text, "ko") !== item.text
-      || localizeBuiltInPrompt(item.text, "ja") !== item.text;
-    if (isStructured) return false;
-    return !item.i18n || !item.i18n.en || !item.i18n.ko || !item.i18n.ja;
-  });
-  if (missing.length === 0) return;
-  _localizingPrompts = true;
-  try {
-    const res = await api("/api/prompts/localize", {texts: missing.map((m) => m.text)});
-    const map = (res && res.translations) || {};
-    let changed = false;
-    const updated = getPromptHistory();
-    for (const item of updated) {
-      const tr = map[item.text];
-      if (tr && typeof tr === "object" && (tr.en || tr.ko || tr.ja)) {
-        item.i18n = {
-          en: tr.en || item.text,
-          ko: tr.ko || item.text,
-          ja: tr.ja || item.text,
-        };
-        changed = true;
-      }
-    }
-    if (changed) {
-      savePromptHistory(updated);
-      renderPromptChips();
-      if ($("promptsModal") && $("promptsModal").open) renderPromptsModal();
-    }
-  } catch (e) {
-  } finally {
-    _localizingPrompts = false;
-  }
-}
-
+// Called with what was sent: a suggestion sent as it is counts for the
+// suggestion; anything else is the person's own text and is kept as typed.
 function recordPromptUsage(text) {
   const clean = text.trim();
-  if (!clean || isConversationalReply(clean)) return;
-  const canonical = localizeBuiltInPrompt(clean, "en");
-  const list = getPromptHistory();
-  const idx = list.findIndex((item) => localizeBuiltInPrompt(item.text, "en").toLowerCase() === canonical.toLowerCase());
-  if (idx >= 0) {
-    list[idx].text = canonical;
-    list[idx].count = (list[idx].count || 1) + 1;
-    list[idx].lastUsed = Date.now();
+  if (!clean) return;
+  const name = suggestionNamed(clean);
+  if (name) {
+    const use = getSuggestionUse();
+    use[name] = (Number.isFinite(use[name]) ? use[name] : 0) + 1;
+    try { localStorage.setItem(SUGGESTION_USE_KEY, JSON.stringify(use)); } catch (e) {}
   } else {
-    list.push({text: canonical, count: 1, lastUsed: Date.now()});
+    const list = getPromptHistory();
+    const found = list.find((item) => item.text === clean);
+    if (found) { found.count += 1; found.lastUsed = Date.now(); }
+    else list.push({text: clean, count: 1, lastUsed: Date.now()});
+    savePromptHistory(list);
   }
-  savePromptHistory(list);
   renderPromptChips();
-  ensurePromptHistoryLocalized();
 }
 
 function deletePromptHistoryItem(text) {
-  const canonical = localizeBuiltInPrompt(text, "en").toLowerCase();
-  const list = getPromptHistory().filter((item) => localizeBuiltInPrompt(item.text, "en").toLowerCase() !== canonical);
-  savePromptHistory(list);
-  renderPromptChips();
+  savePromptHistory(getPromptHistory().filter((item) => item.text !== text));
   renderPromptsModal();
 }
 
-// The built-in request to localize again, in the language of the page.
-const RETRANSLATE_PROMPT = 3;  // its place in ESSENTIAL_PROMPTS_BY_LANG
+// The suggestion to localize again, in the language of the page.
 function offerRetranslation() {
-  const list = ESSENTIAL_PROMPTS_BY_LANG[currentUiLang] || ESSENTIAL_PROMPTS_BY_LANG.en;
-  fillPromptInput(list[RETRANSLATE_PROMPT]);
+  fillPromptInput(suggestionText("retranslate"));
 }
 
 function fillPromptInput(text) {
@@ -743,46 +638,25 @@ function fillPromptInput(text) {
   input.setSelectionRange(input.value.length, input.value.length);
 }
 
-function getTopPromptChips(limit = 3) {
-  const lang = currentUiLang || "en";
-  const essentials = ESSENTIAL_PROMPTS_BY_LANG[lang] || ESSENTIAL_PROMPTS_BY_LANG.en;
-  const defaults = DEFAULT_QUICK_INDICES.map((i) => essentials[i]);
-  const history = getPromptHistory().map((item) => localizePromptItem(item, lang));
-  const picked = [];
-  for (const h of history) {
-    if (picked.length >= limit) break;
-    if (!picked.some((p) => p.toLowerCase() === h.toLowerCase())) picked.push(h);
-  }
-  for (const seed of defaults) {
-    if (picked.length >= limit) break;
-    if (!picked.some((p) => p.toLowerCase() === seed.toLowerCase())) picked.push(seed);
-  }
-  return picked.slice(0, limit);
-}
-
+// The chips are suggestions only.
 function renderPromptChips() {
   const container = $("promptChipsList");
   if (!container) return;
-  const chips = getTopPromptChips(3).map((text) =>
-    el("button", {
-      type: "button",
-      class: "prompt-chip",
-      title: text,
-      onclick: () => fillPromptInput(text),
-    }, text)
-  );
-  container.replaceChildren(...chips);
+  container.replaceChildren(...orderedSuggestions().slice(0, 3).map((name) => {
+    const text = suggestionText(name);
+    return el("button", {type: "button", class: "prompt-chip", title: text, onclick: () => fillPromptInput(text)}, text);
+  }));
 }
 
+// Two groups: the suggestions, and what the person typed, as typed.
 function renderPromptsModal() {
-  const lang = currentUiLang || "en";
-  const essentials = ESSENTIAL_PROMPTS_BY_LANG[lang] || ESSENTIAL_PROMPTS_BY_LANG.en;
-  const essentialBox = $("essentialPromptsList");
-  if (essentialBox) {
-    essentialBox.replaceChildren(...essentials.map((text) =>
-      el("div", {class: "prompt-modal-item"},
-        el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(text)}, text))
-    ));
+  const suggestionBox = $("suggestionPromptsList");
+  if (suggestionBox) {
+    suggestionBox.replaceChildren(...orderedSuggestions().map((name) => {
+      const text = suggestionText(name);
+      return el("div", {class: "prompt-modal-item"},
+        el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(text)}, text));
+    }));
   }
   const historyBox = $("historyPromptsList");
   if (historyBox) {
@@ -790,18 +664,16 @@ function renderPromptsModal() {
     if (history.length === 0) {
       historyBox.replaceChildren(el("span", {class: "muted small"}, t("noHistoryText")));
     } else {
-      historyBox.replaceChildren(...history.map((item) => {
-        const shownText = localizePromptItem(item, lang);
-        return el("div", {class: "prompt-modal-item"},
-          el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(shownText)}, shownText),
-          el("span", {class: "badge", style: "font-size:11px"}, `×${item.count || 1}`),
+      historyBox.replaceChildren(...history.map((item) =>
+        el("div", {class: "prompt-modal-item"},
+          el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(item.text)}, item.text),
+          el("span", {class: "badge", style: "font-size:11px"}, `×${item.count}`),
           el("button", {
             type: "button",
             class: "prompt-del",
             title: t("removeFromHistory"),
             onclick: () => deletePromptHistoryItem(item.text),
-          }, "×"));
-      }));
+          }, "×"))));
     }
   }
 }
@@ -815,7 +687,6 @@ if ($("closePromptsModal")) $("closePromptsModal").addEventListener("click", () 
 if ($("clearPromptHistory")) {
   $("clearPromptHistory").addEventListener("click", () => {
     savePromptHistory([]);
-    renderPromptChips();
     renderPromptsModal();
   });
 }
@@ -1008,10 +879,9 @@ zone.addEventListener("submit", async (e) => {
   } catch (error) { toast(error.message, 6000); $("run").disabled = false; }
 });
 
-// The page starts once the texts are read: the suggestions, the texts written
-// into the page, then the last settings and the run this browser had open.
+// The page starts once the texts are read: the texts written into the page
+// and the suggestions, then the last settings and the run this browser had open.
 loadCatalogs().then(() => {
-  readEssentialPrompts();
   applyUiLanguage(currentUiLang);
 
   // Restore the last settings, then the run in the address or the last run of this browser.

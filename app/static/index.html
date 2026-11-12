@@ -133,15 +133,15 @@
 
 <dialog id="promptsModal" aria-labelledby="promptsModalTitle">
   <div class="body">
-    <h2 id="promptsModalTitle" data-i18n="promptsModalTitle">Prompt library &amp; history</h2>
+    <h2 id="promptsModalTitle" data-i18n="promptsModalTitle">Suggestions &amp; my history</h2>
     <p class="muted small" style="margin:0" data-i18n="promptsModalHint">Click a prompt to fill the box, edit if needed, and press Send.</p>
     <div>
-      <div class="field" style="font-weight:600; margin-bottom:6px" data-i18n="essentialPromptsLabel">Essential actions</div>
-      <div id="essentialPromptsList" class="prompt-modal-list"></div>
+      <div class="field" style="font-weight:600; margin-bottom:6px" data-i18n="suggestionsLabel">Suggestions</div>
+      <div id="suggestionPromptsList" class="prompt-modal-list"></div>
     </div>
     <div style="margin-top:6px; padding-top:12px; border-top:1px solid var(--line)">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
-        <span class="field" style="font-weight:600" data-i18n="historyPromptsLabel">Your popular prompts</span>
+        <span class="field" style="font-weight:600" data-i18n="myHistoryLabel">My history (as typed)</span>
         <button type="button" id="clearPromptHistory" class="ghost small" data-i18n="clearHistoryBtn" style="font-size:12px; height:24px; padding:0 6px">Clear history</button>
       </div>
       <div id="historyPromptsList" class="prompt-modal-list"></div>

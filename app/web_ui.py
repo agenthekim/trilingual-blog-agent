@@ -192,10 +192,6 @@ class MessageRequest(BaseModel):
     text: str = Field(min_length=1, max_length=80_000)
 
 
-class PromptLocalizeRequest(BaseModel):
-    texts: list[str] = Field(default_factory=list, max_length=20)
-
-
 class EditRequest(BaseModel):
     markdown: str = Field(min_length=1, max_length=200_000)
     title: str | None = Field(default=None, max_length=MAX_TITLE_CHARS)
@@ -435,45 +431,6 @@ async def list_recent_jobs() -> dict[str, Any]:
         except Exception:
             continue
     return {"jobs": items}
-
-
-@web.post("/api/prompts/localize")
-async def localize_prompts(request: PromptLocalizeRequest) -> dict[str, Any]:
-    """Translate user-entered quick prompts into English, Korean, and Japanese."""
-    cleaned = [t.strip()[:200] for t in request.texts if t and t.strip()][:20]
-    if not cleaned:
-        return {"translations": {}}
-    try:
-        from google import genai
-        from google.genai import types as genai_types
-
-        from app.models import FAST_MODEL
-
-        prompt = (
-            "Translate each of the following user instructions for a blog/slides "
-            "editing assistant into natural, concise English (en), Korean (ko), "
-            "and Japanese (ja). Return a JSON object mapping each exact input "
-            'string to {"en": "...", "ko": "...", "ja": "..."}.\n\n'
-            f"Inputs:\n{json.dumps(cleaned, ensure_ascii=False)}"
-        )
-
-        def _call() -> dict[str, Any]:
-            client = genai.Client()
-            resp = client.models.generate_content(
-                model=FAST_MODEL,
-                contents=prompt,
-                config=genai_types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.1,
-                ),
-            )
-            data = json.loads(resp.text or "{}")
-            return data if isinstance(data, dict) else {}
-
-        translations = await asyncio.to_thread(_call)
-        return {"translations": translations}
-    except Exception:
-        return {"translations": {}}
 
 
 @web.post("/api/jobs")

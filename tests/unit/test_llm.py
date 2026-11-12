@@ -12,13 +12,6 @@ from app import llm
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# What calls a model directly although OPS-4 says it must not, and the work
-# package that removes it. An entry here is a debt with a date: the test fails
-# once the call is gone, so the entry has to be deleted with it.
-#   app/web_ui.py: POST /api/prompts/localize translates typed prompts with a
-#   client of its own. WP-13 removes the route.
-KNOWN_EXCEPTIONS_UNTIL_WP_13 = {"app/web_ui.py"}
-
 _DIRECT_CALL = re.compile(r"genai\.Client\(|\.generate_content(_async|_stream)?\(")
 _AGENT_MODEL = re.compile(r"(?<!def )\b(model_for|Gemini)\(")
 
@@ -34,11 +27,7 @@ def test_models_are_called_from_the_agents_and_the_gateway_only() -> None:
     sources = _app_sources()
 
     direct = {name for name, text in sources.items() if _DIRECT_CALL.search(text)}
-    assert direct - KNOWN_EXCEPTIONS_UNTIL_WP_13 == {"app/llm.py"}
-    assert KNOWN_EXCEPTIONS_UNTIL_WP_13 <= direct, (
-        "A known exception no longer calls a model: delete it from "
-        "KNOWN_EXCEPTIONS_UNTIL_WP_13."
-    )
+    assert direct == {"app/llm.py"}
 
     # Agents get their models in app/agent.py, from the one function in
     # app/models.py that builds them.
