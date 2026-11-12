@@ -602,7 +602,7 @@ async def test_a_deck_needs_the_plan_of_its_language_and_human_approval(
 
     tool = slides.create_google_slides_deck_with_speaker_notes
     assert (await tool("en", tool_context))["error_code"] == "NO_SLIDE_PLAN"
-    assert (await tool("fr", tool_context))["error_code"] == "UNKNOWN_LANGUAGE"
+    assert (await tool("fr", tool_context))["error_code"] == "INVALID_ARGUMENTS"
 
     calls = []
 

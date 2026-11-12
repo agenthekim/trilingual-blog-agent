@@ -194,6 +194,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | OPS-1 | 모든 도구 호출은 의도와 결과로 나누어, 마스킹을 적용한 구조화된 JSON으로 로그에 남긴다. 플랫폼 호출은 트레이싱 스팬 안에서 실행한다 |
 | OPS-2 | `uv run pytest tests/unit`은 모델, 네트워크, 자격 증명 없이 실행되며, 부록 B가 단위 테스트에 배정한 모든 요구사항을 다룬다. 이것은 픽스처가 보장한다. 픽스처는 네트워크 연결과 모델 관문을 거부하고, `.env`는 읽지 않는다 |
 | OPS-3 | 모델 이름은 설정값(`FAST_MODEL_NAME`, `REASONING_MODEL_NAME`)이며 코드 수정으로 바꾸지 않는다 |
+| OPS-5 | 에이전트가 도구로 부를 수 있는 모든 함수는 다음을 갖춘다. 무엇을 어디에 하는지 말하는 이름, 목적과 각 인자와 반환값을 적은 독스트링, 기본값이 없고 타입이 선언된 인자(허용되는 언어, 플랫폼, 코드 방식은 모델에 보이는 열거형이다), 어떤 일도 일어나기 전에 Pydantic 모델로 하는 인자 검사, 그리고 요청한 일을 할 수 없을 때 예외 대신 `error_code`와 `recovery_instruction`이 든 결과 |
 
 ---
 
@@ -420,4 +421,5 @@ flowchart TD
 | OPS-1 | `test_log_records_are_scrubbed_before_emission` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: 코드를 수정하는 사람을 위한 규칙이다. 기본값은 `app/models.py`에 있으며 환경 변수에서 읽는다 |
+| OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 <!-- traceability:end -->

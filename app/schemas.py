@@ -73,6 +73,22 @@ def _allowed_article_url(value: str) -> str:
     return value.strip()
 
 
+class LanguageInput(BaseModel):
+    """The one argument of every tool that works on one language's post or deck."""
+
+    language: LanguageCode
+
+
+def checked_language(language: str) -> LanguageCode | dict[str, Any]:
+    """The language when it is one of the three, else the error a tool returns."""
+    try:
+        return LanguageInput(language=language).language  # type: ignore[arg-type]
+    except ValidationError as exc:
+        return validation_error(
+            exc, "Call again with language set to 'ko', 'en' or 'ja'."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Stage 1: seed article
 # ---------------------------------------------------------------------------
@@ -130,6 +146,7 @@ class SeedSavedOutput(BaseModel):
 
 class LoadDraftInput(BaseModel):
     relative_path: str = Field(min_length=1, max_length=300)
+    source_language: LanguageCode
 
     @field_validator("relative_path")
     @classmethod
@@ -223,6 +240,15 @@ class PublishOutput(BaseModel):
     status: Literal["success", "pending_human_approval", "declined"]
     publication: PublicationRecord | None = None
     message: str
+
+
+class PostedUrlInput(BaseModel):
+    """Where a person says a post is: the platform and the address together."""
+
+    platform: PlatformName
+    url: str = Field(description="https URL of the post on that platform's site.")
+
+    _check_url = field_validator("url")(_allowed_article_url)
 
 
 class UrlCheck(BaseModel):

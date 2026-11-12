@@ -19,8 +19,10 @@ from app.markdown_checks import (
 )
 from app.persistence import get_article_store
 from app.schemas import (
+    LanguageCode,
     PresentationBriefInput,
     SlideDeckPlan,
+    checked_language,
     tool_error,
     validation_error,
 )
@@ -38,7 +40,7 @@ MAX_SLIDE_SECONDS = 75
 
 
 def set_presentation_brief(
-    language: str,
+    language: LanguageCode,
     audience: str = "software engineers",
     minutes: int = 15,
     tool_context: ToolContext = None,  # type: ignore[assignment]
@@ -117,12 +119,10 @@ def plan_of_record(session_state: Any, language: str) -> SlideDeckPlan | None:
 def _load_plan(
     tool_context: ToolContext, language: str
 ) -> SlideDeckPlan | dict[str, Any]:
-    if language not in LANGUAGES:
-        return tool_error(
-            "UNKNOWN_LANGUAGE",
-            f"'{language}' is not one of the three languages.",
-            "Use 'ko', 'en' or 'ja'.",
-        )
+    checked = checked_language(language)
+    if isinstance(checked, dict):
+        return checked
+    language = checked
     plan = plan_of_record(tool_context.state, language)
     if plan is None:
         have = sorted(tool_context.state.get(state.SLIDE_PLANS) or {})
@@ -215,7 +215,7 @@ def _expected_slides(session_state: Any, plan: SlideDeckPlan) -> int:
 
 
 def check_slide_script_timing(
-    language: str, tool_context: ToolContext
+    language: LanguageCode, tool_context: ToolContext
 ) -> dict[str, Any]:
     """Check one language's slide plan against the one-slide-per-minute rule.
 
@@ -230,6 +230,8 @@ def check_slide_script_timing(
         status, passed, slide_count, expected_slide_count, and per-slide
         estimated_seconds with a verdict. When passed is false,
         recovery_instruction lists the slides to lengthen or shorten.
+        On failure: status 'error' with error_code, message and
+        recovery_instruction.
     """
     plan = _load_plan(tool_context, language)
     if isinstance(plan, dict):
@@ -368,7 +370,7 @@ def parse_slide_plan_markdown(text: str, language: str) -> SlideDeckPlan:
 
 
 def export_slide_plan_markdown(
-    language: str, tool_context: ToolContext
+    language: LanguageCode, tool_context: ToolContext
 ) -> dict[str, Any]:
     """Write one language's slide plan, with its speaker script, to a Markdown file.
 
@@ -494,7 +496,7 @@ def article_tables(session_state: Any, language: str) -> dict[str, list[list[str
 
 
 async def create_google_slides_deck_with_speaker_notes(
-    language: str, tool_context: ToolContext
+    language: LanguageCode, tool_context: ToolContext
 ) -> dict[str, Any]:
     """Create a Google Slides deck from one language's slide plan, after human approval.
 
@@ -581,7 +583,7 @@ async def create_google_slides_deck_with_speaker_notes(
 
 
 async def export_google_slides_pdf(
-    language: str, tool_context: ToolContext
+    language: LanguageCode, tool_context: ToolContext
 ) -> dict[str, Any]:
     """Export one language's Google Slides deck as ``slides.<lang>.pdf`` (SLD-12).
 
@@ -592,12 +594,10 @@ async def export_google_slides_pdf(
         On success: status, language, file, pdf_file and bytes. On failure:
         status 'error' with error_code, message and recovery_instruction.
     """
-    if language not in LANGUAGES:
-        return tool_error(
-            "UNKNOWN_LANGUAGE",
-            f"'{language}' is not one of the three languages.",
-            "Use 'ko', 'en' or 'ja'.",
-        )
+    checked = checked_language(language)
+    if isinstance(checked, dict):
+        return checked
+    language = checked
     project_id = tool_context.state.get(state.PROJECT_ID)
     if not project_id:
         return tool_error(

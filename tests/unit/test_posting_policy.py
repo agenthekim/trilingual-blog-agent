@@ -319,7 +319,7 @@ def test_the_finalize_tool_records_nothing_until_a_person_confirms(
     finalized_project,
 ) -> None:
     tool = publish.finalize_localized_post
-    assert tool("fr", finalized_project)["error_code"] == "UNKNOWN_LANGUAGE"
+    assert tool("fr", finalized_project)["error_code"] == "INVALID_ARGUMENTS"
 
     asked = tool("en", finalized_project)
     assert asked["status"] == "pending_human_approval"

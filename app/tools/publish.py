@@ -31,11 +31,14 @@ from app import platforms, policy, state
 from app.persistence import get_article_store
 from app.schemas import (
     DevtoDraftInput,
-    FetchArticleInput,
+    LanguageCode,
+    PlatformName,
+    PostedUrlInput,
     PublicationRecord,
     PublishOutput,
     QiitaDraftInput,
     UrlCheck,
+    checked_language,
     tool_error,
     validation_error,
 )
@@ -43,7 +46,6 @@ from app.settings import (
     ALLOWED_ARTICLE_HOSTS,
     LANGUAGE_FOR_PLATFORM,
     LANGUAGE_NAMES,
-    LANGUAGES,
 )
 from app.tools.articles import write_workspace_file
 
@@ -280,7 +282,9 @@ def _approved_as_public(tool_context: ToolContext) -> bool:
     return isinstance(payload, dict) and payload.get("visibility") == "public"
 
 
-def finalize_localized_post(language: str, tool_context: ToolContext) -> dict[str, Any]:
+def finalize_localized_post(
+    language: LanguageCode, tool_context: ToolContext
+) -> dict[str, Any]:
     """Record the user's sign-off of one post (its title and text), after they confirm.
 
     Posting to Qiita or DEV Community needs it. Use it when the user says a
@@ -298,12 +302,10 @@ def finalize_localized_post(language: str, tool_context: ToolContext) -> dict[st
         or 'success' with language, title and finalized. On failure: status
         'error' with error_code, message and recovery_instruction.
     """
-    if language not in LANGUAGES:
-        return tool_error(
-            "UNKNOWN_LANGUAGE",
-            f"'{language}' is not one of the three languages.",
-            "Use 'ko', 'en' or 'ja'.",
-        )
+    checked = checked_language(language)
+    if isinstance(checked, dict):
+        return checked
+    language = checked
     confirmation = tool_context.tool_confirmation
     payload = getattr(confirmation, "payload", None)
     acknowledged = isinstance(payload, dict) and bool(
@@ -589,7 +591,7 @@ async def publish_devto_article_draft(
 
 
 def record_manually_posted_url(
-    platform: str, url: str, tool_context: ToolContext
+    platform: PlatformName, url: str, tool_context: ToolContext
 ) -> dict[str, Any]:
     """Record the URL of a post the user published by hand or made public.
 
@@ -605,6 +607,16 @@ def record_manually_posted_url(
         On success: status and the updated publication record. On failure:
         status 'error' with error_code, message and recovery_instruction.
     """
+    try:
+        # The platform is one of the three; the URL is https on one of their sites.
+        request = PostedUrlInput(platform=platform, url=url)
+    except ValidationError as exc:
+        return validation_error(
+            exc,
+            "platform must be 'naver_blog', 'qiita' or 'devto'; ask the user for "
+            "the https URL of the post on that platform.",
+        )
+    platform, checked_url = request.platform, request.url
     project_id = tool_context.state.get(state.PROJECT_ID)
     if not project_id:
         return tool_error(
@@ -612,16 +624,6 @@ def record_manually_posted_url(
             "No article project in this session.",
             "Start with a seed article.",
         )
-    if platform not in LANGUAGE_FOR_PLATFORM:
-        return tool_error(
-            "UNKNOWN_PLATFORM",
-            f"'{platform}' is not a supported platform.",
-            "Use one of: naver_blog, qiita, devto.",
-        )
-    try:
-        checked_url = FetchArticleInput(url=url).url  # https, one of the three sites
-    except ValidationError as exc:
-        return validation_error(exc, "Ask the user for the https URL of the post.")
     name = policy.PLATFORM_NAMES[platform]
     host = (urlparse(checked_url).hostname or "").lower().removeprefix("www.")
     if ALLOWED_ARTICLE_HOSTS.get(host) != platform:

@@ -13,12 +13,15 @@ from pydantic import ValidationError
 from app import platforms, state
 from app.persistence import get_article_store
 from app.schemas import (
+    CodeMode,
     FetchArticleInput,
     FetchArticleOutput,
+    LanguageCode,
     LoadDraftInput,
     PublicationRecord,
     SaveSeedInput,
     SeedSavedOutput,
+    checked_language,
     tool_error,
     validation_error,
 )
@@ -312,7 +315,7 @@ async def fetch_published_article_markdown(
 
 
 def load_markdown_draft_file(
-    relative_path: str, source_language: str, tool_context: ToolContext
+    relative_path: str, source_language: LanguageCode, tool_context: ToolContext
 ) -> dict[str, Any]:
     """Load a local Markdown draft from the workspace directory as a seed draft.
 
@@ -330,10 +333,15 @@ def load_markdown_draft_file(
         message and recovery_instruction.
     """
     try:
-        request = LoadDraftInput(relative_path=relative_path)
+        request = LoadDraftInput(
+            relative_path=relative_path,
+            source_language=source_language,
+        )
     except ValidationError as exc:
         return validation_error(
-            exc, "Ask the user for a .md path relative to the workspace directory."
+            exc,
+            "Ask the user for a .md path relative to the workspace directory; "
+            "source_language must be 'ko', 'en' or 'ja'.",
         )
     root = workspace_dir()
     path = (root / request.relative_path).resolve()
@@ -347,7 +355,7 @@ def load_markdown_draft_file(
     return save_seed_article_revision(
         title=title_of_draft(markdown, fallback=path.stem),
         markdown=markdown,
-        source_language=source_language,
+        source_language=request.source_language,
         code_mode="inline_markdown" if "```" in markdown else "none",
         code_repo_url="",
         finalized=False,
@@ -358,8 +366,8 @@ def load_markdown_draft_file(
 def save_seed_article_revision(
     title: str,
     markdown: str,
-    source_language: str,
-    code_mode: str,
+    source_language: LanguageCode,
+    code_mode: CodeMode,
     code_repo_url: str,
     finalized: bool,
     tool_context: ToolContext,
@@ -390,8 +398,8 @@ def save_seed_article_revision(
         request = SaveSeedInput(
             title=title,
             markdown=markdown,
-            source_language=source_language,  # type: ignore[arg-type]
-            code_mode=code_mode,  # type: ignore[arg-type]
+            source_language=source_language,
+            code_mode=code_mode,
             code_repo_url=code_repo_url or None,
             finalized=finalized,
         )
@@ -448,14 +456,27 @@ def finalize_seed_article(tool_context: ToolContext) -> dict[str, Any]:
     }
 
 
-def read_article_post(language: str, tool_context: ToolContext) -> dict[str, Any]:
-    """Read the current title and Markdown of one language's blog post ('ko', 'en' or 'ja')."""
-    if language not in LANGUAGES:
-        return tool_error(
-            "UNKNOWN_LANGUAGE",
-            f"'{language}' is not one of the three languages.",
-            "Use 'ko', 'en' or 'ja'.",
-        )
+def read_article_post(
+    language: LanguageCode, tool_context: ToolContext
+) -> dict[str, Any]:
+    """Read the current title and Markdown text of one language's blog post.
+
+    Use this before answering a question about a post or changing it, so that
+    what you say or change is based on the text as it is now, including what
+    the user edited on the page.
+
+    Args:
+        language: Which post to read: 'ko', 'en' or 'ja'.
+
+    Returns:
+        On success: status, language, title and markdown (the whole text). On
+        failure: status 'error' with error_code, message and
+        recovery_instruction.
+    """
+    checked = checked_language(language)
+    if isinstance(checked, dict):
+        return checked
+    language = checked
     text = state.article_markdown(tool_context.state, language)
     if not text:
         return tool_error(
@@ -472,27 +493,37 @@ def read_article_post(language: str, tool_context: ToolContext) -> dict[str, Any
 
 
 def update_article_post(
-    language: str,
+    language: LanguageCode,
     title: str,
     markdown: str,
     tool_context: ToolContext,
 ) -> dict[str, Any]:
-    """Update the title and/or Markdown body of one language's blog post ('ko', 'en' or 'ja').
+    """Change the title, the Markdown text, or both, of one language's blog post.
 
-    Pass a non-empty `title` to update the post title, and/or pass the full
-    updated `markdown` body (or leave `markdown` as an empty string '' if only
-    changing the title). Changes are saved to both session state and post.<lang>.md.
+    Use this when the user asks for a change to a post that exists. The change
+    is saved to the session and to post.<lang>.md, and a version is kept. A
+    change to a post undoes the user's sign-off of it.
+
+    Args:
+        language: Which post to change: 'ko', 'en' or 'ja'.
+        title: The new title, or an empty string '' to keep the title as it is.
+        markdown: The whole new Markdown text of the post, not a diff or an
+            excerpt, or an empty string '' to keep the text and change only
+            the title.
+
+    Returns:
+        On success: status, language, title, file and markdown_chars. On
+        failure: status 'error' with error_code, message and
+        recovery_instruction.
     """
     from app.markdown_checks import check_fidelity
 
     max_title_chars = 120
 
-    if language not in LANGUAGES:
-        return tool_error(
-            "UNKNOWN_LANGUAGE",
-            f"'{language}' is not one of the three languages.",
-            "Use 'ko', 'en' or 'ja'.",
-        )
+    checked = checked_language(language)
+    if isinstance(checked, dict):
+        return checked
+    language = checked
     project_id = tool_context.state.get(state.PROJECT_ID) or ""
     old_text = state.article_markdown(tool_context.state, language) or ""
     if not project_id or not old_text:
