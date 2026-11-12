@@ -164,19 +164,20 @@
 
   <form class="card" id="dropZone" novalidate>
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px">
-      <label class="field" for="source" style="margin-bottom:0"><span data-i18n="sourceTitle">Source document</span>
-        <span class="hint" data-i18n="sourceHint">Share a post URL, a .md file, or your document.</span>
-      </label>
+      <div style="display:grid; gap:4px">
+        <label class="field" for="source" style="margin-bottom:0"><span data-i18n="sourceTitle">Source document</span></label>
+        <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap">
+          <span class="hint" data-i18n="sourceHint">Share a post URL, a .md file, or your document.</span>
+          <button type="button" id="openSourcesModal" class="ghost small" data-i18n="recentSourcesBtn" style="font-size:12.5px; height:auto; padding:0; white-space:nowrap">Recent sources…</button>
+        </div>
+      </div>
       <button type="button" class="primary hidden" id="clearRun" data-i18n="clearBtn" style="font-size:12px; padding:0 12px; height:28px; white-space:nowrap">Clear / New article</button>
     </div>
     <textarea id="source" required placeholder="https://qiita.com/you/items/…   or   # My draft …"></textarea>
-    <div class="under" style="justify-content:space-between">
-      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-        <button type="button" id="attach" data-i18n="attachBtn">Attach .md file</button>
-        <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" class="hidden">
-        <span class="muted small" id="fileInfo" data-i18n="dropHint">or drop a file anywhere on this card</span>
-      </div>
-      <button type="button" id="openSourcesModal" class="ghost small" data-i18n="recentSourcesBtn" style="font-size:12px; height:26px; padding:0 6px; white-space:nowrap">Recent sources…</button>
+    <div class="under">
+      <button type="button" id="attach" data-i18n="attachBtn">Attach .md file</button>
+      <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" class="hidden">
+      <span class="muted small" id="fileInfo" data-i18n="dropHint">or drop a file anywhere on this card</span>
     </div>
 
     <fieldset>

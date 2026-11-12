@@ -38,7 +38,10 @@ MAX_SLIDE_SECONDS = 75
 
 
 def set_presentation_brief(
-    language: str, audience: str, minutes: int, tool_context: ToolContext
+    language: str,
+    audience: str = "software engineers",
+    minutes: int = 15,
+    tool_context: ToolContext = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Record who the talk is for, in which language, and how long it runs.
 
@@ -47,16 +50,34 @@ def set_presentation_brief(
 
     Args:
         language: Language of the slides and speaker script: 'ko', 'en' or 'ja'.
-        audience: Who will watch, for example 'backend engineers new to agents'.
-        minutes: Length of the talk in minutes, 1 to 60.
+        audience: Who will watch, for example 'software engineers'. Defaults to
+            the previous brief's audience or 'software engineers'.
+        minutes: Length of the talk in minutes, 1 to 60. Defaults to the
+            existing plan's slide count or 15.
 
     Returns:
         On success: status, the stored brief, and next_step. On failure: status
         'error' with error_code, message and recovery_instruction.
     """
+    prev_brief = tool_context.state.get(state.PRESENTATION_BRIEF) or {}
+    existing_plan = (tool_context.state.get(state.SLIDE_PLANS) or {}).get(language) or {}
+    resolved_audience = (
+        audience.strip()
+        if audience and audience.strip()
+        else str(prev_brief.get("audience") or "software engineers")
+    )
+    resolved_minutes = (
+        minutes
+        if minutes and minutes > 0
+        else int(
+            len(existing_plan.get("slides") or [])
+            or prev_brief.get("minutes")
+            or 15
+        )
+    )
     try:
         brief = PresentationBriefInput(
-            language=language, audience=audience, minutes=minutes
+            language=language, audience=resolved_audience, minutes=resolved_minutes
         )  # type: ignore[arg-type]
     except ValidationError as exc:
         return validation_error(

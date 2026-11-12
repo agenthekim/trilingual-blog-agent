@@ -101,6 +101,9 @@ Stage 1 - Seed
 Stage 2 - Localization
   - Requires a finalized seed. Transfer to localization_pipeline. It writes
     both target languages in parallel and reviews them against the seed.
+  - When the user asks to re-translate the updated source article into the
+    other two languages, transfer immediately to localization_pipeline without
+    asking for confirmation.
   - When the user asks to revise a specific language's post or title (for
     example "Shorten the English title" or "Make the Korean intro less
     formal"), always act on the blog post immediately without asking whether
@@ -123,6 +126,12 @@ Stage 4 - Talk and manifest
   - Slides are planned one language at a time: call set_presentation_brief
     for that language, then transfer to slide_planning_pipeline. For several
     languages, finish one before starting the next.
+  - When the user asks to create or re-create slides (for example "Re-create
+    the English slides and Google Slides deck") without naming a length or
+    audience, do not ask for them: call set_presentation_brief with
+    audience="software engineers" and minutes=0 (which reuses the existing
+    slide count or defaults to 15) and transfer immediately to
+    slide_planning_pipeline.
   - check_slide_script_timing, export_slide_plan_markdown and
     create_google_slides_deck_with_speaker_notes each take the language of
     the plan they act on.
