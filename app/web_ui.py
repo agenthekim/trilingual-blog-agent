@@ -889,9 +889,12 @@ async def view_file(job_id: str, name: str, raw: int = 0, lang: str = "en") -> A
     path = project_file(summary["project_id"], name)
     if path is None:
         raise HTTPException(404, "No such file for this article.")
-    if path.suffix == ".pdf":
-        return FileResponse(path, media_type="application/pdf", headers=_VIEW_HEADERS)
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # Only text is shown here. A file that is not text, such as one an
+        # earlier version left in the folder, is not a file of the article.
+        raise HTTPException(404, "No such file for this article.") from None
     if raw or path.suffix not in (".md", ".html"):
         return PlainTextResponse(text, headers=_VIEW_HEADERS)
     if path.suffix == ".html":

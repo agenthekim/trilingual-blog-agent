@@ -249,7 +249,7 @@
   "editor.fileUpdated.one": "File updated from the deck: {n} slide.",
   "editor.fileUpdated.other": "File updated from the deck: {n} slides.",
   "server.lane_busy_main": "The main lane (posts and requests to the agent) is still working. Try again when it has finished.",
-  "server.lane_busy_slides": "The slides lane (plans, decks and PDF) is still working. Try again when it has finished.",
+  "server.lane_busy_slides": "The slides lane (plans and decks) is still working. Try again when it has finished.",
   "server.interrupted_main": "The server stopped while this run was working. What was finished is below; start a new run for the rest.",
   "server.interrupted_slides": "The server stopped while the slides of this run were being made. What was finished is below; ask for the missing slides again.",
   "server.unknown_run": "Unknown run. Its record is not on this server.",

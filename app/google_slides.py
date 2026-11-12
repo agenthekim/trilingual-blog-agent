@@ -38,7 +38,6 @@ OAUTH_SECRET_NAME = "GOOGLE_SLIDES_OAUTH"
 OAUTH_SCOPE = "https://www.googleapis.com/auth/drive.file"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SLIDES_API = "https://slides.googleapis.com/v1/presentations"
-DRIVE_FILES_API = "https://www.googleapis.com/drive/v3/files"
 MERMAID_RENDER_URL = "https://mermaid.ink/img/pako:"
 MERMAID_SVG_URL = "https://mermaid.ink/svg/pako:"
 MAX_IMAGE_URL_CHARS = 2000
@@ -1084,31 +1083,3 @@ async def update_presentation(presentation_id: str, requests: list[dict]) -> Non
                 ),
                 "updating the deck",
             )
-
-
-async def export_deck_pdf(presentation_id: str) -> bytes:
-    """Export an existing Google Slides presentation as PDF bytes (SLD-12)."""
-    with traced_span("slides.export_pdf", presentation_id=presentation_id):
-        async with httpx.AsyncClient(
-            timeout=max(HTTP_TIMEOUT_SECONDS, 60), follow_redirects=False
-        ) as client:
-            headers = {"Authorization": f"Bearer {await _access_token(client)}"}
-            try:
-                response = await client.get(
-                    f"{DRIVE_FILES_API}/{presentation_id}/export",
-                    params={"mimeType": "application/pdf"},
-                    headers=headers,
-                )
-            except httpx.HTTPError as exc:
-                raise SlidesError(
-                    "SLIDES_PDF_EXPORT_FAILED",
-                    f"Google Drive could not be reached while exporting the PDF ({type(exc).__name__}).",
-                    "Try again in a moment.",
-                ) from exc
-            if response.status_code >= 400 or not response.content.startswith(b"%PDF-"):
-                raise SlidesError(
-                    "SLIDES_PDF_EXPORT_FAILED",
-                    f"Google Drive could not export the deck as PDF (HTTP {response.status_code}).",
-                    "Check that the deck still exists in Google Drive and try again.",
-                )
-            return response.content

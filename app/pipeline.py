@@ -76,10 +76,7 @@ from app.tools.slides import (
     compile_artifact_manifest_markdown,
     create_google_slides_deck_with_speaker_notes,
     deck_outdated,
-    export_google_slides_pdf,
-    exported_pdf,
     parse_slide_plan_markdown,
-    pdf_exported_at,
     render_slide_plan_markdown,
     set_presentation_brief,
     slide_audience,
@@ -263,11 +260,6 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 "slides_progress": None,
                 # The plan's text differs from what deck and plan last agreed on.
                 "deck_outdated": deck_outdated(session_state, language),
-                # The PDF of the deck there is now, and when it was exported
-                # (SLD-12). A file left from a replaced deck is not listed. The
-                # page does not show them; they are there for the API.
-                "slides_pdf": exported_pdf(session_state, language),
-                "pdf_exported_at": pdf_exported_at(session_state, language),
                 "slides_on_time": (timing.get(language) or {}).get("passed"),
                 # The length a slide request gets when it names none.
                 "slides_minutes": slide_length(session_state, language, 0),
@@ -319,8 +311,8 @@ def slide_actions(slides_state: str, deck_outdated: bool) -> list[str]:
     ``slides_state`` is 'none', 'plan' or 'deck' (see ``slides_state`` in
     ``app.tools.slides``). What the state does not allow is not offered: no
     deck without a plan, no update of a deck that already has the text of its
-    speaker notes. The page offers no PDF export and no way to make existing
-    slides again; both are asked of the agent in words.
+    speaker notes. The page offers no way to make existing slides again; that
+    is asked of the agent in words.
     """
     if slides_state == "plan":
         return ["notes", "create_deck"]
@@ -1332,7 +1324,7 @@ class ArticlePipeline:
             # The paste file is written from the text as finalized.
             await self.act(export_naver_blog_paste_ready_html)
         # Finalizing is an action of the main lane and writes no slide value
-        # (RUN-1): a PDF is exported when a person asks for it (SLD-12).
+        # (RUN-1).
         check = (current.get(state.FIDELITY_REPORT) or {}).get(language)
         return {"language": language, "finalized": True, "check": check}
 
@@ -1476,9 +1468,6 @@ class ArticlePipeline:
         if direction == "pull":
             delta.update(self._plan_of_record(current, language, plan))
         await self._update_state(delta, current)
-        if direction == "push" and exported_pdf(current, language):
-            # The deck changed, so its PDF is made again (SLD-12).
-            await self.act(export_google_slides_pdf, language)
         where = "deck from the file" if direction == "push" else "file from the deck"
         self.log(
             f">>> updated the {LANGUAGE_NAMES[language]} {where}: "

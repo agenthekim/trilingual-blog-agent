@@ -38,7 +38,7 @@ TEMPLATES: dict[str, str] = {
         "Try again when it has finished."
     ),
     "lane_busy_slides": (
-        "The slides lane (plans, decks and PDF) is still working. "
+        "The slides lane (plans and decks) is still working. "
         "Try again when it has finished."
     ),
     "interrupted_main": (

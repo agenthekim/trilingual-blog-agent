@@ -33,7 +33,6 @@ from app.settings import (
     LANGUAGES,
     PLATFORM_FOR_LANGUAGE,
     render_mermaid_enabled,
-    workspace_dir,
 )
 from app.tools.articles import write_workspace_file
 
@@ -582,10 +581,6 @@ def slide_plan_file(language: str) -> str:
     return f"slides.{language}.md"
 
 
-def slide_pdf_file(language: str) -> str:
-    return f"slides.{language}.pdf"
-
-
 # How many addresses of replaced decks a deck record keeps (SLD-13).
 MAX_PREVIOUS_DECKS = 5
 
@@ -598,36 +593,6 @@ def _deck_of(session_state: Any, language: str) -> dict[str, Any]:
     """The deck record of ``language`` when a deck was made, else an empty dict."""
     deck = (session_state.get(state.GOOGLE_SLIDES_DECKS) or {}).get(language) or {}
     return deck if deck.get("presentation_id") or deck.get("url") else {}
-
-
-def exported_pdf(session_state: Any, language: str) -> str | None:
-    """The PDF of ``language``'s deck: its file name, or None (SLD-12).
-
-    A PDF is a snapshot of one deck. It counts only when the record of the
-    deck there is now names it and the file is there; a file left from a deck
-    that was replaced is not this deck's PDF.
-    """
-    project_id = session_state.get(state.PROJECT_ID)
-    name = _deck_of(session_state, language).get("pdf_file")
-    if not project_id or not name or name != slide_pdf_file(language):
-        return None
-    return name if (workspace_dir() / project_id / name).is_file() else None
-
-
-def pdf_exported_at(session_state: Any, language: str) -> str | None:
-    """When the PDF of ``language``'s deck was exported, or None without one.
-
-    A PDF exported before the time was recorded answers with the time its
-    file was written.
-    """
-    name = exported_pdf(session_state, language)
-    if name is None:
-        return None
-    recorded = _deck_of(session_state, language).get("pdf_exported_at")
-    if recorded:
-        return recorded
-    written = (workspace_dir() / session_state[state.PROJECT_ID] / name).stat().st_mtime
-    return datetime.fromtimestamp(written, UTC).isoformat(timespec="seconds")
 
 
 def deck_outdated(session_state: Any, language: str) -> bool:
@@ -664,8 +629,8 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
 
     Lists each language version with its file and publication URL, the
     companion code repository if any, and the slide plan, the Google Slides
-    deck, the decks it replaced and the exported PDF of every language that
-    has one. The result is meant to be pasted into a README.
+    deck and the decks it replaced of every language that has one. The result
+    is meant to be pasted into a README.
 
     Returns:
         On success: status, file and the manifest text. On failure: status
@@ -721,9 +686,6 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
             f"- Earlier Google Slides deck ({name}), replaced: {earlier}"
             for earlier in deck.get("previous") or []
         ]
-        if pdf_name := exported_pdf(tool_context.state, language):
-            exported = pdf_exported_at(tool_context.state, language)
-            lines += [f"- Slides PDF ({name}): {pdf_name}, exported {exported}"]
     manifest = "\n".join(lines) + "\n"
     file = write_workspace_file(project_id, "manifest.md", manifest)
     return {"status": "success", "file": file, "manifest": manifest}
@@ -797,11 +759,6 @@ async def create_google_slides_deck_with_speaker_notes(
         again = (
             " A deck of this language exists already; it stays in Drive, its "
             "address is kept, and this page will link to the new one."
-            + (
-                " The PDF exported from it is removed."
-                if exported_pdf(tool_context.state, language)
-                else ""
-            )
             if language in decks
             else ""
         )
@@ -844,12 +801,6 @@ async def create_google_slides_deck_with_speaker_notes(
     deck["previous"] = earlier[:MAX_PREVIOUS_DECKS]
     decks[language] = deck
     tool_context.state[state.GOOGLE_SLIDES_DECKS] = decks
-    # A PDF is a snapshot of the deck it was exported from: it goes with that
-    # deck (SLD-12). The new record names no PDF.
-    if project_id := tool_context.state.get(state.PROJECT_ID):
-        (workspace_dir() / project_id / slide_pdf_file(language)).unlink(
-            missing_ok=True
-        )
     # What the deck and the plan agree on, for telling later edits apart.
     synced = dict(tool_context.state.get(state.DECK_TEXT_BASELINE) or {})
     synced[language] = plan_text(plan)
@@ -858,62 +809,4 @@ async def create_google_slides_deck_with_speaker_notes(
         "status": "success",
         "deck": deck,
         "message": "The deck was created. Give the user its URL to review.",
-    }
-
-
-async def export_google_slides_pdf(
-    language: LanguageCode, tool_context: ToolContext
-) -> dict[str, Any]:
-    """Export one language's Google Slides deck as ``slides.<lang>.pdf`` (SLD-12).
-
-    Args:
-        language: Language of the deck to export: 'ko', 'en' or 'ja'.
-
-    Returns:
-        On success: status, language, file, pdf_file, exported_at and bytes.
-        On failure: status 'error' with error_code, message and
-        recovery_instruction.
-    """
-    checked = checked_language(language)
-    if isinstance(checked, dict):
-        return checked
-    language = checked
-    project_id = tool_context.state.get(state.PROJECT_ID)
-    if not project_id:
-        return tool_error(
-            "NO_PROJECT",
-            "No article project in this session.",
-            "Start with a seed article first.",
-        )
-    decks = dict(tool_context.state.get(state.GOOGLE_SLIDES_DECKS) or {})
-    deck = dict(decks.get(language) or {})
-    presentation_id = deck.get("presentation_id")
-    if not presentation_id:
-        return tool_error(
-            "NO_SLIDES_DECK",
-            f"There is no {LANGUAGE_NAMES[language]} Google Slides deck to export.",
-            "Create the Google Slides deck for this language first.",
-        )
-    try:
-        pdf_bytes = await google_slides.export_deck_pdf(presentation_id)
-    except google_slides.SlidesError as exc:
-        return tool_error(exc.code, exc.message, exc.recovery)
-    pdf_name = slide_pdf_file(language)
-    folder = workspace_dir() / project_id
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / pdf_name
-    path.write_bytes(pdf_bytes)
-    deck["pdf_file"] = pdf_name
-    # The page says when, not that the PDF is current: what a person changed
-    # in the deck afterwards is not known here.
-    deck["pdf_exported_at"] = _now()
-    decks[language] = deck
-    tool_context.state[state.GOOGLE_SLIDES_DECKS] = decks
-    return {
-        "status": "success",
-        "language": language,
-        "file": str(path),
-        "pdf_file": pdf_name,
-        "exported_at": deck["pdf_exported_at"],
-        "bytes": len(pdf_bytes),
     }

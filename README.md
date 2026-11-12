@@ -50,7 +50,7 @@ flowchart TD
     C --> LP[localization_pipeline]
     C --> SP[slide_planning_pipeline]
     C --> T[function tools]
-    W[Web page] --> R[runs<br/>main lane: source, posts, requests<br/>slides lane: plans, decks, PDF, sync]
+    W[Web page] --> R[runs<br/>main lane: source, posts, requests<br/>slides lane: plans, decks, sync]
     R --> P[ArticlePipeline]
     S[Script] --> P
     P -->|localize,<br/>requests in words| C
@@ -168,10 +168,10 @@ More of the page:
 
 - The Slides column offers, per language, what its state allows: "Create
   slides…", "Speaker notes", "Create deck…", "Google Slides" and "Update
-  deck…"; while the slides of a language are made, its cell says so. The page
-  has no PDF export and no button to make existing slides again: both are
-  asked of the agent in words (a PDF also through the API). Creating a deck
-  again makes a new file and keeps the address of the earlier one. `BLOG_AGENT_SLIDE_PARALLELISM` (3 unless set) is how many languages
+  deck…"; while the slides of a language are made, its cell says so. There
+  is no button to make existing slides again: that is asked of the agent in
+  words, behind the same approval. Nothing exports a deck as PDF. Creating a
+  deck again makes a new file and keeps the address of the earlier one. `BLOG_AGENT_SLIDE_PARALLELISM` (3 unless set) is how many languages
   are planned at once.
 - "Ask the agent for a change" sends one line to the agent. The agent changes
   a title, or replaces a passage it quotes from a post. A request for slides
@@ -334,7 +334,7 @@ What has been run for real, and what has not:
 
 | Item | Status |
 | :--- | :--- |
-| Version 1.0 (lanes, slide planning in working sessions, the slide request with its approval, one function for edits, the structuring check and the model gateway, Medium as a source, the deck record and PDF, the catalogs and coded notices, "Recent sources", the offer after an interruption, the access token, tracing) | Verified with unit tests and stand-ins only, and by looking at the page in a headless browser on a throwaway server with made-up data. Not run: slide planning by a real model in working sessions (three languages at once; whether the quota carries it is not known); the structuring gateway with a real model; a real Medium address; any call to the real Google Slides API after these changes; export to Cloud Trace; Cloud DLP; the access token on a host name behind a proxy. The Korean and Japanese texts of the catalogs were not read by a native reader |
+| Version 1.0 (lanes, slide planning in working sessions, the slide request with its approval, one function for edits, the structuring check and the model gateway, Medium as a source, the deck record, the catalogs and coded notices, "Recent sources", the offer after an interruption, the access token, tracing) | Verified with unit tests and stand-ins only, and by looking at the page in a headless browser on a throwaway server with made-up data. Not run: slide planning by a real model in working sessions (three languages at once; whether the quota carries it is not known); the structuring gateway with a real model; a real Medium address; any call to the real Google Slides API after these changes; export to Cloud Trace; Cloud DLP; the access token on a host name behind a proxy. The Korean and Japanese texts of the catalogs were not read by a native reader |
 | Posting and decks from the page, before the version 1 work | On 2026-11-12 one run on the page posted to DEV Community and to Qiita through the real APIs, registered a Naver URL, and created decks in three languages through the real Slides API (read from that run's activity log; `docs/kr-AS-BUILT.md`, section 10). That was the code at `b5e1793`. Nothing was posted and no deck was created with the code as it is now |
 | CI | GitHub Actions runs the linter, the format check, the unit tests and `terraform fmt -check` and `terraform validate` on every push, and passes on `main`. It uses no credential and deploys nothing |
 | Evaluation (`agents-cli eval run`) | Run on 2026-11-12 against the real model with the eight cases: `RESULT: PASS (custom_response_quality 5.00 >= 4.00; publish_requires_approval 1.00 >= 1.00)`. The run before the two cases were added, the same day with six cases, passed with the same scores |
@@ -353,7 +353,7 @@ What has been run for real, and what has not:
 | One trace per action, with the trace id in every log record | Unit-tested with spans collected in memory: the action's root span, ADK's agent and tool spans and the outbound-call spans share one trace. Export to Cloud Trace (`BLOG_AGENT_TRACE_EXPORT=cloud`) has not been run |
 | Refinement branch of the localization loop | Covered by unit tests of the gates. It ran in one real run (two review rounds, both languages refined); most runs pass on the first round |
 | Translated Mermaid diagrams | The structure check confirms node ids and edges are unchanged; the diagrams have not been rendered to confirm they still draw |
-| Google Slides deck with speaker notes | Decks were created through the real Slides API and checked by reading them back and by rendering slide thumbnails: cover slide, titles sized to fit, bullets (Korean and Japanese included), an article image placed beside the bullets, speaker notes. With `BLOG_AGENT_RENDER_MERMAID` on, Mermaid diagrams are rendered by mermaid.ink and placed as images; this ran in real decks. PDF export of a deck is unit-tested with a stand-in for the export call; no export through the real API is recorded here |
+| Google Slides deck with speaker notes | Decks were created through the real Slides API and checked by reading them back and by rendering slide thumbnails: cover slide, titles sized to fit, bullets (Korean and Japanese included), an article image placed beside the bullets, speaker notes. With `BLOG_AGENT_RENDER_MERMAID` on, Mermaid diagrams are rendered by mermaid.ink and placed as images; this ran in real decks. |
 | Image placement by shape (wide under the bullets, tall over the full page height, title narrowed) | Unit-tested, then run against the real Slides API on one ten-slide test deck built from a real slide plan and its rendered diagrams: all nine images were placed, the five titles next to full-height images were narrowed (one of them Korean), and every slide was checked by thumbnail. Images that are not rendered diagrams keep the right half, because their size is not read |
 | Editing a deck's text from its Markdown plan, and pulling deck edits back | Each direction needs an approval that lists the slides that change; only titles, bullets and speaker notes move. The reading, comparing and writing were run against the real Slides API on the test deck: titles, bullets and notes (Korean and an emoji included) arrived intact and kept their font size, weight and bullets, and a note changed in the deck was pulled back. The path through the web page and its approval dialog was exercised in a browser against a stand-in for the Slides API, not against the real one |
 | Talk structure (title-slide greeting, agenda, conclusion, separate next steps, thank-you slide) | Two eight-minute plans were made by the real model, in English and in Korean, and both followed it; one of them was built into a real deck through the Slides API and read back, with the greeting in the title slide's notes and the closing words in the thank-you slide's notes. Longer talks and Japanese were not run |
@@ -390,7 +390,7 @@ app/
   sources.py            the table of source kinds and the hosts they are read from
   structurer.py         Markdown structure for a draft, and the check of the copy
   platforms.py          Qiita, DEV Community, Naver, Google Docs and Medium HTTP clients
-  google_slides.py      Google Slides deck creation, image placement, PDF export
+  google_slides.py      Google Slides deck creation, image placement, text updates
   deck_sync.py          text kept in step between a deck and its Markdown plan
   markdown_checks.py    structure fidelity and speaking-time checks
   plugins.py            content policy plugin

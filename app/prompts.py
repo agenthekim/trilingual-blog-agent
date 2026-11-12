@@ -157,8 +157,6 @@ Stage 4 - Talk and manifest
   - Only when the user asks for a Google Slides deck, call
     create_google_slides_deck_with_speaker_notes. It pauses for human
     approval like the publishing tools.
-  - When the user asks for a PDF of an existing Google Slides deck, call
-    export_google_slides_pdf for that language.
   - compile_artifact_manifest_markdown lists everything produced.
 </workflow>
 

@@ -141,7 +141,6 @@ stage at a time and waits.
 | SLD-9 | Plans, timing reports, decks and sync baselines are kept per language. A deck can be created, or created again, for any language that has a plan |
 | SLD-10 | If deck creation fails after the file exists, the error names the file's address so it is not lost in Drive |
 | SLD-11 | Markdown tables in the article are offered to the planner as `table:N` references. When chosen for a slide without an image, a table is placed on the slide as a native Google Slides table (up to 8 rows and 6 columns) below the bullets, each table used at most once |
-| SLD-12 | A deck can be exported as `slides.<lang>.pdf` by the agent's `export_google_slides_pdf` tool, in a chat or through the API; the page does not offer it. It is exported again when a deck text sync pushes changes while a PDF exists. A PDF is removed when a new deck replaces the one it was made from |
 | SLD-13 | Creating a deck again makes a new file; the earlier file stays in Drive, and its address stays in the run's record and in the manifest |
 | SLD-14 | Slides for several languages are one request. The languages are planned at the same time, up to `BLOG_AGENT_SLIDE_PARALLELISM` at once; a language that fails is reported for that language and does not stop the others |
 
@@ -163,7 +162,7 @@ stage at a time and waits.
 | WEB-2 | Form: "Source document" with the hint "Share a post URL, a .md file, or your document."; attach or drop a file; "Recent sources…" (WEB-14) and "Clear / New article" (PER-4); "Slide options" with "Choose the slide length to create Google Slides in your configured Google Drive."; Length, Languages (checkboxes, all ticked), Audience (SLD-1); one Run button |
 | WEB-3 | Progress card: the article title, then the status line (elapsed time and latest activity while working; when finished, a link to `manifest.md`), then the steps in three rows. Row 1: "Source document", "Transform", "Prepare posts", "Summarize", "Review & edit". Row 2, under "Prepare posts": "Prepare slides" (when slides were asked for). Row 3: "Finalize posts", "Approve & draft", "Publish posts", "Verify & complete". Each step is computed from what the server holds, the same before and after a reload |
 | WEB-4 | Results table, the source language first, columns in the order of the work: Language (name, status badge under it), Title, Files, Slides, Next step. Nothing is listed under the table |
-| WEB-5 | Files: `post.<lang>.md` and, for Korean, `naver_blog.html`; each opens a preview. Slides: per language, what its state allows and nothing else: "Create slides…" without a plan; "Speaker notes" and "Create deck…" with a plan; with a deck "Google Slides" and "Speaker notes", and "Update deck…" when the speaker notes changed after the deck was made. While the slides of a language are being made, its cell says so instead. The page offers no PDF export and no button to make existing slides again; slides are made again by asking the agent in words, behind the approval of INV-6 |
+| WEB-5 | Files: `post.<lang>.md` and, for Korean, `naver_blog.html`; each opens a preview. Slides: per language, what its state allows and nothing else: "Create slides…" without a plan; "Speaker notes" and "Create deck…" with a plan; with a deck "Google Slides" and "Speaker notes", and "Update deck…" when the speaker notes changed after the deck was made. While the slides of a language are being made, its cell says so instead. There is no button to make existing slides again; slides are made again by asking the agent in words, behind the approval of INV-6. Nothing exports a deck as PDF |
 | WEB-6 | Next step shows the one thing to do next: read from a blog platform (`existing_source`) → "Open original"; public → "Open post"; not finalized → what to review and "Finalize"; finalized, API platform → "Post…" (or "Update post…"), which opens an approval dialog with the title, a Tags input with that platform's tag rule shown underneath, and the choice Draft / Public (Draft preselected); finalized, Naver → paste instructions, URL field, "Register URL" |
 | WEB-7 | Preview: the file name, "edit" when the file may be edited, "raw text". Markdown is rendered; no script from article text can run, no form can be submitted and no base address set. Mermaid blocks appear as drawings with their source under them when the operator allowed mermaid.ink; otherwise as code |
 | WEB-8 | Editor: full window; title field for posts; Save; unsaved changes are guarded. Saving a post undoes its finalization and says so. For a slide plan with a deck: after Save the sync dialog opens when the deck differs; "Update deck…" and "Pull from deck…" are always there |
@@ -213,7 +212,7 @@ stage at a time and waits.
 
 | | Requirement |
 | :--- | :--- |
-| RUN-1 | A run has two lanes: main (source document, localization, posts, requests to the agent) and slides (plans, decks, PDF, deck text sync). One action runs at a time in a lane, and the two lanes run at the same time: while slides are made, posts can be reviewed, edited, finalized and posted |
+| RUN-1 | A run has two lanes: main (source document, localization, posts, requests to the agent) and slides (plans, decks, deck text sync). One action runs at a time in a lane, and the two lanes run at the same time: while slides are made, posts can be reviewed, edited, finalized and posted |
 | RUN-2 | The session of a run is its record and has one writer at a time: an agent turn in the main lane, or a short write by code that reads the record first. Slide planning works in a session of its own, and only its result is written to the record. Two actions that change different languages never lose each other's change |
 | RUN-3 | Every action a person starts ends in one of two ways that the page shows: done, or a notice saying what did not happen. Nothing is started whose result nobody waits for |
 | RUN-4 | A run that a server stop interrupted says which lane was interrupted and offers to make the slides that were asked for and are missing, with the options of that run |
@@ -270,7 +269,7 @@ flowchart TD
 | `FINALIZED_POSTS` | Digest of the finalized title and text, and whether findings were acknowledged |
 | `LOCALIZED_FROM` | Digest of the source text a localization was made from (WEB-15) |
 | `SLIDE_PLANS`, `SLIDE_TIMING` | Plan of record and its timing report |
-| `GOOGLE_SLIDES_DECKS` | Deck id, address, counts, when it was created, the addresses of the decks it replaced, its PDF and when that was exported |
+| `GOOGLE_SLIDES_DECKS` | Deck id, address, counts, when it was created, the addresses of the decks it replaced |
 | `DECK_TEXT_BASELINE` | Text on which file and deck last agreed |
 | `PUBLICATIONS` (per platform) | Original, exported, draft or public, with id and address |
 
@@ -305,9 +304,8 @@ takes it.
 - A diagram whose address would exceed 2,000 characters cannot be placed on a
   slide; the slide is then laid out as text.
 - Deck layout is computed once. Text pushed later is not re-fitted.
-- The server does not see what is changed in a deck in Google Slides. The run
-  therefore records when a PDF was exported, not whether it is current, and
-  "Update deck…" appears for changes to the speaker notes file only.
+- The server does not see what is changed in a deck in Google Slides.
+  "Update deck…" therefore appears for changes to the speaker notes file only.
 - A slide request typed to the agent becomes an approval request only on the
   page. In a chat and on the API surface the agent sets a brief, plans in the
   conversation, and creates one deck at a time behind its own approval.
@@ -406,7 +404,7 @@ changed or added to it, in order.
 | 32 | The page and the script call the tool functions directly for everything that needs no judgement; the agent is asked only to localize and to plan talks | Every step sent to the agent as a typed message |
 | 33 | A draft is stored exactly as handed in | The model retyped it into a tool call |
 | 34 | After an independent review of the rebuilt code: a yes to finalize holds only for the text that was asked about; no article text in the coordinator's instruction; the server answers only to its own name; a deck sync writes only the changes that were shown; every credential finding is shown | Gaps the review found in the first version of this specification's code |
-| 35 | Article tables placed on slides as native Google Slides tables (`table:N`, SLD-11); PDF export of a deck (`slides.<lang>.pdf`, SLD-12) on finalize and on demand from the Slides column | Open items 1 and 2 of section 8 |
+| 35 | Article tables placed on slides as native Google Slides tables (`table:N`, SLD-11); PDF export of a deck (`slides.<lang>.pdf`, SLD-12) on finalize and on demand from the Slides column (the PDF export is withdrawn by decision 52) | Open items 1 and 2 of section 8 |
 | 36 | Clarified INV-4 (only blog-platform URLs mark a platform as `existing_source`); draft source-language posts are editable on the page before publication; Google Docs document URLs (`https://docs.google.com/document/d/...`) are read as Markdown drafts (`.md`, `.txt`, Google Docs only) | Uneditable draft source post; blog URLs and local files only |
 | 37 | The status line sits under the article title; the steps of posting are part of the progress display, which then became three rows (WEB-3) | Two bars of five steps |
 | 38 | Tags are entered in the approval dialog of a post, with the platform's rule under the input (WEB-6) | A tags input outside the approval |
@@ -461,7 +459,7 @@ these three things from the design before version 1.0, and the plan of version
 
 | | Decision after version 1.0 | Replaces |
 | :--- | :--- | :--- |
-| 52 | The page offers no PDF export. A deck is exported by the agent's `export_google_slides_pdf` tool, in a chat or through the API (SLD-12, WEB-5). Dropped by the owner before version 1.0; the plan of version 1.0 brought it back by mistake | "Export PDF" and the "PDF" link with its export time in the Slides column (WP-12) |
+| 52 | PDF export is removed altogether: nothing exports a deck as PDF, and SLD-12 is withdrawn (WEB-5). Files `slides.<lang>.pdf` that an earlier version left in a workspace are left alone and shown nowhere. Dropped by the owner before version 1.0; the plan of version 1.0 brought it back by mistake | "Export PDF" and the "PDF" link with its export time in the Slides column, with their route (WP-12); the agent's tool `export_google_slides_pdf`; the export again after a deck text sync; the PDF in the deck record, the status rows and the manifest; SLD-12 |
 | 53 | The Slides column has no "Re-create…" button. Slides are made again by asking the agent in words, behind the approval of INV-6 (WEB-5). Dropped by the owner before version 1.0; the plan of version 1.0 brought it back by mistake | The "Re-create…" button (WP-12, A-13) |
 | 54 | The slides step shows no marks per language: "Prepare slides" is one step, done or not. The row of a language says what is being done with its slides (WEB-3, WEB-5). Dropped by the owner before version 1.0; the plan of version 1.0 brought it back by mistake | `EN ✓ KO … JA –` under "Prepare slides" (A-13) |
 
@@ -525,7 +523,6 @@ what the models then did was read in real runs, recorded in `README.md`.
 | SLD-9 | `test_planning_one_language_keeps_the_plans_of_the_others`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_timing_export_and_manifest_work_per_language`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
 | SLD-10 | `test_a_failure_after_the_file_exists_names_the_file` |
 | SLD-11 | `test_markdown_tables_are_extracted_and_placed_as_native_slide_tables` |
-| SLD-12 | `test_the_agents_tool_exports_a_deck_as_pdf_and_the_page_offers_no_export`, `test_a_pdf_never_outlives_the_deck_it_was_made_from`, `test_finalizing_a_post_does_not_touch_slides` |
 | SLD-13 | `test_a_new_deck_keeps_the_address_of_the_one_it_replaces` |
 | SLD-14 | `test_one_language_failing_does_not_stop_the_others`, `test_the_number_of_languages_planned_at_once_can_be_lowered`, `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck` |
 | SYN-1 | `test_slide_plan_markdown_reads_back_as_the_same_plan`, `test_sync_needs_a_deck_and_a_readable_plan` |
@@ -537,7 +534,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | WEB-2 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
 | WEB-3 | `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck`, `test_a_run_is_reopened_from_its_record_after_a_restart`, `test_the_slides_step_is_one_step_for_the_languages_asked_for` |
 | WEB-4 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
-| WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for`, `test_each_row_offers_the_slide_action_its_state_allows`, `test_a_row_says_what_the_slides_lane_is_doing_with_its_language` |
+| WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for`, `test_each_row_offers_the_slide_action_its_state_allows`, `test_a_row_says_what_the_slides_lane_is_doing_with_its_language`, `test_nothing_exports_a_deck_as_pdf`, `test_what_an_earlier_version_left_of_a_pdf_is_left_alone` |
 | WEB-6 | `test_overview_lists_titles_files_and_next_steps`, `test_posting_from_the_page_needs_a_finalized_post_and_carries_the_persons_choice` |
 | WEB-7 | `test_preview_links_to_the_editor_only_for_files_a_person_may_change`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
 | WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again`, `test_draft_source_language_post_can_be_edited_before_finalizing` |
@@ -567,7 +564,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: the workflow runs on GitHub, not in the unit tests; whether it passed is shown on the commit it ran for |
 | OPS-7 | `test_every_place_the_readme_points_to_exists` |
-| RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
+| RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs`, `test_finalizing_a_post_does_not_touch_slides` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
 | RUN-4 | `test_an_interrupted_run_offers_the_slides_that_are_missing` |

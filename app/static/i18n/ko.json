@@ -249,7 +249,7 @@
   "editor.fileUpdated.one": "덱의 내용으로 파일을 업데이트했습니다. 슬라이드 {n}장.",
   "editor.fileUpdated.other": "덱의 내용으로 파일을 업데이트했습니다. 슬라이드 {n}장.",
   "server.lane_busy_main": "글 레인(글과 에이전트 요청)이 아직 작업 중입니다. 끝난 뒤에 다시 시도하세요.",
-  "server.lane_busy_slides": "슬라이드 레인(계획, 덱, PDF)이 아직 작업 중입니다. 끝난 뒤에 다시 시도하세요.",
+  "server.lane_busy_slides": "슬라이드 레인(계획, 덱)이 아직 작업 중입니다. 끝난 뒤에 다시 시도하세요.",
   "server.interrupted_main": "이 실행이 작업하는 중에 서버가 멈췄습니다. 끝난 것은 아래에 있습니다. 나머지는 새 실행으로 시작하세요.",
   "server.interrupted_slides": "이 실행의 슬라이드를 만드는 중에 서버가 멈췄습니다. 끝난 것은 아래에 있습니다. 빠진 슬라이드는 다시 요청하세요.",
   "server.unknown_run": "알 수 없는 실행입니다. 이 서버에 그 기록이 없습니다.",

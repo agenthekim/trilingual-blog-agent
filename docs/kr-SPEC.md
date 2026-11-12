@@ -139,7 +139,6 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | SLD-9 | 계획, 시간 보고서, 덱, 동기화 기준선은 언어별로 보관한다. 계획이 있는 언어라면 어느 언어든 덱을 생성하거나 다시 생성할 수 있다 |
 | SLD-10 | 파일이 생긴 뒤에 덱 생성이 실패하면, 그 파일이 Drive 안에서 잊히지 않도록 오류에 파일의 주소를 명시한다 |
 | SLD-11 | 글에 있는 Markdown 표는 계획 모델에 `table:N` 참조로 제공된다. 이미지가 없는 슬라이드에 선택되면 불릿 아래에 Google Slides 네이티브 표(최대 8행 6열)로 배치하며, 각 표는 한 번만 쓴다 |
-| SLD-12 | 덱은 에이전트의 `export_google_slides_pdf` 도구로, 채팅이나 API를 통해 `slides.<lang>.pdf`로 내보낼 수 있다. 페이지에는 이 기능이 없다. PDF가 있는 상태에서 덱 텍스트 동기화가 변경을 덱으로 푸시하면 다시 내보낸다. PDF는 그것을 만든 덱을 새 덱이 대체하면 지운다 |
 | SLD-13 | 덱을 다시 만들면 새 파일이 생긴다. 이전 파일은 Drive에 남고, 그 주소는 실행의 기록과 매니페스트에 남는다 |
 | SLD-14 | 여러 언어의 슬라이드는 하나의 요청이다. 언어들은 동시에 계획하되 한 번에 `BLOG_AGENT_SLIDE_PARALLELISM`개까지 계획한다. 실패한 언어는 그 언어의 실패로 알리고 다른 언어를 멈추지 않는다 |
 
@@ -161,7 +160,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | WEB-2 | 폼: 힌트 "Share a post URL, a .md file, or your document."가 붙은 "Source document", 파일 첨부 또는 끌어다 놓기, "Recent sources…"(WEB-14)와 "Clear / New article"(PER-4), "Choose the slide length to create Google Slides in your configured Google Drive."가 붙은 "Slide options", Length, Languages(체크박스, 모두 선택됨), Audience(SLD-1), Run 버튼 하나 |
 | WEB-3 | 진행 상황 카드: 글 제목 아래에 상태 줄(작업 중일 때는 경과 시간과 최근 활동, 끝났을 때는 `manifest.md` 링크)이 오고, 그 아래에 단계가 세 행으로 온다. 1행: "Source document", "Transform", "Prepare posts", "Summarize", "Review & edit". 2행은 "Prepare posts" 아래의 "Prepare slides"(슬라이드를 요청했을 때)이다. 3행: "Finalize posts", "Approve & draft", "Publish posts", "Verify & complete". 각 단계의 완료 여부는 서버 상태로 계산하며 새로고침 전후가 같다 |
 | WEB-4 | 결과 표는 입력 글의 언어(원본 언어)를 맨 먼저 두고, 열은 작업 순서대로 Language(이름, 그 아래 상태 배지), Title, Files, Slides, Next step이다. 표 아래에는 아무것도 나열하지 않는다 |
-| WEB-5 | Files: `post.<lang>.md`, 그리고 한국어에는 `naver_blog.html`이 있으며 각각 미리보기를 연다. Slides: 언어마다 그 상태에서 할 수 있는 것만 보여 준다. 계획이 없으면 "Create slides…", 계획이 있으면 "Speaker notes"와 "Create deck…", 덱이 있으면 "Google Slides"와 "Speaker notes"가 있고, 덱을 만든 뒤에 발표자 노트가 바뀌었으면 "Update deck…"이 있다. 어떤 언어의 슬라이드를 만드는 동안에는 그 칸이 버튼 대신 진행 상태를 보여 준다. 페이지에는 PDF 내보내기도, 이미 있는 슬라이드를 다시 만드는 버튼도 없다. 슬라이드를 다시 만들려면 에이전트에게 문장으로 요청하고 INV-6의 승인을 거친다 |
+| WEB-5 | Files: `post.<lang>.md`, 그리고 한국어에는 `naver_blog.html`이 있으며 각각 미리보기를 연다. Slides: 언어마다 그 상태에서 할 수 있는 것만 보여 준다. 계획이 없으면 "Create slides…", 계획이 있으면 "Speaker notes"와 "Create deck…", 덱이 있으면 "Google Slides"와 "Speaker notes"가 있고, 덱을 만든 뒤에 발표자 노트가 바뀌었으면 "Update deck…"이 있다. 어떤 언어의 슬라이드를 만드는 동안에는 그 칸이 버튼 대신 진행 상태를 보여 준다. 이미 있는 슬라이드를 다시 만드는 버튼은 없다. 슬라이드를 다시 만들려면 에이전트에게 문장으로 요청하고 INV-6의 승인을 거친다. 덱을 PDF로 내보내는 기능은 어디에도 없다 |
 | WEB-6 | Next step은 다음에 할 일 한 가지를 보여 준다. 블로그 플랫폼에서 읽어 온 기존 게시물(`existing_source`) → "Open original". 공개 → "Open post". 확정 전 → 검토할 대상과 "Finalize". 확정됨, API 플랫폼 → "Post…"(또는 "Update post…") 버튼이 나타나며, 클릭하면 제목, 태그 입력란(바로 아래에 해당 플랫폼의 태그 규칙 안내 표시), Draft / Public 선택지(Draft 기본 선택)가 있는 승인 대화상자가 열린다. 확정됨, Naver → 붙여 넣기 안내, URL 입력란, "Register URL" |
 | WEB-7 | 미리보기: 파일 이름, 파일을 편집할 수 있을 때의 "edit", "raw text"가 있다. Markdown은 렌더링한다. 글 본문에서 온 스크립트는 실행될 수 없고, 폼은 제출될 수 없으며, 기준 주소는 설정될 수 없다. Mermaid 블록은 운영자가 mermaid.ink를 허용했으면 그림으로 나타나고 그 아래에 소스가 붙는다. 그렇지 않으면 코드로 나타난다 |
 | WEB-8 | 편집기: 창 전체를 쓴다. 게시물에는 제목 입력란이 있다. Save가 있다. 저장하지 않은 변경 사항은 보호한다. 게시물을 저장하면 확정이 해제되고 그 사실을 알린다. 덱이 있는 슬라이드 계획의 경우, Save 후 덱과 내용이 다르면 동기화 대화상자가 열린다. "Update deck…"과 "Pull from deck…"은 항상 있다 |
@@ -211,7 +210,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| RUN-1 | 실행에는 레인이 둘 있다. 글 레인(main)은 원본 문서, 현지화, 글, 에이전트에게 보내는 요청을 맡고, 슬라이드 레인(slides)은 계획, 덱, PDF, 덱 텍스트 동기화를 맡는다. 한 레인에서는 한 번에 액션 하나만 실행되고 두 레인은 동시에 실행된다. 슬라이드를 만드는 동안 글을 검토하고, 고치고, 확정하고, 게시할 수 있다 |
+| RUN-1 | 실행에는 레인이 둘 있다. 글 레인(main)은 원본 문서, 현지화, 글, 에이전트에게 보내는 요청을 맡고, 슬라이드 레인(slides)은 계획, 덱, 덱 텍스트 동기화를 맡는다. 한 레인에서는 한 번에 액션 하나만 실행되고 두 레인은 동시에 실행된다. 슬라이드를 만드는 동안 글을 검토하고, 고치고, 확정하고, 게시할 수 있다 |
 | RUN-2 | 실행의 세션은 그 실행의 기록이며 한 번에 한 작성자만 쓴다. 작성자는 글 레인의 에이전트 턴이거나, 기록을 먼저 읽고 하는 코드의 짧은 쓰기다. 슬라이드 계획은 자기만의 세션에서 일하고 그 결과만 기록에 쓴다. 서로 다른 언어를 바꾸는 두 액션은 절대 상대의 변경을 잃게 하지 않는다 |
 | RUN-3 | 사람이 시작한 모든 액션은 페이지가 보여 주는 두 가지 중 하나로 끝난다. 완료이거나, 무엇이 이루어지지 않았는지 말하는 알림이다. 결과를 아무도 기다리지 않는 일은 시작하지 않는다 |
 | RUN-4 | 서버가 멈춰 중단된 실행은 어느 레인이 중단되었는지 말하고, 요청했지만 빠진 슬라이드를 그 실행의 옵션으로 만들 수 있게 제안한다 |
@@ -264,7 +263,7 @@ flowchart TD
 | `FINALIZED_POSTS` | 확정된 제목과 본문의 다이제스트, 그리고 탐지 결과를 확인했는지 여부 |
 | `LOCALIZED_FROM` | 현지화본을 만들 때 쓴 원본 본문의 다이제스트(WEB-15) |
 | `SLIDE_PLANS`, `SLIDE_TIMING` | 기준 계획과 그 시간 보고서 |
-| `GOOGLE_SLIDES_DECKS` | 덱 ID, 주소, 개수, 만든 시각, 이 덱이 대체한 덱들의 주소, PDF와 그것을 내보낸 시각 |
+| `GOOGLE_SLIDES_DECKS` | 덱 ID, 주소, 개수, 만든 시각, 이 덱이 대체한 덱들의 주소 |
 | `DECK_TEXT_BASELINE` | 파일과 덱이 마지막으로 일치했던 텍스트 |
 | `PUBLICATIONS`(플랫폼별) | 원본, 내보냄, 초안 또는 공개 상태와 그 ID 및 주소 |
 
@@ -297,9 +296,8 @@ flowchart TD
   슬라이드는 텍스트로 배치한다.
 - 덱 레이아웃은 한 번만 계산한다. 나중에 푸시한 텍스트에 맞춰 다시 조정하지
   않는다.
-- 서버는 Google Slides에서 덱을 고친 내용을 알지 못한다. 그래서 실행은 PDF가
-  최신인지가 아니라 언제 내보냈는지를 기록하고, "Update deck…"은 발표자 노트
-  파일이 바뀌었을 때만 나타난다.
+- 서버는 Google Slides에서 덱을 고친 내용을 알지 못한다. 그래서
+  "Update deck…"은 발표자 노트 파일이 바뀌었을 때만 나타난다.
 - 에이전트에게 문장으로 보낸 슬라이드 요청이 승인 요청으로 바뀌는 곳은
   페이지뿐이다. 채팅과 API에서는 에이전트가 브리프를 정하고, 그 대화에서
   계획하고, 덱을 한 번에 하나씩 그 덱의 승인을 받아 만든다.
@@ -393,7 +391,7 @@ flowchart TD
 | 32 | 페이지와 스크립트는 판단이 필요 없는 모든 일에 도구 함수를 직접 호출한다. 에이전트에는 현지화와 발표 계획만 요청한다 | 모든 단계를 입력 메시지로 에이전트에 보내던 방식 |
 | 33 | 초안은 제출된 그대로 저장한다 | 모델이 초안을 도구 호출에 옮겨 적던 방식 |
 | 34 | 다시 만든 코드를 독립적으로 검토한 뒤 반영한 사항. 확정에 대한 승낙은 질문받은 본문에만 유효하다. 코디네이터의 지시문에는 글 본문이 들어가지 않는다. 서버는 자기 이름으로 온 요청에만 응답한다. 덱 동기화는 보여 준 변경 사항만 쓴다. 자격 증명 탐지 결과는 빠짐없이 보여 준다 | 이 명세의 첫 번째 코드에서 검토가 찾아낸 빈틈 |
-| 35 | 글의 표를 Google Slides 네이티브 표로 배치(`table:N`, SLD-11). 게시물 확정 시 및 Slides 열에서 요청 시 덱을 PDF로 내보내기(`slides.<lang>.pdf`, SLD-12) | 8절의 열린 항목 1번과 2번 |
+| 35 | 글의 표를 Google Slides 네이티브 표로 배치(`table:N`, SLD-11). 게시물 확정 시 및 Slides 열에서 요청 시 덱을 PDF로 내보내기(`slides.<lang>.pdf`, SLD-12. PDF 내보내기는 결정 52로 철회) | 8절의 열린 항목 1번과 2번 |
 | 36 | INV-4 명확화(블로그 플랫폼 URL에서 읽어 온 경우에만 해당 플랫폼을 `existing_source`로 기록). 초안 원본 언어 게시물도 공개 전에 웹 편집기에서 편집 허용. Google Docs 문서 URL(`https://docs.google.com/document/d/...`)을 Markdown 초안으로 읽기 지원(`.md`, `.txt`, Google Docs만 지원) | 편집할 수 없던 초안 원본 게시물, 블로그 URL과 로컬 파일만 지원하던 입력 |
 | 37 | 상태 줄을 글 제목 아래에 둔다. 게시 단계들을 진행 표시에 넣었고, 진행 표시는 이후 3행이 되었다(WEB-3) | 5단계짜리 두 줄 |
 | 38 | 태그는 게시 승인 대화상자에서 입력하고, 그 플랫폼의 규칙을 입력란 아래에 보여 준다(WEB-6) | 승인 밖에 있던 태그 입력란 |
@@ -446,7 +444,7 @@ flowchart TD
 
 | | 버전 1.0 뒤의 결정 | 대체한 것 |
 | :--- | :--- | :--- |
-| 52 | 페이지에는 PDF 내보내기가 없다. 덱은 에이전트의 `export_google_slides_pdf` 도구로, 채팅이나 API를 통해 내보낸다(SLD-12, WEB-5). 소유자가 버전 1.0 전에 설계에서 뺐고, 버전 1.0 계획이 실수로 되살렸다 | Slides 열의 "Export PDF"와 내보낸 시각이 붙은 "PDF" 링크(WP-12) |
+| 52 | PDF 내보내기를 완전히 없앤다. 덱을 PDF로 내보내는 기능은 어디에도 없고 SLD-12는 철회한다(WEB-5). 이전 버전이 워크스페이스에 남긴 `slides.<lang>.pdf` 파일은 그대로 두고 어디에도 보여 주지 않는다. 소유자가 버전 1.0 전에 설계에서 뺐고, 버전 1.0 계획이 실수로 되살렸다 | Slides 열의 "Export PDF"와 내보낸 시각이 붙은 "PDF" 링크 및 그 경로(WP-12), 에이전트 도구 `export_google_slides_pdf`, 덱 텍스트 동기화 뒤의 재내보내기, 덱 기록·상태 행·매니페스트의 PDF 항목, SLD-12 |
 | 53 | Slides 열에는 "Re-create…" 버튼이 없다. 슬라이드를 다시 만들려면 에이전트에게 문장으로 요청하고 INV-6의 승인을 거친다(WEB-5). 소유자가 버전 1.0 전에 설계에서 뺐고, 버전 1.0 계획이 실수로 되살렸다 | "Re-create…" 버튼(WP-12, A-13) |
 | 54 | 슬라이드 단계는 언어별 표시를 보여 주지 않는다. "Prepare slides"는 완료 여부만 있는 단계 하나이다. 슬라이드를 만드는 중인 언어는 그 언어의 행이 진행 상태를 보여 준다(WEB-3, WEB-5). 소유자가 버전 1.0 전에 설계에서 뺐고, 버전 1.0 계획이 실수로 되살렸다 | "Prepare slides" 아래의 `EN ✓ KO … JA –`(A-13) |
 
@@ -510,7 +508,6 @@ flowchart TD
 | SLD-9 | `test_planning_one_language_keeps_the_plans_of_the_others`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_timing_export_and_manifest_work_per_language`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
 | SLD-10 | `test_a_failure_after_the_file_exists_names_the_file` |
 | SLD-11 | `test_markdown_tables_are_extracted_and_placed_as_native_slide_tables` |
-| SLD-12 | `test_the_agents_tool_exports_a_deck_as_pdf_and_the_page_offers_no_export`, `test_a_pdf_never_outlives_the_deck_it_was_made_from`, `test_finalizing_a_post_does_not_touch_slides` |
 | SLD-13 | `test_a_new_deck_keeps_the_address_of_the_one_it_replaces` |
 | SLD-14 | `test_one_language_failing_does_not_stop_the_others`, `test_the_number_of_languages_planned_at_once_can_be_lowered`, `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck` |
 | SYN-1 | `test_slide_plan_markdown_reads_back_as_the_same_plan`, `test_sync_needs_a_deck_and_a_readable_plan` |
@@ -522,7 +519,7 @@ flowchart TD
 | WEB-2 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
 | WEB-3 | `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck`, `test_a_run_is_reopened_from_its_record_after_a_restart`, `test_the_slides_step_is_one_step_for_the_languages_asked_for` |
 | WEB-4 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
-| WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for`, `test_each_row_offers_the_slide_action_its_state_allows`, `test_a_row_says_what_the_slides_lane_is_doing_with_its_language` |
+| WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for`, `test_each_row_offers_the_slide_action_its_state_allows`, `test_a_row_says_what_the_slides_lane_is_doing_with_its_language`, `test_nothing_exports_a_deck_as_pdf`, `test_what_an_earlier_version_left_of_a_pdf_is_left_alone` |
 | WEB-6 | `test_overview_lists_titles_files_and_next_steps`, `test_posting_from_the_page_needs_a_finalized_post_and_carries_the_persons_choice` |
 | WEB-7 | `test_preview_links_to_the_editor_only_for_files_a_person_may_change`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
 | WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again`, `test_draft_source_language_post_can_be_edited_before_finalizing` |
@@ -552,7 +549,7 @@ flowchart TD
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: 워크플로는 단위 테스트가 아니라 GitHub에서 실행된다. 통과 여부는 실행 대상 커밋에 표시된다 |
 | OPS-7 | `test_every_place_the_readme_points_to_exists` |
-| RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
+| RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs`, `test_finalizing_a_post_does_not_touch_slides` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
 | RUN-4 | `test_an_interrupted_run_offers_the_slides_that_are_missing` |

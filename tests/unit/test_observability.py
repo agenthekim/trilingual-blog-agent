@@ -274,7 +274,6 @@ def test_the_page_and_the_script_set_up_tracing_and_outbound_calls_have_spans() 
         (google_slides.create_deck, "slides.create_deck"),
         (google_slides.read_presentation, "slides.read_presentation"),
         (google_slides.update_presentation, "slides.update_presentation"),
-        (google_slides.export_deck_pdf, "slides.export_pdf"),
         (web_ui._draw_diagram, "diagram.draw"),
         (llm.generate_text, "model.generate_text"),
     ):

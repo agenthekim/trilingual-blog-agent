@@ -6,7 +6,7 @@ is doing. A run has two lanes (RUN-1):
 
 - ``main``: the source document, localization, the posts (save, finalize,
   post, register an address) and requests to the agent;
-- ``slides``: slide plans, decks, PDF export and deck text sync.
+- ``slides``: slide plans, decks and deck text sync.
 
 One action runs at a time in a lane, and the two lanes run at the same time,
 so posts can be reviewed and posted while slides are made. Every action a
