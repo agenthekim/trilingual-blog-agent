@@ -510,9 +510,9 @@ def test_a_run_is_reopened_from_its_record_after_a_restart(real) -> None:
     assert [step["name"] for step in after["post_progress"]] == [
         "Review & edit",
         "Finalize posts",
-        "Export slide PDFs",
         "Approve & draft",
-        "Publish & verify",
+        "Publish posts",
+        "Verify & complete",
     ]
     # The notice is said once, not on every reopening.
     web_ui.JOBS.clear()

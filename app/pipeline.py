@@ -272,10 +272,6 @@ def post_progress(
         == "published"
         for lang in publishable
     )
-    slide_langs = talk_languages or list(session_state.get(state.SLIDE_PLANS) or {})
-    pdfs_ready = bool(slide_langs) and all(
-        bool(project_file(project_id, slide_pdf_file(lang))) for lang in slide_langs
-    )
     api_langs = [
         lang for lang in publishable if PLATFORM_FOR_LANGUAGE[lang] in API_PLATFORMS
     ]
@@ -288,17 +284,30 @@ def post_progress(
             for lang in api_langs
         )
     )
-    published = has_posts and all(
-        policy.publication(session_state, PLATFORM_FOR_LANGUAGE[lang]).get("state")
-        in ("existing_source", "published")
-        for lang in LANGUAGES
+    api_published = (
+        all_finalized
+        and bool(api_langs)
+        and all(
+            policy.publication(session_state, PLATFORM_FOR_LANGUAGE[lang]).get("state")
+            == "published"
+            for lang in api_langs
+        )
+    )
+    all_complete = (
+        has_posts
+        and summarized
+        and all(
+            policy.publication(session_state, PLATFORM_FOR_LANGUAGE[lang]).get("state")
+            in ("existing_source", "published")
+            for lang in LANGUAGES
+        )
     )
     return [
         {"name": "Review & edit", "done": reviewed},
         {"name": "Finalize posts", "done": all_finalized},
-        {"name": "Export slide PDFs", "done": pdfs_ready},
         {"name": "Approve & draft", "done": drafted},
-        {"name": "Publish & verify", "done": published},
+        {"name": "Publish posts", "done": api_published},
+        {"name": "Verify & complete", "done": all_complete},
     ]
 
 
