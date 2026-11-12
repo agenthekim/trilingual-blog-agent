@@ -717,6 +717,24 @@ async def record_url(job_id: str, request: UrlRequest) -> dict[str, bool]:
     return {"accepted": True}
 
 
+_LANG_MENTIONS: dict[str, tuple[str, ...]] = {
+    "ko": ("korean", "한국어", "국문", "韓国語"),
+    "en": ("english", "영어", "영문", "英語"),
+    "ja": ("japanese", "일본어", "일문", "日本語"),
+}
+
+
+def _requested_slide_languages(text: str) -> list[str]:
+    lower = text.lower()
+    if any(w in lower for w in ("all three", "all languages", "모든 언어", "전체 언어", "3개 국어", "3言語", "すべて")):
+        return ["en", "ko", "ja"]
+    found: list[str] = []
+    for lang, words in _LANG_MENTIONS.items():
+        if any(w in lower for w in words):
+            found.append(lang)
+    return found
+
+
 @web.post("/api/jobs/{job_id}/message")
 async def send_message(job_id: str, request: MessageRequest) -> dict[str, bool]:
     job = _job(job_id)
@@ -736,10 +754,34 @@ async def send_message(job_id: str, request: MessageRequest) -> dict[str, bool]:
             or "슬라이드" in request.text
             or "スライド" in request.text
         )
+        updated_slide_langs = [
+            lang
+            for lang, plan in after_plans.items()
+            if plan and plan != before_plans.get(lang)
+        ]
         if wants_deck_now and hasattr(job.pipeline, "create_deck"):
-            for lang, plan in after_plans.items():
-                if plan and plan != before_plans.get(lang):
-                    await job.pipeline.create_deck(lang, summarize=True)
+            for lang in updated_slide_langs:
+                await job.pipeline.create_deck(lang, summarize=True)
+        # An ADK slide_planning_pipeline turn plans one language and ends; if
+        # the person asked for multiple languages in one sentence, run the rest.
+        if updated_slide_langs and hasattr(job.pipeline, "prepare_slides_and_deck"):
+            brief = after_state.get(state.PRESENTATION_BRIEF) or {}
+            minutes = int(brief.get("minutes") or 15)
+            audience = str(brief.get("audience") or "software engineers")
+            replies = [job.pipeline.last_reply] if job.pipeline.last_reply else []
+            for lang in _requested_slide_languages(request.text):
+                if lang not in updated_slide_langs:
+                    await job.pipeline.prepare_slides_and_deck(
+                        lang,
+                        minutes=minutes,
+                        audience=audience,
+                        create_deck=wants_deck_now,
+                        replan=True,
+                    )
+                    if job.pipeline.last_reply:
+                        replies.append(job.pipeline.last_reply)
+            if len(replies) > 1:
+                job.pipeline.last_reply = "\n\n".join(replies)
         job.reply = job.pipeline.last_reply[:2000] or (
             "The agent finished without a reply; see the activity log."
         )
