@@ -565,6 +565,8 @@ def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
         "Slide options",
         "Choose the slide length to create Google Slides in your configured Google Drive.",
         "Ask the agent for a change",
+        "Qiita takes one to five tags without spaces",
+        "DEV Community takes up to four tags, lowercase letters and digits only",
     ):
         assert text in page
     audiences = re.findall(

@@ -106,6 +106,7 @@
   dialog h2 { font-size:16px; }
   dl.summary { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; }
   dl.summary dt { color:var(--muted); } dl.summary dd { margin:0; font-weight:500; overflow-wrap:anywhere; }
+  #confirmExtra:empty { display:none; }
   #confirmChoices { display:grid; gap:6px; }
   #confirmChoices:empty { display:none; }
   label.choice { display:flex; gap:8px; align-items:baseline; cursor:pointer; }
@@ -233,6 +234,7 @@
   <div class="body">
     <h2 id="confirmTitle"></h2>
     <dl class="summary" id="confirmSummary"></dl>
+    <div id="confirmExtra"></div>
     <div id="confirmChoices"></div>
     <p class="muted small" id="confirmNote" style="margin:0"></p>
   </div>
@@ -304,10 +306,11 @@ const fileUrl = (name) => `/api/jobs/${jobId}/files/${encodeURIComponent(name)}`
 
 // One dialog for every action that writes outside this machine.
 // Resolves to true or false; with ``choices`` to the chosen value, or null when cancelled.
-function confirmAction({title, summary, note, okLabel, choices}) {
+function confirmAction({title, summary, extra, validate, note, okLabel, choices}) {
   return new Promise((resolve) => {
     $("confirmTitle").textContent = title;
     $("confirmSummary").replaceChildren(...(summary || []).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+    $("confirmExtra").replaceChildren(...(extra || []));
     $("confirmChoices").replaceChildren(...(choices || []).map((choice, i) => el("label", {class: "choice"},
       el("input", {type: "radio", name: "confirmChoice", value: choice.value, checked: i === 0}),
       el("span", {}, el("strong", {}, choice.label), el("span", {class: "muted"}, " · " + choice.hint)))));
@@ -315,6 +318,7 @@ function confirmAction({title, summary, note, okLabel, choices}) {
     $("confirmOk").textContent = okLabel;
     const dialog = $("confirmDialog");
     const done = (ok) => {
+      if (ok && validate && !validate()) return;
       const picked = dialog.querySelector("input[name=confirmChoice]:checked");
       dialog.close(); $("confirmOk").onclick = $("confirmCancel").onclick = dialog.oncancel = null;
       resolve(choices ? (ok && picked ? picked.value : null) : ok);
@@ -381,10 +385,10 @@ function languageRow(row, busy) {
           : `Review post.${row.language}.md and edit it if needed. Finalize it when it is ready.`),
         el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy, onclick: () => finalize(row)}, "Finalize")));
     } else if (row.next === "post") {
-      const tags = keep(`tags:${row.platform}`, {placeholder: "Tags: ai, agents", "aria-label": `Tags for ${row.platform_name}`});
-      next.append(el("div", {class: "inline"}, tags, el("button", {class: "primary", type: "button", disabled: busy,
-        onclick: () => postDraft(row, tags.value, drafted)}, drafted ? "Update post…" : "Post…")),
-        el("span", {class: "muted small"}, "Finalized. You choose draft or public when you approve."));
+      next.append(
+        el("span", {class: "muted small"}, "Finalized. You choose tags and draft or public when you approve."),
+        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy,
+          onclick: () => postDraft(row, drafted)}, drafted ? "Update post…" : "Post…")));
     } else if (row.next === "paste") {
       const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
       next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL")),
@@ -495,17 +499,45 @@ async function poll() {
   }
 }
 
-async function postDraft(row, tagText, update) {
-  const tags = tagText.split(",").map((t) => t.trim()).filter(Boolean);
-  // The person approving decides how far the post goes; the agent cannot.
+function checkTags(platform, tags) {
+  if (platform === "qiita") {
+    if (tags.length < 1 || tags.length > 5 || tags.some((t) => /\s/.test(t)))
+      return "Qiita takes one to five tags without spaces (separate tags with commas, e.g. GoogleCloud, Lustre, HPC).";
+  } else if (platform === "devto") {
+    if (tags.length > 4 || tags.some((t) => !/^[a-z0-9]{1,30}$/.test(t)))
+      return "DEV Community takes up to four tags, lowercase letters and digits only, no spaces or hyphens.";
+  }
+  return null;
+}
+async function postDraft(row, update) {
+  const isQiita = row.platform === "qiita";
+  const ruleText = isQiita
+    ? "Qiita takes one to five tags without spaces (comma-separated, e.g. GoogleCloud, Lustre, HPC)."
+    : "DEV Community takes up to four tags, lowercase letters and digits only (comma-separated, e.g. googlecloud, lustre, hpc).";
+  const tagInput = keep(`tags:${row.platform}`, {
+    id: "confirmTags",
+    placeholder: isQiita ? "GoogleCloud, Lustre, HPC" : "googlecloud, lustre, hpc",
+    "aria-label": `Tags for ${row.platform_name}`,
+  });
+  const tagError = el("span", {class: "small hidden", style: "color:var(--bad); font-weight:400"}, "");
+  tagInput.addEventListener("input", () => tagError.classList.add("hidden"));
+  let parsedTags = [];
+  // The person approving decides the tags and how far the post goes; the agent cannot.
   const visibility = await confirmAction({
     title: `${update ? "Update the post" : "Post"} on ${row.platform_name}?`,
-    summary: [["Title", row.title], ["Tags", tags.join(", ") || "none"]],
+    summary: [["Title", row.title]],
+    extra: [el("label", {class: "field", for: "confirmTags"}, "Tags", tagInput, el("span", {class: "hint"}, ruleText), tagError)],
+    validate: () => {
+      parsedTags = tagInput.value.split(",").map((t) => (isQiita ? t.trim() : t.trim().toLowerCase())).filter(Boolean);
+      const err = checkTags(row.platform, parsedTags);
+      if (err) { tagError.textContent = err; tagError.classList.remove("hidden"); tagInput.focus(); return false; }
+      return true;
+    },
     choices: [
       {value: "draft", label: "Draft", hint: "Not public. You publish it yourself on the site."},
       {value: "public", label: "Public", hint: "Visible to everyone as soon as you approve."}],
     note: "This uses your account on that platform.", okLabel: "Approve and post"});
-  if (visibility) act("draft", {platform: row.platform, tags, approved: true, public: visibility === "public"});
+  if (visibility) act("draft", {platform: row.platform, tags: parsedTags, approved: true, public: visibility === "public"});
 }
 async function finalize(row) {
   try {
