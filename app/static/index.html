@@ -393,43 +393,64 @@ const UI_TRANSLATIONS = {
     sourcesModalHint: "Click an item to fill the source box, or open its previous run.",
     noSourceHistoryText: "No source documents recorded yet.",
     openRunBtn: "Open run",
+    openOriginal: "Open original",
+    openPost: "Open post",
+    openDraft: "Open draft",
+    finalizeBtn: "Finalize",
+    postBtn: "Post…",
+    updatePostBtn: "Update post…",
+    registerUrlBtn: "Register URL",
+    finishedText: "Finished. Review the results below.",
+    stoppedText: "Stopped.",
+    summaryRunText: "· Summary of this run: ",
+    workingText: "Working",
+    elapsedText: "elapsed",
+    stepNames: {},
+    langNames: {Korean: "Korean", English: "English", Japanese: "Japanese"},
+    statusLabels: {
+      not_posted: "Not posted",
+      exported_for_manual_post: "Ready to paste",
+      draft: "Draft created",
+      published: "Published",
+      existing_source: "Original",
+    },
   },
   ko: {
     appTitle: "Trilingual Blog Agent",
-    subtitle: "하나의 기술 글을 3개 국어 블로그 포스트와 발표 슬라이드로 자동 변환합니다.",
+    subtitle: "글 하나를 3개 국어 블로그 포스트와 발표 슬라이드로 자동 변환합니다.",
     settings: "설정",
     sourceTitle: "원본 문서",
-    sourceHint: "게시물 URL, .md 파일 또는 초안 텍스트를 입력하세요.",
+    sourceHint: "블로그 글 URL, .md 파일 또는 본문 텍스트를 입력하세요.",
     clearBtn: "초기화 / 새 글 작성",
     attachBtn: ".md 파일 첨부",
-    dropHint: "또는 파일을 이 카드 위로 끌어다 놓으세요",
+    dropHint: "또는 이 카드 위에 파일을 끌어다 놓으세요",
     slideLegend: "슬라이드 옵션",
-    slideHint: "설정된 Google Drive에 생성할 슬라이드 길이를 선택하세요.",
-    lengthLabel: "발표 시간",
-    languagesLabel: "언어",
+    slideHint: "연결된 Google Drive에 생성할 발표 슬라이드 분량을 선택하세요.",
+    lengthLabel: "발표 분량",
+    languagesLabel: "생성 언어",
     audienceLabel: "대상 청중",
-    formFoot: "수 분이 소요됩니다. 게시 전에 모든 내용을 직접 검토하실 수 있습니다.",
+    formFoot: "약 1~2분 소요됩니다. 모든 결과물은 게시 전에 직접 검토하고 수정할 수 있습니다.",
     runBtn: "실행",
-    askTitle: "에이전트에 수정 요청하기",
-    askHint: "예: “영문 제목을 짧게 해줘” 또는 “한국어 서론을 덜 격식 있게 다듬어줘”.",
-    askPlaceholder: "에이전트에 변경을 요청하세요 (예: 예시 교체, 톤 조정)...",
+    askTitle: "에이전트에게 수정 요청",
+    askHint: "예: “영어 블로그 제목을 더 간결하게 줄여줘” 또는 “한국어 도입부를 부드럽게 다듬어줘”.",
+    askPlaceholder: "수정할 내용을 입력하세요 (예: 제목 축약, 문체 변경, 슬라이드 재생성)...",
     sendBtn: "전송",
     logTitle: "에이전트 실행 로그",
     settingsTitle: "연동 플랫폼 및 서비스",
     settingsHint: "언어별 블로그 플랫폼 및 Google Slides 연동 상태입니다.",
     setupGuideLink: "설정 가이드",
-    settingsNoteText: "인증 정보는 서버에만 안전하게 보관되며 이 페이지로 노출되지 않습니다.",
-    howApi: "REST API 연동",
-    howHtml: "붙여넣기용 HTML 내보내기",
+    settingsNoteText: "인증 정보는 서버에만 안전하게 보관되며 웹 페이지로 노출되지 않습니다.",
+    howApi: "REST API 자동 게시",
+    howHtml: "붙여넣기용 HTML 생성",
     statusReady: "✓ 사용 가능",
-    statusConnected: "✓ 인증됨",
+    statusConnected: "✓ 연결됨",
     statusNoCred: "미설정 · 가이드",
-    statusSlidesOk: "✓ 권한 부여됨",
+    statusSlidesOk: "✓ 연결됨",
     statusSlidesNo: "미설정 · 가이드",
-    diagramsOn: "다이어그램 렌더링 켜짐",
-    diagramsOff: "다이어그램 렌더링 꺼짐",
-    langSettingLabel: "페이지 표시 언어",
-    langSettingHint: "웹 UI에서 사용할 언어를 선택하세요.",
+    diagramsOn: "다이어그램 이미지 변환 켜짐",
+    diagramsOff: "다이어그램 이미지 변환 꺼짐",
+    langSettingLabel: "화면 표시 언어",
+    langSettingHint: "웹 페이지에 표시할 언어를 선택하세요.",
     doneBtn: "완료",
     colLang: "언어",
     colTitle: "제목",
@@ -443,50 +464,138 @@ const UI_TRANSLATIONS = {
     morePromptsBtn: "전체 프롬프트…",
     promptsModalTitle: "프롬프트 라이브러리 및 히스토리",
     promptsModalHint: "항목을 클릭해 입력창에 채운 뒤 필요시 수정하고 전송을 누르세요.",
-    essentialPromptsLabel: "필수 기능 레시피",
-    historyPromptsLabel: "내가 자주 쓴 프롬프트 (인기순)",
-    clearHistoryBtn: "기록 초기화",
+    essentialPromptsLabel: "필수 기능 프롬프트",
+    historyPromptsLabel: "자주 사용한 프롬프트 (인기순)",
+    clearHistoryBtn: "기록 비우기",
     noHistoryText: "아직 직접 전송한 프롬프트 기록이 없습니다.",
     recentSourcesBtn: "최근 원본 문서…",
     sourcesModalTitle: "최근 원본 문서",
     sourcesModalHint: "항목을 클릭해 입력창에 채우거나 이전 실행 결과를 바로 여세요.",
     noSourceHistoryText: "아직 저장된 원본 문서 기록이 없습니다.",
     openRunBtn: "결과 열기",
+    openOriginal: "원본 글 열기",
+    openPost: "게시된 글 열기",
+    openDraft: "초안 열기",
+    finalizeBtn: "검토 완료",
+    postBtn: "게시하기…",
+    updatePostBtn: "게시물 업데이트…",
+    registerUrlBtn: "URL 등록",
+    finishedText: "완료되었습니다. 아래에서 결과를 확인하세요.",
+    stoppedText: "중지됨.",
+    summaryRunText: "· 실행 요약 보고서: ",
+    workingText: "작업 진행 중",
+    elapsedText: "경과",
+    stepNames: {
+      "Source document": "원본 문서 확인",
+      "Transform": "번역 및 변환",
+      "Prepare posts": "블로그 글 준비",
+      "Prepare slides": "슬라이드 제작",
+      "Summarize": "결과 요약",
+      "Review & edit": "검토 및 편집",
+      "Finalize posts": "원고 확정",
+      "Approve & draft": "승인 및 초안 생성",
+      "Publish posts": "블로그 게시",
+      "Verify & complete": "게시 확인 및 완료",
+    },
+    langNames: {Korean: "한국어", English: "영어", Japanese: "일본어"},
+    statusLabels: {
+      not_posted: "미게시",
+      exported_for_manual_post: "붙여넣기 준비됨",
+      draft: "초안 생성됨",
+      published: "게시 완료",
+      existing_source: "원본",
+    },
   },
   ja: {
     appTitle: "Trilingual Blog Agent",
-    subtitle: "1つの記事を3か国語のブログ記事とプレゼンスライドに自動変換します。",
+    subtitle: "記事から3言語のブログ投稿と発表スライドを自動生成します。",
     settings: "設定",
-    sourceTitle: "ソースドキュメント",
-    sourceHint: "記事のURL、.mdファイル、または文章を入力してください。",
-    clearBtn: "クリア / 新規記事",
+    sourceTitle: "元記事（ソース）",
+    sourceHint: "記事のURL、.mdファイル、または本文テキストを入力してください。",
+    clearBtn: "クリア / 新規作成",
     attachBtn: ".mdファイルを添付",
-    dropHint: "またはこのカード上にファイルをドロップ",
-    slideLegend: "スライド設定",
-    slideHint: "Google Driveに作成するスライドの長さを選択してください。",
-    lengthLabel: "長さ",
-    languagesLabel: "言語",
-    audienceLabel: "対象読者",
-    formFoot: "数分かかります。投稿前にすべての内容を確認できます。",
+    dropHint: "またはこのカードにファイルをドロップ",
+    slideLegend: "スライド作成オプション",
+    slideHint: "連携済みのGoogle Driveに作成する発表スライドの分量を指定します。",
+    lengthLabel: "発表時間・枚数",
+    languagesLabel: "作成する言語",
+    audienceLabel: "対象読者・聴衆",
+    formFoot: "1〜2分ほどかかります。公開前にすべての内容を確認・編集できます。",
     runBtn: "実行",
-    askTitle: "エージェントに変更を依頼",
-    askHint: "例:「英語のタイトルを短くして」「日本語の導入を柔らかくして」",
-    askPlaceholder: "エージェントに変更を依頼してください（例: 例示の変更、トーン調整など）...",
+    askTitle: "エージェントに修正を依頼",
+    askHint: "例:「英語記事のタイトルをもっと簡潔にして」「韓国語記事の導入部をやわらかくして」",
+    askPlaceholder: "修正したい内容を入力してください（例: タイトルの短縮、トーン調整、スライド再作成）...",
     sendBtn: "送信",
     logTitle: "エージェント実行ログ",
-    settingsTitle: "連携プラットフォームとサービス",
-    settingsHint: "言語別のブログプラットフォームとGoogle Slidesの連携状況です。",
+    settingsTitle: "連携プラットフォーム・サービス",
+    settingsHint: "言語別のブログ投稿先とGoogle Slidesの連携ステータスです。",
     setupGuideLink: "セットアップガイド",
-    settingsNoteText: "認証情報はサーバーに保持され、このページには公開されません。",
-    howApi: "REST API 連携",
+    settingsNoteText: "認証情報はサーバー側で安全に管理され、この画面には表示されません。",
+    howApi: "REST API 自動連携",
     howHtml: "貼り付け用 HTML 出力",
     statusReady: "✓ 利用可能",
-    statusConnected: "✓ 認証済み",
+    statusConnected: "✓ 連携済み",
     statusNoCred: "未設定 · ガイド",
-    statusSlidesOk: "✓ 権限付与済み",
+    statusSlidesOk: "✓ 連携済み",
     statusSlidesNo: "未設定 · ガイド",
-    diagramsOn: "図表描画オン",
-    diagramsOff: "図表描画オフ",
+    diagramsOn: "図表レンダリング有効",
+    diagramsOff: "図表レンダリング無効",
+    langSettingLabel: "画面の表示言語",
+    langSettingHint: "このページの表示言語を選択してください。",
+    doneBtn: "完了",
+    colLang: "言語",
+    colTitle: "タイトル",
+    colFiles: "ファイル",
+    colSlides: "スライド",
+    colNext: "次のステップ",
+    createSlidesBtn: "スライド作成…",
+    createDeckBtn: "デッキ作成…",
+    recreateDeckBtn: "スライド再作成…",
+    speakerNotes: "発表者ノート",
+    morePromptsBtn: "すべてのプロンプト…",
+    promptsModalTitle: "プロンプトライブラリ＆履歴",
+    promptsModalHint: "項目をクリックして入力欄に入れ、必要に応じて編集し送信します。",
+    essentialPromptsLabel: "定番プロンプト",
+    historyPromptsLabel: "よく使うプロンプト（人気順）",
+    clearHistoryBtn: "履歴をクリア",
+    noHistoryText: "まだ送信されたカスタムプロンプトはありません。",
+    recentSourcesBtn: "最近のソース…",
+    sourcesModalTitle: "最近のソース記事",
+    sourcesModalHint: "項目をクリックして入力欄に入れるか、前回の実行結果を開きます。",
+    noSourceHistoryText: "まだ記録されたソース記事はありません。",
+    openRunBtn: "結果を開く",
+    openOriginal: "元記事を開く",
+    openPost: "公開記事を開く",
+    openDraft: "下書きを開く",
+    finalizeBtn: "確定する",
+    postBtn: "投稿する…",
+    updatePostBtn: "投稿を更新…",
+    registerUrlBtn: "URLを登録",
+    finishedText: "完了しました。以下の結果をご確認ください。",
+    stoppedText: "停止しました。",
+    summaryRunText: "· 実行サマリー: ",
+    workingText: "処理中",
+    elapsedText: "経過",
+    stepNames: {
+      "Source document": "元記事の取得",
+      "Transform": "翻訳・変換",
+      "Prepare posts": "ブログ記事の作成",
+      "Prepare slides": "スライドの作成",
+      "Summarize": "サマリー作成",
+      "Review & edit": "確認・編集",
+      "Finalize posts": "記事の確定",
+      "Approve & draft": "承認・下書き作成",
+      "Publish posts": "記事の公開",
+      "Verify & complete": "公開確認・完了",
+    },
+    langNames: {Korean: "韓国語", English: "英語", Japanese: "日本語"},
+    statusLabels: {
+      not_posted: "未投稿",
+      exported_for_manual_post: "貼り付け準備完了",
+      draft: "下書き作成済み",
+      published: "公開済み",
+      existing_source: "原文",
+    },
   }
 };
 const UI_LANG_KEY = "tba.ui_lang";
@@ -519,6 +628,21 @@ function applyUiLanguage(lang) {
   }
   if (typeof renderSettingsRows === "function" && config && $("settingsModal") && $("settingsModal").open) {
     renderSettingsRows();
+  }
+  if (typeof renderPromptChips === "function") {
+    renderPromptChips();
+  }
+  if (typeof renderPromptsModal === "function" && $("promptsModal") && $("promptsModal").open) {
+    renderPromptsModal();
+  }
+  if (typeof renderSourcesModal === "function" && $("sourcesModal") && $("sourcesModal").open) {
+    renderSourcesModal();
+  }
+  if (state && state.overview && typeof render === "function") {
+    liveKey = null;
+    shownRows = "";
+    shownNotices = "";
+    render(state);
   }
 }
 
@@ -604,16 +728,18 @@ function keep(key, attrs) {
 }
 
 function languageRow(row, busy) {
+  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   // "Ready to paste" would be untrue for a text nobody has finalized yet.
   const shown = row.status === "exported_for_manual_post" && row.next === "review" ? "not_posted" : row.status;
-  const [label, tone] = STATUS[shown] || [shown, ""];
+  const [, tone] = STATUS[shown] || [shown, ""];
+  const label = (t.statusLabels && t.statusLabels[shown]) || (STATUS[shown] ? STATUS[shown][0] : shown);
+  const langName = (t.langNames && t.langNames[row.language_name]) || row.language_name;
 
   // Files: the posts. Editing starts from the preview a link opens.
   const files = el("td", {class: "files"}, ...row.files.map((name) => el("div", {},
     el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name))));
 
   // Slides: the deck and the speaker notes of this language, nothing of another.
-  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   const slideItems = [];
   if (row.deck && row.deck.url) slideItems.push(el("div", {},
     el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
@@ -629,28 +755,41 @@ function languageRow(row, busy) {
   const next = el("div", {class: "next"});
   const link = (text) => el("a", {href: row.url, target: "_blank", rel: "noopener"}, text);
   const drafted = row.status === "draft";
-  if (row.next === "original") next.append(link("Open original"));
-  else if (row.next === "public") next.append(link("Open post"));
+  if (row.next === "original") next.append(link(t.openOriginal || "Open original"));
+  else if (row.next === "public") next.append(link(t.openPost || "Open post"));
   else {
-    if (row.url) next.append(link(drafted ? "Open draft" : "Open post"));
+    if (row.url) next.append(link(drafted ? (t.openDraft || "Open draft") : (t.openPost || "Open post")));
     if (row.next === "review") {
-      next.append(el("span", {class: "muted small"}, drafted
-          ? "The title or text changed after the draft was made. Finalize it to update the post."
-          : `Review post.${row.language}.md and edit it if needed. Finalize it when it is ready.`),
-        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy, onclick: () => finalize(row)}, "Finalize")));
+      const reviewHint = currentUiLang === "ko"
+        ? (drafted ? "초안 생성 후 제목이나 본문이 수정되었습니다. 검토 완료를 눌러 반영하세요." : `post.${row.language}.md 파일을 검토하고 필요하면 수정한 뒤 검토 완료를 누르세요.`)
+        : currentUiLang === "ja"
+        ? (drafted ? "下書き作成後にタイトルまたは本文が変更されました。確定して更新してください。" : `post.${row.language}.md を確認・編集し、準備ができたら確定してください。`)
+        : (drafted ? "The title or text changed after the draft was made. Finalize it to update the post." : `Review post.${row.language}.md and edit it if needed. Finalize it when it is ready.`);
+      next.append(el("span", {class: "muted small"}, reviewHint),
+        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy, onclick: () => finalize(row)}, t.finalizeBtn || "Finalize")));
     } else if (row.next === "post") {
+      const postHint = currentUiLang === "ko"
+        ? "원고가 확정되었습니다. 게시 승인 시 태그와 초안/공개 여부를 선택할 수 있습니다."
+        : currentUiLang === "ja"
+        ? "確定済みです。承認時にタグと下書き・公開を選択できます。"
+        : "Finalized. You choose tags and draft or public when you approve.";
       next.append(
-        el("span", {class: "muted small"}, "Finalized. You choose tags and draft or public when you approve."),
+        el("span", {class: "muted small"}, postHint),
         el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy,
-          onclick: () => postDraft(row, drafted)}, drafted ? "Update post…" : "Post…")));
+          onclick: () => postDraft(row, drafted)}, drafted ? (t.updatePostBtn || "Update post…") : (t.postBtn || "Post…"))));
     } else if (row.next === "paste") {
+      const pasteHint = currentUiLang === "ko"
+        ? "원고가 확정되었습니다. naver_blog.html 내용을 네이버 에디터에 붙여넣어 발행한 뒤 URL을 등록하세요."
+        : currentUiLang === "ja"
+        ? "確定済みです。naver_blog.html をNaverエディタに貼り付けて公開し、URLを登録してください。"
+        : "Finalized. Paste naver_blog.html into the Naver editor, post, then register the URL.";
       const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
-      next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, "Register URL")),
-        el("span", {class: "muted small"}, "Finalized. Paste naver_blog.html into the Naver editor, post, then register the URL."));
+      next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, t.registerUrlBtn || "Register URL")),
+        el("span", {class: "muted small"}, pasteHint));
     }
   }
   return el("tr", {},
-    el("td", {class: "lang"}, el("div", {class: "who"}, row.language_name), el("span", {class: "badge " + tone}, label)),
+    el("td", {class: "lang"}, el("div", {class: "who"}, langName), el("span", {class: "badge " + tone}, label)),
     el("td", {class: "title"}, row.title),
     files,
     slidesCol,
@@ -681,13 +820,17 @@ function render(data) {
       $("source").value = cleanSourceText(o.source_text);
     }
   }
+  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   $("articleTitle").textContent = o.title || (busy ? "Reading the source document…" : "No article was stored");
   // The server says which steps are done, judged against what this run was asked for.
   const firstOpen = data.progress.findIndex((step) => !step.done);
   const postSteps = data.post_progress || [];
   const stage1Done = firstOpen === -1 && data.progress.length > 0;
   const firstPostOpen = postSteps.findIndex((step) => !step.done);
-  const stepLi = (step, isNow) => el("li", {class: step.done ? "done" : (isNow ? "now" : "")}, (step.done ? "✓ " : "") + step.name);
+  const stepLi = (step, isNow) => {
+    const label = (t.stepNames && t.stepNames[step.name]) || step.name;
+    return el("li", {class: step.done ? "done" : (isNow ? "now" : "")}, (step.done ? "✓ " : "") + label);
+  };
   const spacerLi = () => el("li", {class: "spacer"}, "");
 
   if (data.progress.length >= 5 && postSteps.length >= 5) {
@@ -757,6 +900,7 @@ function render(data) {
 
 function drawLive() {
   if (!state || !jobId || !state.overview) return;
+  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   const lastLine = (state.log && state.log.length ? state.log[state.log.length - 1] : "").split("\n")[0];
   if (missed >= 2) {
     liveKey = null;
@@ -764,17 +908,17 @@ function drawLive() {
     $("live").replaceChildren(el("span", {class: "muted"}, "Lost contact with the server. Trying again…"));
   } else if (state.busy) {
     liveKey = null;
-    $("elapsed").textContent = `${clock(Date.now() - (busySince || Date.now()))} elapsed`;
-    $("live").replaceChildren(el("span", {class: "spinner"}), el("span", {}, "Working"),
-      el("span", {class: "last"}, `· ${lastLine || "starting"} · quiet for ${clock(Date.now() - lastLogAt)} (long text shows up only when it is finished)`));
+    $("elapsed").textContent = `${clock(Date.now() - (busySince || Date.now()))} ${t.elapsedText || "elapsed"}`;
+    $("live").replaceChildren(el("span", {class: "spinner"}), el("span", {}, t.workingText || "Working"),
+      el("span", {class: "last"}, `· ${lastLine || "starting"} · quiet for ${clock(Date.now() - lastLogAt)}`));
   } else {
     const manifest = state.overview.manifest;
-    const key = `${jobId}|${state.error ? "stopped" : "finished"}|${manifest || ""}`;
+    const key = `${jobId}|${currentUiLang}|${state.error ? "stopped" : "finished"}|${manifest || ""}`;
     if (key === liveKey) return;   // keep the link in place; a rebuilt link can swallow a click
     liveKey = key;
     $("elapsed").textContent = "";
-    const done = [el("span", {class: "muted"}, state.error ? "Stopped." : "Finished. Review the results below.")];
-    if (manifest) done.push(el("span", {class: "muted"}, "· Summary of this run: ", el("a", {href: fileUrl(manifest), target: "_blank", rel: "noopener"}, manifest)));
+    const done = [el("span", {class: "muted"}, state.error ? (t.stoppedText || "Stopped.") : (t.finishedText || "Finished. Review the results below."))];
+    if (manifest) done.push(el("span", {class: "muted"}, t.summaryRunText || "· Summary of this run: ", el("a", {href: fileUrl(manifest), target: "_blank", rel: "noopener"}, manifest)));
     $("live").replaceChildren(...done);
   }
 }
@@ -986,19 +1130,43 @@ zone.addEventListener("dragleave", () => zone.classList.remove("over"));
 zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
 
 const PROMPT_HISTORY_KEY = "tba.prompt_history";
-const ESSENTIAL_PROMPTS = [
-  "Re-create the English slides and Google Slides deck",
-  "Re-create the Korean slides and Google Slides deck",
-  "Re-create the Japanese slides and Google Slides deck",
-  "Re-translate the updated source article into the other two languages",
-  "Shorten the English title",
-  "Make the Korean intro less formal",
-];
-const DEFAULT_QUICK_PROMPTS = [
-  "Shorten the English title",
-  "Make the Korean intro less formal",
-  "Re-create the English slides and Google Slides deck",
-];
+const ESSENTIAL_PROMPTS_BY_LANG = {
+  en: [
+    "Re-create the English slides and Google Slides deck",
+    "Re-create the Korean slides and Google Slides deck",
+    "Re-create the Japanese slides and Google Slides deck",
+    "Re-translate the updated source article into the other two languages",
+    "Shorten the English title",
+    "Make the Korean intro less formal",
+  ],
+  ko: [
+    "영어 발표 슬라이드와 Google Slides 덱을 다시 만들어줘",
+    "한국어 발표 슬라이드와 Google Slides 덱을 다시 만들어줘",
+    "일본어 발표 슬라이드와 Google Slides 덱을 다시 만들어줘",
+    "수정된 원본 글을 바탕으로 다른 두 언어를 다시 번역해줘",
+    "영어 블로그 제목을 더 간결하게 줄여줘",
+    "한국어 도입부를 부드럽고 친근한 톤으로 다듬어줘",
+  ],
+  ja: [
+    "英語のスライドとGoogle Slidesデッキを再作成して",
+    "韓国語のスライドとGoogle Slidesデッキを再作成して",
+    "日本語のスライドとGoogle Slidesデッキを再作成して",
+    "更新された元記事から他の2言語を再翻訳して",
+    "英語記事のタイトルをもっと簡潔にして",
+    "韓国語記事の導入部をやわらかいトーンに整えて",
+  ],
+};
+const DEFAULT_QUICK_INDICES = [4, 5, 0];
+
+function localizeBuiltInPrompt(text, targetLang) {
+  const clean = (text || "").trim().toLowerCase();
+  const targetList = ESSENTIAL_PROMPTS_BY_LANG[targetLang] || ESSENTIAL_PROMPTS_BY_LANG.en;
+  for (const list of Object.values(ESSENTIAL_PROMPTS_BY_LANG)) {
+    const idx = list.findIndex((p) => p.toLowerCase() === clean);
+    if (idx >= 0 && targetList[idx]) return targetList[idx];
+  }
+  return text;
+}
 
 function isConversationalReply(text) {
   return /^(yes|no|ok|okay|sure|네|예|응|아니)\b/i.test(text.trim());
@@ -1023,21 +1191,23 @@ function savePromptHistory(list) {
 function recordPromptUsage(text) {
   const clean = text.trim();
   if (!clean || isConversationalReply(clean)) return;
+  const canonical = localizeBuiltInPrompt(clean, "en");
   const list = getPromptHistory();
-  const idx = list.findIndex((item) => item.text.toLowerCase() === clean.toLowerCase());
+  const idx = list.findIndex((item) => localizeBuiltInPrompt(item.text, "en").toLowerCase() === canonical.toLowerCase());
   if (idx >= 0) {
-    list[idx].text = clean;
+    list[idx].text = canonical;
     list[idx].count = (list[idx].count || 1) + 1;
     list[idx].lastUsed = Date.now();
   } else {
-    list.push({text: clean, count: 1, lastUsed: Date.now()});
+    list.push({text: canonical, count: 1, lastUsed: Date.now()});
   }
   savePromptHistory(list);
   renderPromptChips();
 }
 
 function deletePromptHistoryItem(text) {
-  const list = getPromptHistory().filter((item) => item.text !== text);
+  const canonical = localizeBuiltInPrompt(text, "en").toLowerCase();
+  const list = getPromptHistory().filter((item) => localizeBuiltInPrompt(item.text, "en").toLowerCase() !== canonical);
   savePromptHistory(list);
   renderPromptChips();
   renderPromptsModal();
@@ -1052,9 +1222,16 @@ function fillPromptInput(text) {
 }
 
 function getTopPromptChips(limit = 3) {
-  const history = getPromptHistory().map((item) => item.text);
-  const picked = [...history.slice(0, limit)];
-  for (const seed of DEFAULT_QUICK_PROMPTS) {
+  const lang = currentUiLang || "en";
+  const essentials = ESSENTIAL_PROMPTS_BY_LANG[lang] || ESSENTIAL_PROMPTS_BY_LANG.en;
+  const defaults = DEFAULT_QUICK_INDICES.map((i) => essentials[i]);
+  const history = getPromptHistory().map((item) => localizeBuiltInPrompt(item.text, lang));
+  const picked = [];
+  for (const h of history) {
+    if (picked.length >= limit) break;
+    if (!picked.some((p) => p.toLowerCase() === h.toLowerCase())) picked.push(h);
+  }
+  for (const seed of defaults) {
     if (picked.length >= limit) break;
     if (!picked.some((p) => p.toLowerCase() === seed.toLowerCase())) picked.push(seed);
   }
@@ -1076,10 +1253,12 @@ function renderPromptChips() {
 }
 
 function renderPromptsModal() {
-  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
+  const lang = currentUiLang || "en";
+  const t = UI_TRANSLATIONS[lang] || UI_TRANSLATIONS.en;
+  const essentials = ESSENTIAL_PROMPTS_BY_LANG[lang] || ESSENTIAL_PROMPTS_BY_LANG.en;
   const essentialBox = $("essentialPromptsList");
   if (essentialBox) {
-    essentialBox.replaceChildren(...ESSENTIAL_PROMPTS.map((text) =>
+    essentialBox.replaceChildren(...essentials.map((text) =>
       el("div", {class: "prompt-modal-item"},
         el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(text)}, text))
     ));
@@ -1090,17 +1269,18 @@ function renderPromptsModal() {
     if (history.length === 0) {
       historyBox.replaceChildren(el("span", {class: "muted small"}, t.noHistoryText || "No custom prompts sent yet."));
     } else {
-      historyBox.replaceChildren(...history.map((item) =>
-        el("div", {class: "prompt-modal-item"},
-          el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(item.text)}, item.text),
+      historyBox.replaceChildren(...history.map((item) => {
+        const shownText = localizeBuiltInPrompt(item.text, lang);
+        return el("div", {class: "prompt-modal-item"},
+          el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(shownText)}, shownText),
           el("span", {class: "badge", style: "font-size:11px"}, `×${item.count || 1}`),
           el("button", {
             type: "button",
             class: "prompt-del",
             title: "Remove from history",
             onclick: () => deletePromptHistoryItem(item.text),
-          }, "×"))
-      ));
+          }, "×"));
+      }));
     }
   }
 }
