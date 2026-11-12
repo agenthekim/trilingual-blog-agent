@@ -31,12 +31,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-try:
-    from dotenv import load_dotenv
+from app.env_file import load_env_file
 
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-except ImportError:  # the environment is then expected to be set already
-    pass
+# ``.env`` is read before the modules below read their settings from the
+# environment, so the imports that follow cannot be at the top of the file.
+# ruff: noqa: E402
+load_env_file(Path(__file__).resolve().parent.parent / ".env")
 
 import httpx
 import markdown as markdown_lib

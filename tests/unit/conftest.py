@@ -1,11 +1,66 @@
-"""Shared fixtures. Unit tests never call a model or a network service."""
+"""Shared fixtures. Unit tests never call a model or a network service.
+
+OPS-2 is kept by two devices in this file, not by care alone: ``.env`` is not
+read (the variable below is set before any ``app`` module is imported), and a
+fixture that applies to every test refuses network connections and direct
+model clients.
+"""
 
 from __future__ import annotations
 
+import os
+
+os.environ["BLOG_AGENT_NO_DOTENV"] = "1"
+
+import socket
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
+
+class OutsideWorldRefused(RuntimeError):
+    """A unit test tried to reach the network or a model."""
+
+
+@pytest.fixture(autouse=True)
+def no_network_and_no_model(monkeypatch):
+    """Refuse every connection that is not a Unix socket, and every model client.
+
+    The attempt raises, and it is also remembered: application code that
+    catches the error and carries on still fails its test when the test ends.
+    """
+    from google import genai
+
+    attempts: list[str] = []
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+
+    def refuse(what: str) -> OutsideWorldRefused:
+        attempts.append(what)
+        return OutsideWorldRefused(
+            f"A unit test tried to reach {what}. Unit tests need no network and "
+            "no model (OPS-2); use a stand-in."
+        )
+
+    def connect(self: socket.socket, address: Any) -> None:
+        if self.family == socket.AF_UNIX:
+            return real_connect(self, address)
+        raise refuse(f"the network at {address!r}")
+
+    def connect_ex(self: socket.socket, address: Any) -> int:
+        if self.family == socket.AF_UNIX:
+            return real_connect_ex(self, address)
+        raise refuse(f"the network at {address!r}")
+
+    def model_client(*args: Any, **kwargs: Any) -> None:
+        raise refuse("a model through google.genai.Client")
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+    monkeypatch.setattr(genai, "Client", model_client)
+    yield attempts
+    assert not attempts, f"this test tried to reach {', '.join(attempts)}"
 
 
 class FakeToolContext:

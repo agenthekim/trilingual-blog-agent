@@ -523,7 +523,12 @@ async def test_a_post_read_from_the_naver_page_goes_on_with_a_notice(
     async def fake_post(blog_id, log_no):
         return "네이버 글", "네이버 페이지에서 읽어 온 본문입니다. " * 5
 
+    async def not_structured(text):
+        # Stands in for the model: the text comes back as it went in.
+        return text
+
     monkeypatch.setattr(platforms, "naver_get_post", fake_post)
+    monkeypatch.setattr("app.pipeline.auto_structure_markdown", not_structured)
     pipeline = _new_pipeline()
     _stand_in_agent(pipeline)
     notes = await pipeline.run_stages(
