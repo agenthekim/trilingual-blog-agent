@@ -44,7 +44,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from app import policy, secrets
+from app import policy, secrets, state
 from app.google_slides import SlidesError, granted_account, mermaid_preview_url
 from app.observability import log_event
 from app.pipeline import (
@@ -668,7 +668,23 @@ async def send_message(job_id: str, request: MessageRequest) -> dict[str, bool]:
 
     async def work() -> str | None:
         dropped = len(job.pipeline.approvals)
+        before_state = await job.pipeline.session_state()
+        before_plans = dict(before_state.get(state.SLIDE_PLANS) or {})
         await job.pipeline.say(request.text)
+        after_state = await job.pipeline.session_state()
+        after_plans = dict(after_state.get(state.SLIDE_PLANS) or {})
+        lower_msg = request.text.lower()
+        wants_deck_now = (
+            job.wants_decks
+            or "deck" in lower_msg
+            or "google slides" in lower_msg
+            or "슬라이드" in request.text
+            or "スライド" in request.text
+        )
+        if wants_deck_now and hasattr(job.pipeline, "create_deck"):
+            for lang, plan in after_plans.items():
+                if plan and plan != before_plans.get(lang):
+                    await job.pipeline.create_deck(lang, summarize=True)
         job.reply = job.pipeline.last_reply[:2000] or (
             "The agent finished without a reply; see the activity log."
         )

@@ -176,9 +176,10 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 "next": step,
                 "url": record.get("url"),
                 "files": [f for f in files if f],
-                # A post that was not read from a blog platform and is not
-                # already public can be edited here before it is finalized.
-                "can_edit": has_text and step in ("review", "post", "paste"),
+                # Any post with text in the workspace (including the source
+                # document) can be edited locally; an existing source keeps
+                # its 'original' step so it is never re-posted to its blog.
+                "can_edit": has_text and step in ("original", "review", "post", "paste"),
                 "slides_file": existing(slide_plan_file(language))
                 if language in plans
                 else None,
@@ -1090,7 +1091,11 @@ class ArticlePipeline:
         await self._update_state(delta)
         get_article_store().add_version(project_id, language, "edited", text)
         path.write_text(text, encoding="utf-8")
-        if PLATFORM_FOR_LANGUAGE[language] == "naver_blog":
+        if (
+            PLATFORM_FOR_LANGUAGE[language] == "naver_blog"
+            and policy.publication(current, "naver_blog").get("state")
+            != "existing_source"
+        ):
             # The paste file follows the text, by the same rules as any export:
             # a text the export refuses (credential-looking values nobody
             # accepted) leaves no file behind to be pasted by mistake.

@@ -127,6 +127,21 @@
   #settingsRows { display:grid; gap:8px; }
   .reply { margin-top:10px; padding:8px 12px; border-left:3px solid var(--accent); background:var(--soft); border-radius:0 6px 6px 0;
     white-space:pre-wrap; overflow-wrap:anywhere; }
+  .prompt-chips-bar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .prompt-chips-list { display:flex; gap:6px; align-items:center; flex-wrap:wrap; flex:1; }
+  button.prompt-chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; height:26px; padding:0 10px;
+    border-radius:999px; border:1px solid var(--line); background:var(--soft); color:var(--text); cursor:pointer;
+    max-width:290px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:400; }
+  button.prompt-chip:hover { border-color:var(--accent); color:var(--accent); }
+  .prompt-modal-list { display:grid; gap:6px; max-height:220px; overflow:auto; }
+  .prompt-modal-item { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 10px;
+    border:1px solid var(--line); border-radius:6px; background:var(--soft); font-size:13px; }
+  button.prompt-fill { border:0; background:transparent; color:var(--text); text-align:left;
+    padding:0; height:auto; cursor:pointer; flex:1; font-weight:400; overflow-wrap:anywhere; }
+  button.prompt-fill:hover { color:var(--accent); }
+  button.prompt-del { border:0; background:transparent; color:var(--muted); padding:0 4px;
+    height:auto; cursor:pointer; font-size:14px; line-height:1; }
+  button.prompt-del:hover { color:var(--bad); }
 </style>
 </head>
 <body>
@@ -217,12 +232,14 @@
   </section>
 
   <section class="card hidden" id="askCard">
-    <label class="field" for="message"><span data-i18n="askTitle">Ask the agent for a change</span>
-      <span class="hint" data-i18n="askHint">For example “shorten the English title” or “make the Korean intro less formal”.</span>
-    </label>
+    <label class="field" for="message"><span data-i18n="askTitle">Ask the agent for a change</span></label>
     <div class="askrow" style="margin-top:6px">
       <input type="text" id="message" data-i18n="askPlaceholder" placeholder="Ask the agent for a change (e.g. replace examples, adjust tone)...">
       <button id="send" type="button" class="primary" data-i18n="sendBtn">Send</button>
+    </div>
+    <div id="promptChipsBar" class="prompt-chips-bar">
+      <div id="promptChipsList" class="prompt-chips-list"></div>
+      <button type="button" id="openPromptsModal" class="ghost small" data-i18n="morePromptsBtn" style="font-size:12px; height:26px; padding:0 6px; white-space:nowrap">More prompts…</button>
     </div>
     <div class="reply hidden" id="reply" aria-live="polite"></div>
     <details style="margin-top:14px" id="logBox">
@@ -244,6 +261,27 @@
   <div class="foot">
     <button type="button" id="confirmCancel">Cancel</button>
     <button type="button" class="primary" id="confirmOk"></button>
+  </div>
+</dialog>
+
+<dialog id="promptsModal" aria-labelledby="promptsModalTitle">
+  <div class="body">
+    <h2 id="promptsModalTitle" data-i18n="promptsModalTitle">Prompt library &amp; history</h2>
+    <p class="muted small" style="margin:0" data-i18n="promptsModalHint">Click any prompt to fill it into the request box, edit if needed, and press Send.</p>
+    <div>
+      <div class="field" style="font-weight:600; margin-bottom:6px" data-i18n="essentialPromptsLabel">Essential actions</div>
+      <div id="essentialPromptsList" class="prompt-modal-list"></div>
+    </div>
+    <div style="margin-top:6px; padding-top:12px; border-top:1px solid var(--line)">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
+        <span class="field" style="font-weight:600" data-i18n="historyPromptsLabel">Your popular prompts</span>
+        <button type="button" id="clearPromptHistory" class="ghost small" data-i18n="clearHistoryBtn" style="font-size:12px; height:24px; padding:0 6px">Clear history</button>
+      </div>
+      <div id="historyPromptsList" class="prompt-modal-list"></div>
+    </div>
+  </div>
+  <div class="foot">
+    <button type="button" class="primary" id="closePromptsModal" data-i18n="doneBtn">Done</button>
   </div>
 </dialog>
 
@@ -308,6 +346,13 @@ const UI_TRANSLATIONS = {
     createDeckBtn: "Create deck…",
     recreateDeckBtn: "Re-create slides…",
     speakerNotes: "Speaker notes",
+    morePromptsBtn: "More prompts…",
+    promptsModalTitle: "Prompt library & history",
+    promptsModalHint: "Click any prompt to fill it into the request box, edit if needed, and press Send.",
+    essentialPromptsLabel: "Essential actions",
+    historyPromptsLabel: "Your popular prompts",
+    clearHistoryBtn: "Clear history",
+    noHistoryText: "No custom prompts sent yet.",
   },
   ko: {
     appTitle: "Trilingual Blog Agent",
@@ -344,6 +389,13 @@ const UI_TRANSLATIONS = {
     createDeckBtn: "덱 생성…",
     recreateDeckBtn: "슬라이드 재생성…",
     speakerNotes: "발표자 노트",
+    morePromptsBtn: "전체 프롬프트…",
+    promptsModalTitle: "프롬프트 라이브러리 및 히스토리",
+    promptsModalHint: "원하는 항목을 클릭하면 입력창에 자동으로 채워집니다. 내용을 다듬은 뒤 전송을 누르세요.",
+    essentialPromptsLabel: "필수 기능 레시피",
+    historyPromptsLabel: "내가 자주 쓴 프롬프트 (인기순)",
+    clearHistoryBtn: "기록 초기화",
+    noHistoryText: "아직 직접 전송한 프롬프트 기록이 없습니다.",
   },
   ja: {
     appTitle: "Trilingual Blog Agent",
@@ -380,6 +432,13 @@ const UI_TRANSLATIONS = {
     createDeckBtn: "デッキ作成…",
     recreateDeckBtn: "スライド再作成…",
     speakerNotes: "発表者ノート",
+    morePromptsBtn: "すべてのプロンプト…",
+    promptsModalTitle: "プロンプトライブラリ＆履歴",
+    promptsModalHint: "項目をクリックすると入力欄に入力されます。必要に応じて編集し、送信を押してください。",
+    essentialPromptsLabel: "必須アクション",
+    historyPromptsLabel: "よく使うプロンプト（人気順）",
+    clearHistoryBtn: "履歴をクリア",
+    noHistoryText: "まだ送信されたカスタムプロンプトはありません。",
   }
 };
 const UI_LANG_KEY = "tba.ui_lang";
@@ -505,43 +564,15 @@ function languageRow(row, busy) {
   // Slides: the deck and the speaker notes of this language, nothing of another.
   const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   const slideItems = [];
-  if (row.deck && row.deck.url) {
-    slideItems.push(el("div", {},
-      el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
-    if (row.slides_file) {
-      slideItems.push(el("div", {class: "muted small"},
-        el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, t.speakerNotes || "Speaker notes")));
-    }
-    slideItems.push(el("div", {style: "margin-top:4px"},
-      el("button", {
-        type: "button",
-        class: "ghost",
-        style: "font-size:11.5px; padding:2px 8px; height:24px; border:1px solid var(--line); border-radius:4px; cursor:pointer",
-        disabled: busy,
-        onclick: () => createDeck(row, true)
-      }, t.recreateDeckBtn || "Re-create slides…")));
-  } else if (row.slides_file) {
+  if (row.deck && row.deck.url) slideItems.push(el("div", {},
+    el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
+  if (row.slides_file) {
     slideItems.push(el("div", {class: "muted small"},
       el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, t.speakerNotes || "Speaker notes")));
-    slideItems.push(el("div", {style: "margin-top:4px"},
-      el("button", {
-        type: "button",
-        class: "ghost",
-        style: "font-size:11.5px; padding:2px 8px; height:24px; border:1px solid var(--line); border-radius:4px; cursor:pointer",
-        disabled: busy,
-        onclick: () => createDeck(row, false)
-      }, t.createDeckBtn || "Create deck…")));
-  } else {
-    slideItems.push(el("div", {},
-      el("button", {
-        type: "button",
-        class: "ghost",
-        style: "font-size:11.5px; padding:2px 8px; height:24px; border:1px solid var(--line); border-radius:4px; cursor:pointer",
-        disabled: busy,
-        onclick: () => createDeck(row, true)
-      }, t.createSlidesBtn || "Create slides…")));
+    if (!(row.deck && row.deck.url)) slideItems.push(el("div", {},
+      el("button", {type: "button", class: "ghost", disabled: busy, onclick: () => createDeck(row, false)}, t.createDeckBtn || "Create deck…")));
   }
-  const slidesCol = el("td", {class: "slides-col"}, ...slideItems);
+  const slidesCol = el("td", {class: "slides-col"}, ...(slideItems.length > 0 ? slideItems : [el("span", {class: "muted"}, "–")]));
 
   // Next step: review, finalize, approve, post. Only the one that is next is shown.
   const next = el("div", {class: "next"});
@@ -835,16 +866,148 @@ zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.ad
 zone.addEventListener("dragleave", () => zone.classList.remove("over"));
 zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
 
+const PROMPT_HISTORY_KEY = "tba.prompt_history";
+const ESSENTIAL_PROMPTS = [
+  "Re-create the English slides and Google Slides deck",
+  "Re-create the Korean slides and Google Slides deck",
+  "Re-create the Japanese slides and Google Slides deck",
+  "Re-translate the updated source article into the other two languages",
+  "Shorten the English title",
+  "Make the Korean intro less formal",
+];
+const DEFAULT_QUICK_PROMPTS = [
+  "Shorten the English title",
+  "Make the Korean intro less formal",
+  "Re-create the English slides and Google Slides deck",
+];
+
+function getPromptHistory() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PROMPT_HISTORY_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((item) => item && typeof item.text === "string" && item.text.trim())
+      .sort((a, b) => (b.count || 0) - (a.count || 0) || (b.lastUsed || 0) - (a.lastUsed || 0));
+  } catch (e) {
+    return [];
+  }
+}
+
+function savePromptHistory(list) {
+  try { localStorage.setItem(PROMPT_HISTORY_KEY, JSON.stringify(list.slice(0, 50))); } catch (e) {}
+}
+
+function recordPromptUsage(text) {
+  const clean = text.trim();
+  if (!clean) return;
+  const list = getPromptHistory();
+  const idx = list.findIndex((item) => item.text.toLowerCase() === clean.toLowerCase());
+  if (idx >= 0) {
+    list[idx].text = clean;
+    list[idx].count = (list[idx].count || 1) + 1;
+    list[idx].lastUsed = Date.now();
+  } else {
+    list.push({text: clean, count: 1, lastUsed: Date.now()});
+  }
+  savePromptHistory(list);
+  renderPromptChips();
+}
+
+function deletePromptHistoryItem(text) {
+  const list = getPromptHistory().filter((item) => item.text !== text);
+  savePromptHistory(list);
+  renderPromptChips();
+  renderPromptsModal();
+}
+
+function fillPromptInput(text) {
+  const input = $("message");
+  input.value = text;
+  if ($("promptsModal") && $("promptsModal").open) $("promptsModal").close();
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
+function getTopPromptChips(limit = 3) {
+  const history = getPromptHistory().map((item) => item.text);
+  const picked = [...history.slice(0, limit)];
+  for (const seed of DEFAULT_QUICK_PROMPTS) {
+    if (picked.length >= limit) break;
+    if (!picked.some((p) => p.toLowerCase() === seed.toLowerCase())) picked.push(seed);
+  }
+  return picked.slice(0, limit);
+}
+
+function renderPromptChips() {
+  const container = $("promptChipsList");
+  if (!container) return;
+  const chips = getTopPromptChips(3).map((text) =>
+    el("button", {
+      type: "button",
+      class: "prompt-chip",
+      title: text,
+      onclick: () => fillPromptInput(text),
+    }, text)
+  );
+  container.replaceChildren(...chips);
+}
+
+function renderPromptsModal() {
+  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
+  const essentialBox = $("essentialPromptsList");
+  if (essentialBox) {
+    essentialBox.replaceChildren(...ESSENTIAL_PROMPTS.map((text) =>
+      el("div", {class: "prompt-modal-item"},
+        el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(text)}, text))
+    ));
+  }
+  const historyBox = $("historyPromptsList");
+  if (historyBox) {
+    const history = getPromptHistory();
+    if (history.length === 0) {
+      historyBox.replaceChildren(el("span", {class: "muted small"}, t.noHistoryText || "No custom prompts sent yet."));
+    } else {
+      historyBox.replaceChildren(...history.map((item) =>
+        el("div", {class: "prompt-modal-item"},
+          el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(item.text)}, item.text),
+          el("span", {class: "badge", style: "font-size:11px"}, `×${item.count || 1}`),
+          el("button", {
+            type: "button",
+            class: "prompt-del",
+            title: "Remove from history",
+            onclick: () => deletePromptHistoryItem(item.text),
+          }, "×"))
+      ));
+    }
+  }
+}
+
+function openPromptsModal() {
+  renderPromptsModal();
+  $("promptsModal").showModal();
+}
+if ($("openPromptsModal")) $("openPromptsModal").addEventListener("click", openPromptsModal);
+if ($("closePromptsModal")) $("closePromptsModal").addEventListener("click", () => $("promptsModal").close());
+if ($("clearPromptHistory")) {
+  $("clearPromptHistory").addEventListener("click", () => {
+    savePromptHistory([]);
+    renderPromptChips();
+    renderPromptsModal();
+  });
+}
+
 function submitMessage() {
   const text = $("message").value.trim();
   if (!text) return;
   if (state && state.busy) { toast("The agent is still working. Try again when it has finished."); return; }
+  recordPromptUsage(text);
   $("message").value = "";
   $("logBox").open = true;
   act("message", {text});
 }
 $("send").addEventListener("click", submitMessage);
 $("message").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submitMessage(); } });
+renderPromptChips();
 
 function watch(id) {
   jobId = id; lastLogLength = 0; lastLogAt = Date.now(); busySince = null; missed = 0; liveKey = null;

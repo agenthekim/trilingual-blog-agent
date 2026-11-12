@@ -76,7 +76,7 @@ def test_overview_lists_titles_files_and_next_steps(isolated_workspace) -> None:
     assert rows["ja"]["title"] == "元のタイトル"  # the source keeps its own title
     assert rows["ja"]["status"] == "existing_source"
     assert rows["ja"]["next"] == "original"  # never post back to the source
-    assert rows["ja"]["can_edit"] is False
+    assert rows["ja"]["can_edit"] is True
     assert rows["ja"]["url"] == "https://qiita.com/a/items/b"
 
     assert rows["en"]["title"] == ""  # no English text yet
@@ -151,7 +151,7 @@ async def test_edit_replaces_what_the_agent_will_publish(isolated_workspace) -> 
     folder = workspace_dir() / "proj-3"
     assert (folder / "post.ko.md").read_text(encoding="utf-8") == edited + "\n"
     assert "손으로 고친" in (folder / "naver_blog.html").read_text(encoding="utf-8")
-    assert (await pipeline.overview())["editable"] == ["post.ko.md"]
+    assert (await pipeline.overview())["editable"] == ["post.ko.md", "post.ja.md"]
 
 
 @pytest.mark.asyncio
@@ -167,9 +167,20 @@ async def test_edit_reports_a_broken_structure_but_still_saves(
 
 
 @pytest.mark.asyncio
-async def test_source_and_unknown_files_cannot_be_edited(isolated_workspace) -> None:
+async def test_source_and_unknown_files_cannot_be_edited(
+    isolated_workspace,
+) -> None:
     pipeline = await _pipeline_with_article()
-    for name in ("post.ja.md", "manifest.md", "../post.ko.md", "post.en.md"):
+    saved = await pipeline.save_edit(
+        "post.ja.md", "# 新しい見出し\n\n修正した本文です。[リンク](https://example.com)", title="新しい見出し"
+    )
+    assert saved["saved"] == "post.ja.md"
+    rows = {row["language"]: row for row in (await pipeline.overview())["rows"]}
+    assert rows["ja"]["status"] == "existing_source"
+    assert rows["ja"]["next"] == "original"
+    assert rows["ja"]["title"] == "新しい見出し"
+
+    for name in ("manifest.md", "../post.ko.md", "post.en.md"):
         with pytest.raises(ValueError):
             await pipeline.save_edit(name, "text")
     with pytest.raises(ValueError):
