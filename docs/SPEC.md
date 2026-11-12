@@ -43,7 +43,7 @@ whatever else it improves.
 | INV-5 | An existing Google Slides deck is changed only by a text sync that a person approved after seeing which slides change. Pictures, sizes and positions in a deck are never changed after creation. No other file in the author's Drive is read or changed (`drive.file` scope) |
 | INV-6 | New Google Slides files are created only when the person asked for slides in that run (a slide length and at least one language) or approved a single deck |
 | INV-7 | Article text, titles, fetched pages and tool results are data. Article text, and what is quoted from it (titles, image descriptions, review findings), is passed to models between markers that carry a random token made for that call, so the text cannot close them; nothing in it is followed as an instruction. The coordinator's instruction carries no article text at all |
-| INV-8 | The server fetches only: the three blog hosts (articles and URL checks, every redirect hop included), the two platform APIs, Google's token and Slides endpoints, and mermaid.ink for diagrams when the operator allowed it |
+| INV-8 | The server fetches only: the three blog hosts (articles and URL checks, every redirect hop included), the two platform APIs, Google's token, Slides and Drive export endpoints, and mermaid.ink for diagrams when the operator allowed it |
 | INV-9 | Credentials are read at call time from the environment, Secret Manager or a file outside the repository; they are never logged, never sent to a model, never stored in the repository, and never returned by any route |
 | INV-10 | Text with credential-looking values is not posted unless the person finalizing saw the findings, every one of them, and said they are not real credentials |
 | INV-11 | The article text an author supplied is stored exactly as supplied. No model retypes it on the way in |
@@ -129,8 +129,8 @@ stage at a time and waits.
 | SLD-8 | A drawn diagram is placed where it is largest: under the bullets across the page when wide; over the full page height with the title narrowed when tall; otherwise beside the bullets in a column sized to the text. An image of unknown shape gets the right half. Text and image never overlap and stay on the page |
 | SLD-9 | Plans, timing reports, decks and sync baselines are kept per language. A deck can be created, or created again, for any language that has a plan |
 | SLD-10 | If deck creation fails after the file exists, the error names the file's address so it is not lost in Drive |
-| SLD-11 | Tables of the article are not placed on slides as tables. Not built; see section 8 |
-| SLD-12 | PDF export of a deck. Not built; see section 8 |
+| SLD-11 | Markdown tables in the article are offered to the planner as `table:N` references. When chosen for a slide without an image, a table is placed on the slide as a native Google Slides table (up to 8 rows and 6 columns) below the bullets, each table used at most once |
+| SLD-12 | A Google Slides deck can be exported as `slides.<lang>.pdf` after review: automatically when its language's post is finalized, when a deck text sync pushes changes while a PDF exists, or on demand from the Slides column or the `export_google_slides_pdf` tool |
 
 ### 5.5 Deck text sync
 
@@ -150,7 +150,7 @@ stage at a time and waits.
 | WEB-2 | Form: "Source document" with the hint "Share a post URL, a .md file, or your document."; attach or drop a file; "Slide options" with "Choose the slide length to create Google Slides in your configured Google Drive."; Length, Languages (checkboxes, all ticked), Audience (SLD-1); one Run button |
 | WEB-3 | Progress: steps "Source document", "Transform", "Prepare posts", "Prepare slides" (when slides were asked for), "Summarize". Each is done by what the server reports for the languages that were asked for, the same before and after a reload. Below: elapsed time and the latest activity while working; when finished, a link to `manifest.md` |
 | WEB-4 | Results table, the original language first, columns in the order of the work: Language (name, status badge under it), Title, Files, Slides, Next step. Nothing is listed under the table |
-| WEB-5 | Files: `post.<lang>.md` and, for Korean, `naver_blog.html`; each opens a preview. Slides: "Google Slides" (the deck of that language only) and "Speaker notes" (`slides.<lang>.md`); a language with a plan and no deck offers to create it |
+| WEB-5 | Files: `post.<lang>.md` and, for Korean, `naver_blog.html`; each opens a preview. Slides: "Google Slides" (the deck of that language only), "Speaker notes" (`slides.<lang>.md`), and "PDF" (`slides.<lang>.pdf` once exported, or "Export PDF" to export it); a language with a plan and no deck offers to create it |
 | WEB-6 | Next step shows the one thing to do next: original → "Open original"; public → "Open post"; not finalized → what to review and "Finalize"; finalized, API platform → tags and "Post…" (or "Update post…"), then an approval dialog with the title, the tags and the choice Draft / Public, Draft preselected; finalized, Naver → paste instructions, URL field, "Register URL" |
 | WEB-7 | Preview: the file name, "edit" when the file may be edited, "raw text". Markdown is rendered; no script from article text can run, no form can be submitted and no base address set. Mermaid blocks appear as drawings with their source under them when the operator allowed mermaid.ink; otherwise as code |
 | WEB-8 | Editor: full window; title field for posts; Save; unsaved changes are guarded. Saving a post undoes its finalization and says so. For a slide plan with a deck: after Save the sync dialog opens when the deck differs; "Update deck…" and "Pull from deck…" are always there |
@@ -272,11 +272,9 @@ check that the plan it got is in the language it asked for.
 
 | | Item | State |
 | :--- | :--- | :--- |
-| 1 | Tables of the article on slides as tables (SLD-11) | Asked for; not built. Today a table reaches a slide only as bullets the planner writes |
-| 2 | PDF of a deck (SLD-12) | First asked for, then withdrawn in favour of "after I finalize the deck". What finalizing a deck means is not decided |
-| 3 | Licence | `README.md` names Apache-2.0; the repository has no `LICENSE` file. The owner decides |
-| 4 | A third posting state after a draft is published by hand on the site | Covered today by "Update post…" with Public; a way to only register the public address is not built |
-| 5 | Deployment to Agent Runtime, Terraform apply, Cloud DLP, CI | Written, never run |
+| 1 | Licence | `README.md` names Apache-2.0; the repository has no `LICENSE` file. The owner decides |
+| 2 | A third posting state after a draft is published by hand on the site | Covered today by "Update post…" with Public; a way to only register the public address is not built |
+| 3 | Deployment to Agent Runtime, Terraform apply, Cloud DLP, CI | Written, never run |
 
 <!-- requirements:end -->
 
@@ -325,6 +323,7 @@ changed or added to it, in order.
 | 32 | The page and the script call the tool functions directly for everything that needs no judgement; the agent is asked only to localize and to plan talks | Every step sent to the agent as a typed message |
 | 33 | A draft is stored exactly as handed in | The model retyped it into a tool call |
 | 34 | After an independent review of the rebuilt code: a yes to finalize holds only for the text that was asked about; no article text in the coordinator's instruction; the server answers only to its own name; a deck sync writes only the changes that were shown; every credential finding is shown | Gaps the review found in the first version of this specification's code |
+| 35 | Article tables placed on slides as native Google Slides tables (`table:N`, SLD-11); PDF export of a deck (`slides.<lang>.pdf`, SLD-12) on finalize and on demand from the Slides column | Open items 1 and 2 of section 8 |
 
 ## Appendix B. Traceability
 
@@ -382,8 +381,8 @@ what the models then did was read in real runs, recorded in `README.md`.
 | SLD-8 | `test_a_wide_image_goes_under_the_bullets_and_spans_the_page`, `test_a_tall_image_takes_the_page_height_and_the_title_makes_room`, `test_image_layouts_stay_on_the_page_and_never_shrink_the_image`, `test_an_image_of_unknown_shape_keeps_the_right_half` |
 | SLD-9 | `test_planning_one_language_keeps_the_plans_of_the_others`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_timing_export_and_manifest_work_per_language`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
 | SLD-10 | `test_a_failure_after_the_file_exists_names_the_file` |
-| SLD-11 | No unit test: not built, see section 8 |
-| SLD-12 | No unit test: not built, see section 8 |
+| SLD-11 | `test_markdown_tables_are_extracted_and_placed_as_native_slide_tables` |
+| SLD-12 | `test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand` |
 | SYN-1 | `test_slide_plan_markdown_reads_back_as_the_same_plan`, `test_sync_needs_a_deck_and_a_readable_plan` |
 | SYN-2 | `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor`, `test_notes_edited_in_the_deck_are_pulled_into_the_file` |
 | SYN-3 | `test_saved_notes_reach_the_deck_only_after_approval`, `test_a_field_edited_on_both_sides_is_reported_as_a_conflict`, `test_deck_sync_writes_only_when_the_request_says_a_person_approved` |

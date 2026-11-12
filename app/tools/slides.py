@@ -15,6 +15,7 @@ from app.markdown_checks import (
     estimate_speaking_seconds,
     extract_images,
     extract_mermaid_diagrams,
+    extract_tables,
 )
 from app.persistence import get_article_store
 from app.schemas import (
@@ -28,6 +29,7 @@ from app.settings import (
     LANGUAGES,
     PLATFORM_FOR_LANGUAGE,
     render_mermaid_enabled,
+    workspace_dir,
 )
 from app.tools.articles import write_workspace_file
 
@@ -374,6 +376,10 @@ def slide_plan_file(language: str) -> str:
     return f"slides.{language}.md"
 
 
+def slide_pdf_file(language: str) -> str:
+    return f"slides.{language}.pdf"
+
+
 def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, Any]:
     """Write a Markdown list of everything produced for this article.
 
@@ -430,6 +436,11 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
             ]
         if (decks.get(language) or {}).get("url"):
             lines += [f"- Google Slides deck ({name}): {decks[language]['url']}"]
+        pdf_name = slide_pdf_file(language)
+        if (decks.get(language) or {}).get("pdf_file") or (
+            workspace_dir() / project_id / pdf_name
+        ).is_file():
+            lines += [f"- Slides PDF ({name}): {pdf_name}"]
     manifest = "\n".join(lines) + "\n"
     file = write_workspace_file(project_id, "manifest.md", manifest)
     return {"status": "success", "file": file, "manifest": manifest}
@@ -450,6 +461,15 @@ def article_images(session_state: Any, language: str) -> dict[str, str]:
             if rendered := google_slides.mermaid_image_url(code):
                 images[google_slides.mermaid_reference(number)] = rendered
     return images
+
+
+def article_tables(session_state: Any, language: str) -> dict[str, list[list[str]]]:
+    """References a plan may use, mapped to Markdown table rows from the article."""
+    article = state.article_markdown(session_state, language) or ""
+    return {
+        google_slides.table_reference(number): rows
+        for number, (_, rows) in enumerate(extract_tables(article), start=1)
+    }
 
 
 async def create_google_slides_deck_with_speaker_notes(
@@ -517,8 +537,11 @@ async def create_google_slides_deck_with_speaker_notes(
             "message": "The user declined. No Google Slides deck was created.",
         }
     try:
+        tables = article_tables(tool_context.state, language)
         deck = await google_slides.create_deck(
-            plan, article_images(tool_context.state, language)
+            plan,
+            article_images(tool_context.state, language),
+            *([tables] if tables else []),
         )
     except google_slides.SlidesError as exc:
         return tool_error(exc.code, exc.message, exc.recovery)
@@ -533,4 +556,59 @@ async def create_google_slides_deck_with_speaker_notes(
         "status": "success",
         "deck": deck,
         "message": "The deck was created. Give the user its URL to review.",
+    }
+
+
+async def export_google_slides_pdf(
+    language: str, tool_context: ToolContext
+) -> dict[str, Any]:
+    """Export one language's Google Slides deck as ``slides.<lang>.pdf`` (SLD-12).
+
+    Args:
+        language: Language of the deck to export: 'ko', 'en' or 'ja'.
+
+    Returns:
+        On success: status, language, file, pdf_file and bytes. On failure:
+        status 'error' with error_code, message and recovery_instruction.
+    """
+    if language not in LANGUAGES:
+        return tool_error(
+            "UNKNOWN_LANGUAGE",
+            f"'{language}' is not one of the three languages.",
+            "Use 'ko', 'en' or 'ja'.",
+        )
+    project_id = tool_context.state.get(state.PROJECT_ID)
+    if not project_id:
+        return tool_error(
+            "NO_PROJECT",
+            "No article project in this session.",
+            "Start with a seed article first.",
+        )
+    decks = dict(tool_context.state.get(state.GOOGLE_SLIDES_DECKS) or {})
+    deck = dict(decks.get(language) or {})
+    presentation_id = deck.get("presentation_id")
+    if not presentation_id:
+        return tool_error(
+            "NO_SLIDES_DECK",
+            f"There is no {LANGUAGE_NAMES[language]} Google Slides deck to export.",
+            "Create the Google Slides deck for this language first.",
+        )
+    try:
+        pdf_bytes = await google_slides.export_deck_pdf(presentation_id)
+    except google_slides.SlidesError as exc:
+        return tool_error(exc.code, exc.message, exc.recovery)
+    pdf_name = slide_pdf_file(language)
+    folder = workspace_dir() / project_id
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / pdf_name
+    path.write_bytes(pdf_bytes)
+    deck["pdf_file"] = pdf_name
+    decks[language] = deck
+    tool_context.state[state.GOOGLE_SLIDES_DECKS] = decks
+    return {
+        "status": "success",
+        "language": language,
+        "file": str(path),
+        "pdf_file": pdf_name,
+        "bytes": len(pdf_bytes),
     }

@@ -71,7 +71,6 @@ def test_requirements_marked_as_not_built_are_listed_as_open_work() -> None:
     text = SPEC.read_text(encoding="utf-8")
     body, open_work = text.split("## 8. Open questions and work not built", 1)
     not_built = re.findall(rf"^\| ({_ID}) \| .*Not built", body, re.M)
-    assert not_built, "expected at least one requirement that is not built"
     for requirement in not_built:
         assert requirement in open_work.split("## Appendix A", 1)[0]
 

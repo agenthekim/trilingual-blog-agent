@@ -53,6 +53,7 @@ from app.tools.slides import (
     check_slide_script_timing,
     compile_artifact_manifest_markdown,
     create_google_slides_deck_with_speaker_notes,
+    export_google_slides_pdf,
     export_slide_plan_markdown,
     set_presentation_brief,
 )
@@ -254,6 +255,7 @@ root_agent = Agent(
         check_slide_script_timing,
         export_slide_plan_markdown,
         create_google_slides_deck_with_speaker_notes,
+        export_google_slides_pdf,
         compile_artifact_manifest_markdown,
         PreloadMemoryTool(),
     ],

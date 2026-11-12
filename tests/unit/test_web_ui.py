@@ -622,3 +622,55 @@ def test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone(client) -
     status = _wait(client)
     assert "1 request(s) the agent was waiting on" in status["notice"]
     assert status["reply"] == "I shortened the English title."
+
+
+def test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand(real, monkeypatch) -> None:
+    """SLD-12: finalizing a post with a deck, or asking from the Slides column, writes slides.<lang>.pdf."""
+    import asyncio
+
+    from app import google_slides, state
+
+    client, job = real
+    exported: list[str] = []
+
+    async def fake_export_pdf(presentation_id: str) -> bytes:
+        exported.append(presentation_id)
+        return b"%PDF-1.4\n%fake-deck-pdf\n"
+
+    monkeypatch.setattr(google_slides, "export_deck_pdf", fake_export_pdf)
+    asyncio.run(
+        job.pipeline._update_state(
+            {
+                state.GOOGLE_SLIDES_DECKS: {
+                    "en": {
+                        "presentation_id": "pres-en-1",
+                        "url": "https://docs.google.com/presentation/d/pres-en-1/edit",
+                    },
+                    "ko": {
+                        "presentation_id": "pres-ko-1",
+                        "url": "https://docs.google.com/presentation/d/pres-ko-1/edit",
+                    },
+                }
+            }
+        )
+    )
+
+    # Finalizing English automatically exports slides.en.pdf.
+    resp = client.post(f"/api/jobs/{job.id}/finalize", json={"language": "en"})
+    assert resp.status_code == 200 and resp.json()["finalized"] is True
+    assert exported == ["pres-en-1"]
+
+    status = client.get(f"/api/jobs/{job.id}").json()
+    assert _row(status, "en")["slides_pdf"] == "slides.en.pdf"
+
+    pdf_resp = client.get(f"/api/jobs/{job.id}/files/slides.en.pdf")
+    assert pdf_resp.status_code == 200
+    assert pdf_resp.headers["content-type"] == "application/pdf"
+    assert pdf_resp.content.startswith(b"%PDF-1.4")
+
+    # On-demand export for Korean from POST /api/jobs/{job_id}/pdf.
+    on_demand = client.post(f"/api/jobs/{job.id}/pdf", json={"language": "ko"})
+    assert on_demand.status_code == 200
+    status = _wait(client, job.id)
+    assert _row(status, "ko")["slides_pdf"] == "slides.ko.pdf"
+    assert exported == ["pres-en-1", "pres-ko-1"]

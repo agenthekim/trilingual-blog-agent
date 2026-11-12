@@ -37,9 +37,13 @@ OAUTH_SECRET_NAME = "GOOGLE_SLIDES_OAUTH"
 OAUTH_SCOPE = "https://www.googleapis.com/auth/drive.file"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SLIDES_API = "https://slides.googleapis.com/v1/presentations"
+DRIVE_FILES_API = "https://www.googleapis.com/drive/v3/files"
 MERMAID_RENDER_URL = "https://mermaid.ink/img/pako:"
 MERMAID_SVG_URL = "https://mermaid.ink/svg/pako:"
 MAX_IMAGE_URL_CHARS = 2000
+MAX_TABLE_ROWS = 8
+MAX_TABLE_COLS = 6
+_HEADER_FILL = {"red": 0.93, "green": 0.96, "blue": 0.99}
 
 
 class SlidesError(Exception):
@@ -145,6 +149,11 @@ def _accent_bar(page: str) -> list[dict]:
 def mermaid_reference(index: int) -> str:
     """What the slide planner writes to pick the article's N-th Mermaid diagram."""
     return f"mermaid:{index}"
+
+
+def table_reference(index: int) -> str:
+    """What the slide planner writes to pick the article's N-th Markdown table."""
+    return f"table:{index}"
 
 
 def _packed_diagram(code: str) -> str:
@@ -458,18 +467,46 @@ def slide_layouts(
     plan: SlideDeckPlan,
     images: dict[int, str] | None = None,
     aspects: dict[int, float] | None = None,
+    tables: dict[int, list[list[str]]] | None = None,
 ) -> dict[int, SlideLayout]:
     """Layout per slide number; ``aspects`` holds the image shapes that are known."""
-    images, aspects = images or {}, aspects or {}
-    return {
-        slide.number: slide_layout(
-            slide.title,
-            [b.strip() for b in slide.bullets if b.strip()],
-            slide.number in images,
-            aspects.get(slide.number),
-        )
-        for slide in plan.slides
-    }
+    images, aspects, tables = images or {}, aspects or {}, tables or {}
+    result: dict[int, SlideLayout] = {}
+    for slide in plan.slides:
+        bullets = [b.strip() for b in slide.bullets if b.strip()]
+        if slide.number in tables and slide.number not in images:
+            title_size = title_points(slide.title)
+            left, full_width = _FULL
+            one_line = wrapped_lines(slide.title, _TITLE_INNER_WIDTH, title_size) == 1
+            top = _IMAGE_TOP if one_line else _CONTENT_TOP
+            if bullets:
+                points = 16 if text_height(bullets, full_width, 16, 1.15) <= 1.6 else 14
+                stacked_text = min(1.8, text_height(bullets, full_width, points, 1.15))
+                table_top = top + stacked_text + 0.12
+                table_height = max(1.2, _PAGE_BOTTOM - table_top)
+                result[slide.number] = SlideLayout(
+                    _rounded(left, top, full_width, stacked_text),
+                    points,
+                    title_size,
+                    _rounded(left, table_top, full_width, table_height),
+                    stacked=True,
+                )
+            else:
+                result[slide.number] = SlideLayout(
+                    _rounded(left, top, full_width, 0.4),
+                    16,
+                    title_size,
+                    _rounded(left, top, full_width, _PAGE_BOTTOM - top),
+                    stacked=True,
+                )
+        else:
+            result[slide.number] = slide_layout(
+                slide.title,
+                bullets,
+                slide.number in images,
+                aspects.get(slide.number),
+            )
+    return result
 
 
 def slide_images(plan: SlideDeckPlan, allowed_images: dict[str, str]) -> dict[int, str]:
@@ -488,21 +525,46 @@ def slide_images(plan: SlideDeckPlan, allowed_images: dict[str, str]) -> dict[in
     return chosen
 
 
+def slide_tables(
+    plan: SlideDeckPlan,
+    allowed_tables: dict[str, list[list[str]]],
+    exclude_slides: set[int] | None = None,
+) -> dict[int, list[list[str]]]:
+    """Table rows per slide number, keeping only tables from the article.
+
+    Each ``table:N`` reference is used at most once and only on a slide that
+    does not already carry an image.
+    """
+    excluded = exclude_slides or set()
+    chosen: dict[int, list[list[str]]] = {}
+    used_refs: set[str] = set()
+    for slide in plan.slides:
+        if slide.number in excluded:
+            continue
+        ref = slide.image_url.strip()
+        rows = allowed_tables.get(ref)
+        if rows and ref not in used_refs:
+            used_refs.add(ref)
+            chosen[slide.number] = rows
+    return chosen
+
+
 def slide_requests(
     plan: SlideDeckPlan,
     first_slide_id: str | None,
     images: dict[int, str] | None = None,
     aspects: dict[int, float] | None = None,
+    tables: dict[int, list[list[str]]] | None = None,
 ) -> list[dict]:
     """Requests that build a title slide, one content slide per planned slide
     and a thank-you slide.
 
     A content slide has a title sized to fit, an accent bar, and a text box
     with the bullets; ``slide_layout`` decides where the box goes when the
-    slide has an image. A new presentation starts with one empty slide; it is
+    slide has an image or table. A new presentation starts with one empty slide; it is
     removed last so the deck is never empty in between.
     """
-    layouts = slide_layouts(plan, images, aspects)
+    layouts = slide_layouts(plan, images, aspects, tables)
     offset = 1 if first_slide_id else 0
     cover_title, cover_subtitle = (
         f"{TITLE_SLIDE_ID}_title",
@@ -640,6 +702,83 @@ def image_request(
             "elementProperties": _box(page, *box),
         }
     }
+
+
+def table_requests(
+    slide_number: int,
+    rows: list[list[str]],
+    box: tuple[float, float, float, float] | None = None,
+) -> list[dict]:
+    """Requests that place a native Google Slides table on a slide (SLD-11)."""
+    clipped = [
+        [str(cell).strip() for cell in row[:MAX_TABLE_COLS]]
+        for row in rows[:MAX_TABLE_ROWS]
+        if row
+    ]
+    if not clipped or not clipped[0]:
+        return []
+    num_rows = len(clipped)
+    num_cols = max(len(r) for r in clipped)
+    page = _slide_id(slide_number)
+    table_id = f"{page}_table"
+    if box is None:
+        box = (_FULL[0], _CONTENT_TOP, _FULL[1], _CONTENT_HEIGHT)
+    points = 12 if num_rows <= 5 and num_cols <= 4 else 10
+    requests: list[dict] = [
+        {
+            "createTable": {
+                "objectId": table_id,
+                "elementProperties": _box(page, *box),
+                "rows": num_rows,
+                "columns": num_cols,
+            }
+        },
+        {
+            "updateTableCellProperties": {
+                "objectId": table_id,
+                "tableRange": {
+                    "location": {"rowIndex": 0, "columnIndex": 0},
+                    "rowSpan": 1,
+                    "columnSpan": num_cols,
+                },
+                "tableCellProperties": {
+                    "tableCellBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": _HEADER_FILL}}
+                    }
+                },
+                "fields": "tableCellBackgroundFill.solidFill.color",
+            }
+        },
+    ]
+    for r_idx, row in enumerate(clipped):
+        for c_idx, cell in enumerate(row):
+            if not cell:
+                continue
+            loc = {"rowIndex": r_idx, "columnIndex": c_idx}
+            requests.append(
+                {
+                    "insertText": {
+                        "objectId": table_id,
+                        "cellLocation": loc,
+                        "text": cell,
+                    }
+                }
+            )
+            requests.append(
+                {
+                    "updateTextStyle": {
+                        "objectId": table_id,
+                        "cellLocation": loc,
+                        "textRange": {"type": "ALL"},
+                        "style": {
+                            "fontSize": {"magnitude": points, "unit": "PT"},
+                            "bold": r_idx == 0,
+                        },
+                        "fields": "fontSize,bold",
+                    }
+                }
+            )
+    return requests
 
 
 _PROBE_SECONDS = 45  # at most this long is spent reading diagram sizes
@@ -783,21 +922,26 @@ def _checked(response: httpx.Response, doing: str) -> dict[str, Any]:
 
 
 async def create_deck(
-    plan: SlideDeckPlan, allowed_images: dict[str, str] | None = None
+    plan: SlideDeckPlan,
+    allowed_images: dict[str, str] | None = None,
+    allowed_tables: dict[str, list[list[str]]] | None = None,
 ) -> dict[str, Any]:
     """Create the deck and return its id, URL and what went into it.
 
     ``allowed_images`` maps the references the planner may use to the image
-    addresses found in (or rendered from) the article; only those are placed. An image Google cannot fetch is skipped and counted,
-    it does not fail the deck.
+    addresses found in (or rendered from) the article; ``allowed_tables`` maps
+    ``table:N`` references to table rows from the article. Only those are
+    placed. An image Google cannot fetch is skipped and counted; it does not
+    fail the deck.
     """
     images = slide_images(plan, allowed_images or {})
+    tables = slide_tables(plan, allowed_tables or {}, set(images))
     async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
         headers = {"Authorization": f"Bearer {await _access_token(client)}"}
         # Reading the diagrams first also has them rendered before Google
         # fetches them. The token is not sent with these requests.
         aspects = await image_aspects(client, images)
-        layouts = slide_layouts(plan, images, aspects)
+        layouts = slide_layouts(plan, images, aspects, tables)
         created = _checked(
             await client.post(
                 SLIDES_API, headers=headers, json={"title": plan.deck_title}
@@ -807,7 +951,7 @@ async def create_deck(
         presentation_id = created["presentationId"]
         try:
             return await _fill_deck(
-                client, headers, plan, created, images, aspects, layouts
+                client, headers, plan, created, images, aspects, layouts, tables
             )
         except (SlidesError, httpx.HTTPError) as exc:
             # The file exists from here on. Say where it is, so a failure
@@ -834,8 +978,10 @@ async def _fill_deck(
     images: dict[int, str],
     aspects: dict[int, float],
     layouts: dict[int, Any],
+    tables: dict[int, list[list[str]]] | None = None,
 ) -> dict[str, Any]:
-    """Add slides, images and speaker notes to the presentation just created."""
+    """Add slides, images, tables and speaker notes to the presentation just created."""
+    tables = tables or {}
     presentation_id = created["presentationId"]
     update_url = f"{SLIDES_API}/{presentation_id}:batchUpdate"
     first = (created.get("slides") or [{}])[0].get("objectId")
@@ -843,7 +989,7 @@ async def _fill_deck(
         await client.post(
             update_url,
             headers=headers,
-            json={"requests": slide_requests(plan, first, images, aspects)},
+            json={"requests": slide_requests(plan, first, images, aspects, tables)},
         ),
         "adding the slides",
     )
@@ -881,6 +1027,14 @@ async def _fill_deck(
             if response.status_code < 400:
                 break
         images_failed += response.status_code >= 400
+    tables_inserted = 0
+    for number, rows in tables.items():
+        reqs = table_requests(number, rows, layouts[number].image)
+        if reqs:
+            response = await client.post(
+                update_url, headers=headers, json={"requests": reqs}
+            )
+            tables_inserted += response.status_code < 400
     notes = notes_requests(plan, presentation)
     if notes:
         _checked(
@@ -895,6 +1049,7 @@ async def _fill_deck(
         "slides_with_notes": len(notes),
         "images_inserted": len(images) - images_failed,
         "images_failed": images_failed,
+        "tables_inserted": tables_inserted,
     }
 
 
@@ -920,3 +1075,30 @@ async def update_presentation(presentation_id: str, requests: list[dict]) -> Non
             ),
             "updating the deck",
         )
+
+
+async def export_deck_pdf(presentation_id: str) -> bytes:
+    """Export an existing Google Slides presentation as PDF bytes (SLD-12)."""
+    async with httpx.AsyncClient(
+        timeout=max(HTTP_TIMEOUT_SECONDS, 60), follow_redirects=False
+    ) as client:
+        headers = {"Authorization": f"Bearer {await _access_token(client)}"}
+        try:
+            response = await client.get(
+                f"{DRIVE_FILES_API}/{presentation_id}/export",
+                params={"mimeType": "application/pdf"},
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise SlidesError(
+                "SLIDES_PDF_EXPORT_FAILED",
+                f"Google Drive could not be reached while exporting the PDF ({type(exc).__name__}).",
+                "Try again in a moment.",
+            ) from exc
+        if response.status_code >= 400 or not response.content.startswith(b"%PDF-"):
+            raise SlidesError(
+                "SLIDES_PDF_EXPORT_FAILED",
+                f"Google Drive could not export the deck as PDF (HTTP {response.status_code}).",
+                "Check that the deck still exists in Google Drive and try again.",
+            )
+        return response.content

@@ -118,6 +118,69 @@ def extract_mermaid_diagrams(markdown: str) -> list[tuple[str, str]]:
     return diagrams
 
 
+_TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$")
+_INLINE_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_INLINE_MARK = re.compile(r"(\*\*|__|~~|`)+")
+_BR_TAG = re.compile(r"<br\s*/?>", re.I)
+
+
+def _table_cells(line: str) -> list[str]:
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|") and not stripped.endswith(r"\|"):
+        stripped = stripped[:-1]
+    cells = []
+    for raw in re.split(r"(?<!\\)\|", stripped):
+        text = raw.replace(r"\|", "|")
+        text = _BR_TAG.sub(" ", text)
+        text = _INLINE_LINK.sub(r"\1", text)
+        text = _INLINE_MARK.sub("", text)
+        cells.append(" ".join(text.split()))
+    return cells
+
+
+def extract_tables(markdown: str) -> list[tuple[str, list[list[str]]]]:
+    """Return (nearest heading above, rows) of each Markdown table outside code blocks."""
+    _, prose, _ = split_code_blocks(markdown)
+    lines = prose.splitlines()
+    tables: list[tuple[str, list[list[str]]]] = []
+    heading = ""
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if _HEADING.match(line):
+            heading = line.lstrip("#").strip()
+            index += 1
+            continue
+        if (
+            "|" in line
+            and index + 1 < len(lines)
+            and _TABLE_SEPARATOR.match(lines[index + 1])
+        ):
+            header = _table_cells(line)
+            cols = len(header)
+            if cols >= 2:
+                rows = [header]
+                index += 2
+                while (
+                    index < len(lines)
+                    and "|" in lines[index]
+                    and not _HEADING.match(lines[index])
+                ):
+                    if not _TABLE_SEPARATOR.match(lines[index]):
+                        cells = _table_cells(lines[index])
+                        padded = (cells + [""] * cols)[:cols]
+                        if any(padded):
+                            rows.append(padded)
+                    index += 1
+                if len(rows) >= 2:
+                    tables.append((heading, rows))
+                continue
+        index += 1
+    return tables
+
+
 def heading_levels(markdown: str) -> list[int]:
     _, prose, _ = split_code_blocks(markdown)
     return [

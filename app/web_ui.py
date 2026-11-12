@@ -292,6 +292,10 @@ class DeckRequest(BaseModel):
     approved: bool = False
 
 
+class DeckPdfRequest(BaseModel):
+    language: Language
+
+
 class UrlRequest(BaseModel):
     platform: Literal["naver_blog", "qiita", "devto"]
     url: str = Field(pattern=r"^https://\S+$", max_length=500)
@@ -548,6 +552,14 @@ async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
     return {"accepted": True}
 
 
+@web.post("/api/jobs/{job_id}/pdf")
+async def export_deck_pdf(job_id: str, request: DeckPdfRequest) -> dict[str, bool]:
+    """Export one language's Google Slides deck as slides.<lang>.pdf (SLD-12)."""
+    job = _job(job_id)
+    _start(job, lambda: job.pipeline.export_pdf(request.language), "export_pdf")
+    return {"accepted": True}
+
+
 @web.post("/api/jobs/{job_id}/finalize")
 async def finalize_post(job_id: str, request: FinalizeRequest) -> dict[str, Any]:
     """Mark a post as final. Posting needs it; editing the title or text undoes it."""
@@ -662,6 +674,8 @@ async def view_file(job_id: str, name: str, raw: int = 0) -> Any:
     path = project_file(summary["project_id"], name)
     if path is None:
         raise HTTPException(404, "No such file for this article.")
+    if path.suffix == ".pdf":
+        return FileResponse(path, media_type="application/pdf", headers=_VIEW_HEADERS)
     text = path.read_text(encoding="utf-8")
     if raw or path.suffix not in (".md", ".html"):
         return PlainTextResponse(text, headers=_VIEW_HEADERS)

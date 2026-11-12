@@ -345,7 +345,7 @@ function languageRow(row, busy) {
   const files = el("td", {class: "files"}, ...row.files.map((name) => el("div", {},
     el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name))));
 
-  // Slides: the deck and the speaker notes of this language, nothing of another.
+  // Slides: the deck, speaker notes and PDF of this language, nothing of another.
   const slideItems = [];
   if (row.deck && row.deck.url) slideItems.push(el("div", {},
     el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
@@ -354,6 +354,15 @@ function languageRow(row, busy) {
       el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, "Speaker notes")));
     if (!(row.deck && row.deck.url)) slideItems.push(el("div", {},
       el("button", {type: "button", class: "ghost", disabled: busy, onclick: () => createDeck(row)}, "Create deck…")));
+  }
+  if (row.deck && row.deck.url) {
+    if (row.slides_pdf) {
+      slideItems.push(el("div", {class: "muted small"},
+        el("a", {href: fileUrl(row.slides_pdf), target: "_blank", rel: "noopener", title: row.slides_pdf}, "PDF")));
+    } else {
+      slideItems.push(el("div", {},
+        el("button", {type: "button", class: "ghost", disabled: busy, onclick: () => exportPdf(row)}, "Export PDF")));
+    }
   }
   const slidesCol = el("td", {class: "slides-col"}, ...(slideItems.length > 0 ? slideItems : [el("span", {class: "muted"}, "–")]));
 
@@ -526,6 +535,9 @@ async function createDeck(row) {
     summary: [["From", "the speaker notes of this language"], ["Where", account ? `a new file in the Google Drive of ${account}` : "a new file in your Google Drive"], ["Contains", "one slide per minute, script in the speaker notes"]],
     okLabel: "Approve and create"});
   if (ok) act("deck", {language: row.language, approved: true});
+}
+function exportPdf(row) {
+  act("pdf", {language: row.language});
 }
 
 const MAX_FILE_BYTES = 80000;

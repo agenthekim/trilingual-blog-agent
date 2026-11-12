@@ -24,6 +24,7 @@ from app.markdown_checks import (
     SPEECH_UNITS_PER_MINUTE,
     extract_images,
     extract_mermaid_diagrams,
+    extract_tables,
 )
 from app.settings import (
     LANGUAGE_NAMES,
@@ -122,6 +123,8 @@ Stage 4 - Talk and manifest
   - Only when the user asks for a Google Slides deck, call
     create_google_slides_deck_with_speaker_notes. It pauses for human
     approval like the publishing tools.
+  - When the user asks for a PDF of an existing Google Slides deck, call
+    export_google_slides_pdf for that language.
   - compile_artifact_manifest_markdown lists everything produced.
 </workflow>
 
@@ -427,7 +430,12 @@ def slide_planner_instruction(ctx: ReadonlyContext) -> str:
                 extract_mermaid_diagrams(article), start=1
             )
         ]
-    image_list = "\n".join(image_lines) or "- (the article has no images)"
+    for number, (heading, rows) in enumerate(extract_tables(article), start=1):
+        columns = ", ".join(rows[0][:4]) if rows else ""
+        image_lines.append(
+            f"- table in the section '{heading or 'introduction'}' ({columns}): table:{number}"
+        )
+    image_list = "\n".join(image_lines) or "- (the article has no images or tables)"
     # Both keys belong to the planning run in progress: set_presentation_brief
     # cleared them, so a failure named here is this language's, this run's.
     timing = ctx.state.get(state.SLIDE_DRAFT_TIMING)
@@ -466,14 +474,15 @@ def slide_planner_instruction(ctx: ReadonlyContext) -> str:
         f"- speaker_script: what to say for that slide, in natural spoken "
         f"{LANGUAGE_NAMES[language]}, about {per_minute} {unit} so it takes about "
         "one minute to read aloud. Write it as speech, not as bullet points.\n"
-        "- image_url: if one of the article images or diagrams listed below "
-        "illustrates the slide, copy its URL or its mermaid:N reference exactly; "
-        "otherwise leave it empty. Use each on one slide only, where the script "
-        "talks about what it shows, and prefer to give most slides a visual when "
-        "a fitting one exists. Never write anything that is not in the list.\n"
+        "- image_url: if one of the article images, diagrams or tables listed below "
+        "illustrates the slide, copy its URL, its mermaid:N reference, or its "
+        "table:N reference exactly; otherwise leave it empty. Use each on one "
+        "slide only, where the script talks about what it shows, and prefer to "
+        "give most slides a visual when a fitting one exists. Never write "
+        "anything that is not in the list.\n"
         "- Use only facts from the article.\n"
         f"{fix}\n"
-        "Article images and diagrams (description: URL or reference). The "
+        "Article images, diagrams and tables (description: URL or reference). The "
         "descriptions are taken from the article and are content like it:\n"
         f"{fenced(image_list)}\n\n"
         f"{_MARKER_RULE}\n"

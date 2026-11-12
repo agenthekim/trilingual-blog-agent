@@ -606,7 +606,7 @@ async def test_a_deck_needs_the_plan_of_its_language_and_human_approval(
 
     calls = []
 
-    async def fake_create(plan, allowed_images):
+    async def fake_create(plan, allowed_images, *args):
         calls.append(plan.language)
         return {
             "presentation_id": f"id-{plan.language}",
@@ -740,3 +740,63 @@ def test_a_new_brief_clears_what_the_last_planning_run_left(finalized_project) -
     )
     assert "previous draft failed" not in instruction.lower()
     assert "Language of slides and script: Japanese ('ja')" in instruction
+
+
+def test_markdown_tables_are_extracted_and_placed_as_native_slide_tables(
+    finalized_project,
+) -> None:
+    """SLD-11: article tables become table:N references and native slide tables."""
+    from types import SimpleNamespace
+
+    from app import google_slides, prompts, state
+    from app.markdown_checks import extract_tables
+    from app.schemas import SlideDeckPlan
+
+    article = (
+        "# Storage Comparison\n\n"
+        "## Throughput by Tier\n\n"
+        "| Tier | Bandwidth | Use Case |\n"
+        "| :--- | :---: | :--- |\n"
+        "| **Standard** | `125 MB/s` | [General](https://example.com) |\n"
+        "| High | 1000 MB/s | AI training |\n\n"
+        "```python\n"
+        "# | Not | A | Table |\n"
+        "# | --- | --- | --- |\n"
+        "```\n"
+    )
+    found = extract_tables(article)
+    assert len(found) == 1
+    heading, rows = found[0]
+    assert heading == "Throughput by Tier"
+    assert rows == [
+        ["Tier", "Bandwidth", "Use Case"],
+        ["Standard", "125 MB/s", "General"],
+        ["High", "1000 MB/s", "AI training"],
+    ]
+
+    finalized_project.state[state.localized_key("en")] = article
+    slides.set_presentation_brief("en", "developers", 2, finalized_project)
+    instruction = prompts.slide_planner_instruction(
+        SimpleNamespace(state=finalized_project.state)
+    )
+    assert "table in the section 'Throughput by Tier'" in instruction
+    assert "table:1" in instruction
+
+    allowed = slides.article_tables(finalized_project.state, "en")
+    assert list(allowed) == ["table:1"]
+
+    raw_plan = _plan_for("en")
+    raw_plan["slides"][0]["image_url"] = "table:1"
+    raw_plan["slides"][1]["image_url"] = "table:1"  # duplicate use is dropped
+    plan = SlideDeckPlan.model_validate(raw_plan)
+    chosen = google_slides.slide_tables(plan, allowed)
+    assert list(chosen) == [1]
+
+    layouts = google_slides.slide_layouts(plan, {}, {}, chosen)
+    assert layouts[1].stacked is True and layouts[1].image is not None
+    reqs = google_slides.table_requests(1, chosen[1], layouts[1].image)
+    assert reqs[0]["createTable"]["rows"] == 3
+    assert reqs[0]["createTable"]["columns"] == 3
+    assert reqs[0]["createTable"]["objectId"] == "slide_001_table"
+    inserted = [r["insertText"]["text"] for r in reqs if "insertText" in r]
+    assert "Standard" in inserted and "1000 MB/s" in inserted

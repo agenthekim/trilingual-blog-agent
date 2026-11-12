@@ -65,8 +65,10 @@ from app.tools.publish import (
 from app.tools.slides import (
     compile_artifact_manifest_markdown,
     create_google_slides_deck_with_speaker_notes,
+    export_google_slides_pdf,
     parse_slide_plan_markdown,
     render_slide_plan_markdown,
+    slide_pdf_file,
     slide_plan_file,
     slide_timing_report,
 )
@@ -178,6 +180,7 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 "slides_file": existing(slide_plan_file(language))
                 if language in plans
                 else None,
+                "slides_pdf": existing(slide_pdf_file(language)),
                 "slides_on_time": (timing.get(language) or {}).get("passed"),
                 "deck": decks.get(language),
             }
@@ -680,6 +683,21 @@ class ArticlePipeline:
             await self.summarize()
         return None
 
+    async def export_pdf(self, language: str) -> str | None:
+        """Export one language's Google Slides deck as PDF (SLD-12)."""
+        result = await self.act(export_google_slides_pdf, language)
+        if failure := _failure(result):
+            return (
+                f"The {LANGUAGE_NAMES.get(language, language)} PDF was not "
+                f"exported. {failure}"
+            )
+        self.log(
+            f">>> exported {slide_pdf_file(language)} from the "
+            f"{LANGUAGE_NAMES.get(language, language)} Google Slides deck"
+        )
+        await self.summarize()
+        return None
+
     async def record_posted_url(self, platform: str, url: str) -> str | None:
         """Record where a person posted by hand, then check that it answers."""
         result = await self.act(record_manually_posted_url, platform, url)
@@ -735,6 +753,16 @@ class ArticlePipeline:
         ):
             # The paste file is written from the text as finalized.
             await self.act(export_naver_blog_paste_ready_html)
+        if ((current.get(state.GOOGLE_SLIDES_DECKS) or {}).get(language) or {}).get(
+            "presentation_id"
+        ):
+            pdf_res = await self.act(export_google_slides_pdf, language)
+            if not _failure(pdf_res):
+                self.log(
+                    f">>> exported {slide_pdf_file(language)} on finalizing the "
+                    f"{LANGUAGE_NAMES[language]} post"
+                )
+                await self.summarize()
         check = (current.get(state.FIDELITY_REPORT) or {}).get(language)
         return {"language": language, "finalized": True, "check": check}
 
@@ -852,6 +880,8 @@ class ArticlePipeline:
         if direction == "pull":
             delta.update(await self._plan_of_record(language, plan))
         await self._update_state(delta)
+        if direction == "push" and project_file(project_id, slide_pdf_file(language)):
+            await self.act(export_google_slides_pdf, language)
         where = "deck from the file" if direction == "push" else "file from the deck"
         self.log(
             f">>> updated the {LANGUAGE_NAMES[language]} {where}: "

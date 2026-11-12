@@ -43,7 +43,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | INV-5 | 기존 Google Slides 덱은 어떤 슬라이드가 바뀌는지 사람이 확인한 뒤 승인한 텍스트 동기화로만 변경된다. 덱 안의 그림, 크기, 위치는 생성 후 절대 변경하지 않는다. 작성자의 Drive에 있는 다른 파일은 읽지도 변경하지도 않는다(`drive.file` 범위) |
 | INV-6 | 새 Google Slides 파일은 사람이 그 실행에서 슬라이드를 요청했거나(슬라이드 길이와 하나 이상의 언어) 덱 하나를 승인했을 때에만 생성한다 |
 | INV-7 | 글 본문, 제목, 가져온 페이지, 도구 결과는 데이터이다. 글 본문과 거기서 인용한 것(제목, 이미지 설명, 검토 지적 사항)은 그 호출을 위해 만든 무작위 토큰이 담긴 마커 사이에 넣어 모델에 전달하므로 본문이 마커를 닫을 수 없다. 본문에 들어 있는 어떤 내용도 지시로 따르지 않는다. 코디네이터의 지시문에는 글 본문이 전혀 들어가지 않는다 |
-| INV-8 | 서버가 요청을 보내는 대상은 다음뿐이다. 세 블로그 호스트(글과 URL 확인, 모든 리디렉션 홉 포함), 두 플랫폼 API, Google의 토큰 엔드포인트와 Slides 엔드포인트, 그리고 운영자가 허용한 경우 다이어그램용 mermaid.ink |
+| INV-8 | 서버가 요청을 보내는 대상은 다음뿐이다. 세 블로그 호스트(글과 URL 확인, 모든 리디렉션 홉 포함), 두 플랫폼 API, Google의 토큰·Slides·Drive 내보내기 엔드포인트, 그리고 운영자가 허용한 경우 다이어그램용 mermaid.ink |
 | INV-9 | 자격 증명은 호출 시점에 환경 변수, Secret Manager, 또는 저장소 밖의 파일에서 읽는다. 어떤 경우에도 로그에 남기지 않고, 모델에 보내지 않고, 저장소에 저장하지 않으며, 어떤 라우트로도 반환하지 않는다 |
 | INV-10 | 자격 증명처럼 보이는 값이 들어 있는 본문은 확정하는 사람이 탐지 결과를 하나도 빠짐없이 보고 실제 자격 증명이 아니라고 밝히지 않는 한 게시하지 않는다 |
 | INV-11 | 작성자가 제공한 글 본문은 제공된 그대로 저장한다. 저장되기까지 어떤 모델도 이를 옮겨 적지 않는다 |
@@ -129,8 +129,8 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | SLD-8 | 그려진 다이어그램은 가장 크게 들어가는 자리에 배치한다. 가로로 넓으면 불릿 아래에 페이지 너비 전체로, 세로로 길면 제목을 좁히고 페이지 높이 전체로, 그 밖에는 불릿 옆에 텍스트에 맞춰 크기를 정한 열로 배치한다. 형태를 알 수 없는 이미지는 오른쪽 절반을 차지한다. 텍스트와 이미지는 절대 겹치지 않으며 페이지 안에 머문다 |
 | SLD-9 | 계획, 시간 보고서, 덱, 동기화 기준선은 언어별로 보관한다. 계획이 있는 언어라면 어느 언어든 덱을 생성하거나 다시 생성할 수 있다 |
 | SLD-10 | 파일이 생긴 뒤에 덱 생성이 실패하면, 그 파일이 Drive 안에서 잊히지 않도록 오류에 파일의 주소를 명시한다 |
-| SLD-11 | 글의 표는 슬라이드에 표로 배치되지 않는다. 구현되지 않았다. 8절 참고 |
-| SLD-12 | 덱의 PDF 내보내기. 구현되지 않았다. 8절 참고 |
+| SLD-11 | 글에 있는 Markdown 표는 계획 모델에 `table:N` 참조로 제공된다. 이미지가 없는 슬라이드에 선택되면 불릿 아래에 Google Slides 네이티브 표(최대 8행 6열)로 배치하며, 각 표는 한 번만 쓴다 |
+| SLD-12 | Google Slides 덱은 검토가 끝난 뒤 `slides.<lang>.pdf`로 내보낼 수 있다. 해당 언어의 게시물을 확정할 때, PDF가 있는 상태에서 덱으로 텍스트를 푸시할 때 자동으로 내보내며, Slides 열이나 `export_google_slides_pdf` 도구로 언제든 내보낼 수 있다 |
 
 ### 5.5 덱 텍스트 동기화
 
@@ -150,7 +150,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | WEB-2 | 폼: 힌트 "Share a post URL, a .md file, or your document."가 붙은 "Source document", 파일 첨부 또는 끌어다 놓기, "Choose the slide length to create Google Slides in your configured Google Drive."가 붙은 "Slide options", Length, Languages(체크박스, 모두 선택됨), Audience(SLD-1), Run 버튼 하나 |
 | WEB-3 | 진행 상황: 단계는 "Source document", "Transform", "Prepare posts", "Prepare slides"(슬라이드를 요청했을 때), "Summarize"이다. 각 단계의 완료 여부는 요청된 언어에 대해 서버가 보고하는 내용으로 정하며, 새로고침 전후가 같다. 그 아래에는 작업 중일 때 경과 시간과 가장 최근 활동을, 끝났을 때 `manifest.md` 링크를 보여 준다 |
 | WEB-4 | 결과 표는 원본 언어를 맨 먼저 두고, 열은 작업 순서대로 Language(이름, 그 아래 상태 배지), Title, Files, Slides, Next step이다. 표 아래에는 아무것도 나열하지 않는다 |
-| WEB-5 | Files: `post.<lang>.md`, 그리고 한국어에는 `naver_blog.html`이 있으며 각각 미리보기를 연다. Slides: "Google Slides"(해당 언어의 덱만)와 "Speaker notes"(`slides.<lang>.md`)가 있다. 계획은 있고 덱은 없는 언어에서는 덱 생성을 제안한다 |
+| WEB-5 | Files: `post.<lang>.md`, 그리고 한국어에는 `naver_blog.html`이 있으며 각각 미리보기를 연다. Slides: "Google Slides"(해당 언어의 덱만), "Speaker notes"(`slides.<lang>.md`), 그리고 "PDF"(내보낸 뒤에는 `slides.<lang>.pdf` 링크, 내보내기 전에는 "Export PDF")가 있다. 계획은 있고 덱은 없는 언어에서는 덱 생성을 제안한다 |
 | WEB-6 | Next step은 다음에 할 일 한 가지를 보여 준다. 원본 → "Open original". 공개 → "Open post". 확정 전 → 검토할 대상과 "Finalize". 확정됨, API 플랫폼 → 태그와 "Post…"(또는 "Update post…"), 이어서 제목, 태그, Draft / Public 선택지가 있고 Draft가 미리 선택된 승인 대화상자. 확정됨, Naver → 붙여 넣기 안내, URL 입력란, "Register URL" |
 | WEB-7 | 미리보기: 파일 이름, 파일을 편집할 수 있을 때의 "edit", "raw text"가 있다. Markdown은 렌더링한다. 글 본문에서 온 스크립트는 실행될 수 없고, 폼은 제출될 수 없으며, 기준 주소는 설정될 수 없다. Mermaid 블록은 운영자가 mermaid.ink를 허용했으면 그림으로 나타나고 그 아래에 소스가 붙는다. 그렇지 않으면 코드로 나타난다 |
 | WEB-8 | 편집기: 창 전체를 쓴다. 게시물에는 제목 입력란이 있다. Save가 있다. 저장하지 않은 변경 사항은 보호한다. 게시물을 저장하면 확정이 해제되고 그 사실을 알린다. 덱이 있는 슬라이드 계획의 경우, Save 후 덱과 내용이 다르면 동기화 대화상자가 열린다. "Update deck…"과 "Pull from deck…"은 항상 있다 |
@@ -269,11 +269,9 @@ flowchart TD
 
 | | 항목 | 상태 |
 | :--- | :--- | :--- |
-| 1 | 글의 표를 슬라이드에 표로 넣기(SLD-11) | 요청받았으나 구현되지 않았다. 현재 표는 계획 모델이 쓰는 불릿으로만 슬라이드에 들어간다 |
-| 2 | 덱의 PDF(SLD-12) | 처음에 요청받았다가 "내가 덱을 확정한 뒤에" 하는 쪽으로 철회되었다. 덱을 확정한다는 것이 무엇을 뜻하는지는 정해지지 않았다 |
-| 3 | 라이선스 | `README.md`에는 Apache-2.0이라고 적혀 있으나 저장소에 `LICENSE` 파일이 없다. 소유자가 결정한다 |
-| 4 | 사이트에서 초안을 수동으로 공개한 뒤의 세 번째 게시 상태 | 현재는 Public을 선택한 "Update post…"로 처리한다. 공개 주소만 등록하는 방법은 구현되지 않았다 |
-| 5 | Agent Runtime 배포, Terraform apply, Cloud DLP, CI | 작성만 했고 실행한 적은 없다 |
+| 1 | 라이선스 | `README.md`에는 Apache-2.0이라고 적혀 있으나 저장소에 `LICENSE` 파일이 없다. 소유자가 결정한다 |
+| 2 | 사이트에서 초안을 수동으로 공개한 뒤의 세 번째 게시 상태 | 현재는 Public을 선택한 "Update post…"로 처리한다. 공개 주소만 등록하는 방법은 구현되지 않았다 |
+| 3 | Agent Runtime 배포, Terraform apply, Cloud DLP, CI | 작성만 했고 실행한 적은 없다 |
 
 <!-- requirements:end -->
 
@@ -321,6 +319,7 @@ flowchart TD
 | 32 | 페이지와 스크립트는 판단이 필요 없는 모든 일에 도구 함수를 직접 호출한다. 에이전트에는 현지화와 발표 계획만 요청한다 | 모든 단계를 입력 메시지로 에이전트에 보내던 방식 |
 | 33 | 초안은 제출된 그대로 저장한다 | 모델이 초안을 도구 호출에 옮겨 적던 방식 |
 | 34 | 다시 만든 코드를 독립적으로 검토한 뒤 반영한 사항. 확정에 대한 승낙은 질문받은 본문에만 유효하다. 코디네이터의 지시문에는 글 본문이 들어가지 않는다. 서버는 자기 이름으로 온 요청에만 응답한다. 덱 동기화는 보여 준 변경 사항만 쓴다. 자격 증명 탐지 결과는 빠짐없이 보여 준다 | 이 명세의 첫 번째 코드에서 검토가 찾아낸 빈틈 |
+| 35 | 글의 표를 Google Slides 네이티브 표로 배치(`table:N`, SLD-11). 게시물 확정 시 및 Slides 열에서 요청 시 덱을 PDF로 내보내기(`slides.<lang>.pdf`, SLD-12) | 8절의 열린 항목 1번과 2번 |
 
 ## 부록 B. 추적성
 
@@ -378,8 +377,8 @@ flowchart TD
 | SLD-8 | `test_a_wide_image_goes_under_the_bullets_and_spans_the_page`, `test_a_tall_image_takes_the_page_height_and_the_title_makes_room`, `test_image_layouts_stay_on_the_page_and_never_shrink_the_image`, `test_an_image_of_unknown_shape_keeps_the_right_half` |
 | SLD-9 | `test_planning_one_language_keeps_the_plans_of_the_others`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_timing_export_and_manifest_work_per_language`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
 | SLD-10 | `test_a_failure_after_the_file_exists_names_the_file` |
-| SLD-11 | No unit test: 구현되지 않았다. 8절 참고 |
-| SLD-12 | No unit test: 구현되지 않았다. 8절 참고 |
+| SLD-11 | `test_markdown_tables_are_extracted_and_placed_as_native_slide_tables` |
+| SLD-12 | `test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand` |
 | SYN-1 | `test_slide_plan_markdown_reads_back_as_the_same_plan`, `test_sync_needs_a_deck_and_a_readable_plan` |
 | SYN-2 | `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor`, `test_notes_edited_in_the_deck_are_pulled_into_the_file` |
 | SYN-3 | `test_saved_notes_reach_the_deck_only_after_approval`, `test_a_field_edited_on_both_sides_is_reported_as_a_conflict`, `test_deck_sync_writes_only_when_the_request_says_a_person_approved` |
