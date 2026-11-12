@@ -8,10 +8,12 @@ nothing is exported, and no test sets a tracer provider of its own.
 
 from __future__ import annotations
 
+import ast
 import inspect
 import io
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -28,6 +30,7 @@ from tests.unit.test_approvals import ScriptedModel, _calls
 from tests.unit.test_runs import _until
 
 RUN_ID = "c" * 32
+ROOT = Path(__file__).resolve().parents[2]
 
 
 async def look_something_up(topic: str) -> dict[str, Any]:
@@ -284,3 +287,82 @@ def test_a_logger_is_not_needed_to_trace() -> None:
     # record has none, and that is not an error.
     record = logging.LogRecord("t", logging.INFO, __file__, 1, "x", None, None)
     assert _RedactionFilter().filter(record) is True
+
+
+def _print_calls(path: Path) -> list[tuple[str, int]]:
+    """Every use of ``print`` in a file: the function it is in, and the line."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: list[tuple[str, int]] = []
+
+    def walk(node: ast.AST, inside: str) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            inside = node.name
+        if isinstance(node, ast.Name) and node.id == "print":
+            found.append((inside, node.lineno))
+        for child in ast.iter_child_nodes(node):
+            walk(child, inside)
+
+    walk(tree, "")
+    return found
+
+
+def test_the_application_never_logs_with_print() -> None:
+    # Not called, and not handed on as a default either.
+    for path in sorted((ROOT / "app").rglob("*.py")):
+        assert _print_calls(path) == [], path.relative_to(ROOT).as_posix()
+
+    # What a script writes to the terminal is its output, not a log, and it
+    # leaves through one function per script.
+    scripts = sorted((ROOT / "scripts").glob("*.py"))
+    assert scripts
+    for path in scripts:
+        where = [function for function, _ in _print_calls(path)]
+        assert where == ["say"], f"{path.name}: print is used in {where}"
+
+
+def test_activity_lines_are_also_structured_records(isolated_workspace, capsys) -> None:
+    stream = io.StringIO()
+    handler = StructuredLogHandler(stream=stream)
+    handler.addFilter(_RedactionFilter())
+    logger = observability.get_logger()
+    logger.addHandler(handler)
+    key = "AIza" + "B" * 35
+    try:
+        # The page: a line of the run is on the page, in the run's file, and
+        # in the structured log with the run id.
+        job = _job()
+        job.pipeline.log = job.add_log
+        job.add_log(">>> English post finalized by a person")
+        job.pipeline.log(f"[writer] used the key {key}")
+        job.add_log("[writer]\n" + "a long answer. " * 200)
+
+        # A pipeline nobody gave a log function: the same record, and the
+        # session stands for the run.
+        alone = ArticlePipeline(
+            session_service=InMemorySessionService(),
+            agent_app=App(name="app", root_agent=Agent(name="a", model="scripted")),
+            slide_app=App(name="slides", root_agent=Agent(name="b", model="scripted")),
+            session_id="session-without-a-run",
+        )
+        alone.log(">>> planning the English slides")
+    finally:
+        logger.removeHandler(handler)
+
+    records = [json.loads(line) for line in stream.getvalue().splitlines()]
+    assert [record["event_phase"] for record in records] == ["ACTIVITY"] * 4
+    first, second, third, fourth = records
+    assert first["line"] == ">>> English post finalized by a person"
+    assert {record["run_id"] for record in (first, second, third)} == {RUN_ID}
+    # Scrubbed like every record, and a long line is cut.
+    assert key not in json.dumps(second) and "REDACTED" in second["line"]
+    assert third["line"].endswith("chars total]") and len(third["line"]) < 600
+    assert fourth["run_id"] == "session-without-a-run"
+    assert fourth["line"] == ">>> planning the English slides"
+
+    # The page still has every line, whole, and so has the run's file.
+    assert job.log[0] == first["line"] and len(job.log) == 3
+    assert len(job.log[2]) > 2000
+    kept = (runs.jobs_dir() / f"{RUN_ID}.log").read_text(encoding="utf-8")
+    assert len(kept.splitlines()) == 3 and key not in kept
+    # Nothing was printed.
+    assert capsys.readouterr().out == ""

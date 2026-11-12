@@ -79,6 +79,15 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def say(text: str, *, error: bool = False) -> None:
+    """Everything this script writes to the terminal goes through here.
+
+    It is the program's output, for the person at the terminal, not a log:
+    what was done on stdout, what did not happen on stderr.
+    """
+    print(text, file=sys.stderr if error else sys.stdout)
+
+
 async def ask(question: str) -> bool:
     reply = await asyncio.to_thread(input, f"{question} [y/N] ")
     return reply.strip().lower() in ("y", "yes")
@@ -92,13 +101,13 @@ async def publish(pipeline: ArticlePipeline, platform: str, tags: list[str]) -> 
         r for r in (await pipeline.overview())["rows"] if r["language"] == language
     )
     if row["next"] not in ("review", "post"):
-        print(f"{name}: nothing to post ({row['next']}).")
+        say(f"{name}: nothing to post ({row['next']}).")
         return
     if row["next"] == "review":
         if not await ask(
             f"FINALIZE: is post.{language}.md ('{row['title']}') reviewed and ready?"
         ):
-            print(f"{name}: not finalized, so not posted.")
+            say(f"{name}: not finalized, so not posted.")
             return
         done = await pipeline.finalize_post(language)
         if done.get("needs_acknowledgement"):
@@ -109,21 +118,21 @@ async def publish(pipeline: ArticlePipeline, platform: str, tags: list[str]) -> 
                 f"The text has values that look like credentials ({found}). "
                 "Are they examples, not real credentials?"
             ):
-                print(f"{name}: not finalized, so not posted.")
+                say(f"{name}: not finalized, so not posted.")
                 return
             await pipeline.finalize_post(language, acknowledge_findings=True)
     if not await ask(f"APPROVAL NEEDED: post '{row['title']}' on {name}?"):
-        print(f"{name}: declined. Nothing was sent.")
+        say(f"{name}: declined. Nothing was sent.")
         return
     public = await ask("Make it PUBLIC right away? (No keeps it a non-public draft.)")
     if problem := await pipeline.post(platform, tags, public):
-        print(problem, file=sys.stderr)
+        say(problem, error=True)
 
 
 async def main() -> int:
     args = parse_args()
     setup_tracing()
-    pipeline = ArticlePipeline(log=lambda line: print(line + "\n"))
+    pipeline = ArticlePipeline(log=lambda line: say(line + "\n"))
     source_text = args.url or args.draft.read_text(encoding="utf-8")
     run_id = pipeline.session_id  # the script has no run record; the session is the run
 
@@ -132,7 +141,7 @@ async def main() -> int:
     with root_span("run.main.run_posts", run_id=run_id, lane="main"):
         ready, notes = await pipeline.run_posts(source_text)
     if notes:
-        print(notes, file=sys.stderr)
+        say(notes, error=True)
     if not ready:
         return 1  # the run stopped before the posts were there
     if args.talk_minutes > 0:
@@ -144,7 +153,7 @@ async def main() -> int:
                 args.create_deck,
             )
         if notes:
-            print(notes, file=sys.stderr)
+            say(notes, error=True)
 
     tags = [t.strip() for t in args.tags.split(",") if t.strip()]
     for platform in args.publish:

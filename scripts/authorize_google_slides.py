@@ -63,6 +63,14 @@ REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 ABOUT_URL = "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)"
 
 
+def say(text: str, *, error: bool = False) -> None:
+    """Everything this script writes to the terminal goes through here.
+
+    It is the program's output, for the person at the terminal, not a log.
+    """
+    print(text, file=sys.stderr if error else sys.stdout)
+
+
 def granting_account(access_token: str) -> str | None:
     """Address of the account that just granted access, or None if unknown."""
     try:
@@ -79,14 +87,14 @@ def account_is_accepted(expected: str | None, actual: str | None) -> bool:
     if expected and actual:
         if expected.strip().lower() == actual.lower():
             return True
-        print(
+        say(
             f"Access was granted by {actual}, not by {expected}. Nothing was stored.",
-            file=sys.stderr,
+            error=True,
         )
         return False
     shown = actual or "an account that could not be identified"
-    print(f"\nAccess was granted by: {shown}")
-    print("Decks will be created in that account's Drive. Do not use a work account.")
+    say(f"\nAccess was granted by: {shown}")
+    say("Decks will be created in that account's Drive. Do not use a work account.")
     return input("Store this grant? [y/N] ").strip().lower() in ("y", "yes")
 
 
@@ -143,10 +151,10 @@ def main() -> int:
     config = json.loads(args.client_file.expanduser().read_text(encoding="utf-8"))
     client = config.get("installed")
     if not client:
-        print(
+        say(
             "This client file is not of type 'Desktop app'. Create a Desktop app "
             "OAuth client and download its JSON.",
-            file=sys.stderr,
+            error=True,
         )
         return 1
 
@@ -163,11 +171,9 @@ def main() -> int:
             **({"login_hint": args.account} if args.account else {}),
         }
     )
-    print(
-        "\n1. Open this link and sign in with the account that should own the decks:\n"
-    )
-    print(f"{AUTH_URL}?{query}\n")
-    print(
+    say("\n1. Open this link and sign in with the account that should own the decks:\n")
+    say(f"{AUTH_URL}?{query}\n")
+    say(
         "2. After allowing access the browser goes to a http://localhost:8765 page\n"
         "   that may fail to load. Copy the full address from the address bar.\n"
     )
@@ -177,12 +183,10 @@ def main() -> int:
     )
     answer = parse_qs(urlparse(pasted.strip()).query)
     if answer.get("error"):
-        print(f"Google returned an error: {answer['error'][0]}", file=sys.stderr)
+        say(f"Google returned an error: {answer['error'][0]}", error=True)
         return 1
     if answer.get("state", [""])[0] != state or not answer.get("code"):
-        print(
-            "That address does not belong to this sign-in. Run again.", file=sys.stderr
-        )
+        say("That address does not belong to this sign-in. Run again.", error=True)
         return 1
 
     response = httpx.post(
@@ -198,10 +202,10 @@ def main() -> int:
     )
     tokens = response.json() if response.status_code == 200 else {}
     if not tokens.get("refresh_token"):
-        print(
+        say(
             f"No grant was issued (HTTP {response.status_code}). Run again and make "
             "sure to allow access.",
-            file=sys.stderr,
+            error=True,
         )
         return 1
 
@@ -209,7 +213,7 @@ def main() -> int:
     if not account_is_accepted(args.account, account):
         # Withdraw the grant so the refused account keeps no link to the app.
         httpx.post(REVOKE_URL, data={"token": tokens["refresh_token"]}, timeout=30)
-        print("The grant was withdrawn. Run again with the right account.")
+        say("The grant was withdrawn. Run again with the right account.")
         return 1
 
     store_secret(
@@ -223,7 +227,7 @@ def main() -> int:
             }
         ),
     )
-    print(
+    say(
         f"\nDone. The grant is stored in Secret Manager as {OAUTH_SECRET_NAME} "
         f"(project {args.project}).\nYou can delete the downloaded client file now."
     )

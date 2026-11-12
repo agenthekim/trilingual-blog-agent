@@ -32,7 +32,7 @@ from typing import Any
 
 from opentelemetry.trace import StatusCode
 
-from app.observability import log_event, root_span
+from app.observability import log_activity, log_event, root_span
 from app.pipeline import ArticlePipeline
 from app.redaction import redact_credentials
 from app.settings import LANGUAGES, workspace_dir
@@ -150,6 +150,8 @@ class Job:
         del self.log[:-MAX_LOG_LINES]
         with (jobs_dir() / f"{self.id}.log").open("a", encoding="utf-8") as file:
             file.write(json.dumps(line, ensure_ascii=False) + "\n")
+        # The same line, with the run id, in the structured log (OPS-1).
+        log_activity(line, self.id)
 
     def save(self) -> None:
         """Write the record that lets this run be opened after a restart."""

@@ -7,6 +7,11 @@ Logging
     before they reach any log sink. The handler adds the active OpenTelemetry
     trace and span IDs, which lets a log line be opened next to its trace.
 
+Activity
+    The lines a person reads on the page while a run works are also written
+    here, as records with ``event_phase`` ``ACTIVITY`` and the run id
+    (``log_activity``). Nothing in ``app/`` writes a log with ``print``.
+
 Intent versus outcome
     ``ObservabilityPlugin`` is registered on the ``App`` and therefore sees
     every tool call made by every agent. Before a tool runs it logs the
@@ -141,6 +146,21 @@ def setup_tracing() -> bool:
 def _set_attributes(span: trace.Span, attributes: dict[str, Any]) -> None:
     for key, value in attributes.items():
         span.set_attribute(key, str(value))
+
+
+def log_activity(line: str, run_id: str) -> None:
+    """Write one activity line, as the page shows it, as a structured record.
+
+    The line is a field, not the message, so the redaction filter cuts a long
+    one: the log says what happened, it does not repeat an article.
+    """
+    get_logger().info(
+        "activity",
+        extra={
+            "json_fields": {"event_phase": "ACTIVITY", "run_id": run_id, "line": line}
+        },
+        stacklevel=2,
+    )
 
 
 @contextmanager

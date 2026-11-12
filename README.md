@@ -262,7 +262,7 @@ as written.
 | Model routing | `MODEL_ROUTES`, `model_for` in `app/models.py` |
 | Guardrails and policy | Posting rules in `app/policy.py`, called by the tools; `ContentPolicyPlugin` in `app/plugins.py` (URL allowlist on every tool call, credential scrub on the coordinator's output); `check_fidelity` in `app/markdown_checks.py`; critic and gates in the review loops; article text between random-token markers (`fenced` in `app/prompts.py`); `sanitize_html` for the Naver export in `app/tools/publish.py`; no redirects with credentials in `app/platforms.py` |
 | Human in the loop | `_approval` and `finalize_localized_post` in `app/tools/publish.py`, the deck tool in `app/tools/slides.py` (`request_confirmation`), `ResumabilityConfig` in `app/agent.py`; one answer for one request: `ArticlePipeline.answer_approval` in `app/pipeline.py`; changing an existing deck: `sync_deck` in `app/web_ui.py`, `app/deck_sync.py` |
-| Structured logging | `get_logger`, `log_event` in `app/observability.py` (JSON, redaction filter) |
+| Structured logging | `get_logger`, `log_event`, `log_activity` in `app/observability.py` (JSON, redaction filter); the activity lines of a run are records too, with the run id |
 | Intent and outcome logging | `ObservabilityPlugin` in `app/observability.py` |
 | Tracing | `setup_tracing`, `root_span` and `traced_span` in `app/observability.py`: one trace per action started on the page or with the script (`app/runs.py`), exported to Cloud Trace when `BLOG_AGENT_TRACE_EXPORT=cloud`; the agent API server's export is set up in `app/fast_api_app.py` |
 | PII and credential redaction | `app/redaction.py` (regex always; Cloud DLP when `BLOG_AGENT_ENABLE_DLP=true`) |

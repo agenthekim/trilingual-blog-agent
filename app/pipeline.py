@@ -37,7 +37,7 @@ from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 
 from app import deck_sync, google_slides, platforms, policy, sources, state
-from app.observability import log_event
+from app.observability import log_activity, log_event
 from app.policy import API_PLATFORMS, PLATFORM_NAMES
 from app.redaction import find_secrets, redact_credentials
 from app.settings import (
@@ -496,7 +496,7 @@ class ArticlePipeline:
 
     def __init__(
         self,
-        log: Callable[[str], None] = print,
+        log: Callable[[str], None] | None = None,
         *,
         session_service: BaseSessionService | None = None,
         session_id: str | None = None,
@@ -529,12 +529,18 @@ class ArticlePipeline:
             memory_service=InMemoryMemoryService(),
         )
         self.session_id = session_id or uuid.uuid4().hex
-        self.log = log
+        # Activity lines go to whoever shows them (the page's run, the
+        # script's terminal); nobody asked, they go to the structured log.
+        self.log = log or self._log_activity
         self._pending: list[Approval] = []
         self.last_reply = ""
         # The record has one writer at a time (RUN-2): an agent turn holds
         # this for the whole turn, a write by code for one read and one write.
         self._write_lock = asyncio.Lock()
+
+    def _log_activity(self, line: str) -> None:
+        """The activity line as a structured record; the session is the run."""
+        log_activity(line, self.session_id)
 
     async def _session(self, *, events: bool = True) -> Any | None:
         config = None if events else GetSessionConfig(num_recent_events=0)
