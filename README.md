@@ -297,8 +297,8 @@ as written.
   found in a file its row names.
 - CI (`.github/workflows/ci.yml`) runs the linter, the format check, the unit
   tests and `terraform fmt -check` and `terraform validate` on every push,
-  without credentials. It installs from PyPI: `uv.lock` names a package index
-  that the runner cannot reach.
+  without credentials. It installs from PyPI within the version ranges of
+  `pyproject.toml`; the repository carries no lock file.
 - `tests/eval` has eight single-turn cases (scope, off-topic, an address on a
   site that is not a source, publish with no article, slides with no article,
   a public post asked for without the draft step, prompt injection inside a
@@ -339,7 +339,7 @@ What has been run for real, and what has not:
 | Item | Status |
 | :--- | :--- |
 | Version 1.0 (lanes, slide planning in working sessions, the slide request with its approval, one function for edits, the structuring check and the model gateway, Medium as a source, the deck record, the catalogs and coded notices, "Recent sources", the offer after an interruption, the access token, tracing) | Verified with unit tests and stand-ins only, and by looking at the page in a headless browser on a throwaway server with made-up data. Not run: slide planning by a real model in working sessions (three languages at once; whether the quota carries it is not known); the structuring gateway with a real model; a real Medium address; any call to the real Google Slides API after these changes; export to Cloud Trace; Cloud DLP; the access token on a host name behind a proxy. The Korean and Japanese texts of the catalogs were not read by a native reader |
-| Posting and decks from the page, before the version 1 work | On 2026-11-12 one run on the page posted to DEV Community and to Qiita through the real APIs, registered a Naver URL, and created decks in three languages through the real Slides API (read from that run's activity log; `docs/kr-AS-BUILT.md`, section 10). That was the code at `b5e1793`. Nothing was posted and no deck was created with the code as it is now |
+| Posting and decks from the page, before the version 1 work | On 2026-11-12 one run on the page posted to DEV Community and to Qiita through the real APIs, registered a Naver URL, and created decks in three languages through the real Slides API (read from that run's activity log; recorded in `docs/kr-AS-BUILT.md`, section 10, under the tag `v1.0-full`). That was the code at `b5e1793`. Nothing was posted and no deck was created with the code as it is now |
 | CI | GitHub Actions runs the linter, the format check, the unit tests and `terraform fmt -check` and `terraform validate` on every push, and passes on `main`. It uses no credential and deploys nothing |
 | Evaluation (`agents-cli eval run`) | Run on 2026-11-12 against the real model with the eight cases: `RESULT: PASS (custom_response_quality 5.00 >= 4.00; publish_requires_approval 1.00 >= 1.00)`. The run before the two cases were added, the same day with six cases, passed with the same scores |
 | Draft → localize → Naver HTML → Qiita private draft → DEV unpublished draft → slide plan → manifest | Run end to end locally against the real model and the real Qiita and DEV APIs, before posting required a finalized post and before the pipeline called the tools directly. Since then, everything up to but not including the two platform writes was run again (next rows) |
@@ -415,9 +415,9 @@ app/
 deployment/terraform/   infrastructure
 docs/                   SPEC.md (specification, version 1.0), kr-SPEC.md (Korean
                         companion); SETUP.md, kr-SETUP.md, ja-SETUP.md (setup
-                        guides); kr-AS-BUILT.md (the design and code as they were
-                        at b5e1793) and kr-DESIGN-v1.md (the plan of the work that
-                        made version 1.0), both in Korean and both closed
+                        guides). The record of the code before version 1 and
+                        the plan of version 1.0 (both in Korean, closed) are
+                        kept under the tag v1.0-full
 scripts/                run_pipeline.py: all stages in one command;
                         authorize_google_slides.py: one-time Slides grant
 tests/                  unit, integration, eval

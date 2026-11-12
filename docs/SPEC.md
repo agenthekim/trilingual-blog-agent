@@ -12,11 +12,11 @@ built yet says so in its own text and is listed again in section 8.
 
 > **Version 1.0, 2026-11-12.** This text, the code and the unit tests describe
 > the same system. Before this version the code had moved ahead of the text:
-> [kr-AS-BUILT.md](./kr-AS-BUILT.md) records the code as it was at commit
+> [kr-AS-BUILT.md](https://github.com/agenthekim/trilingual-blog-agent/blob/v1.0-full/docs/kr-AS-BUILT.md) records the code as it was at commit
 > `b5e1793` and the differences found then, and
-> [kr-DESIGN-v1.md](./kr-DESIGN-v1.md) is the plan of the work that brought
-> the two back in step (both in Korean). The decisions are listed in
-> Appendix A.
+> [kr-DESIGN-v1.md](https://github.com/agenthekim/trilingual-blog-agent/blob/v1.0-full/docs/kr-DESIGN-v1.md) is the plan of the work that brought
+> the two back in step (both in Korean, kept under the tag `v1.0-full`, not on
+> the main branch). The decisions are listed in Appendix A.
 
 ---
 
@@ -353,7 +353,7 @@ takes it.
 | 1 | Licence | Decided: Apache-2.0. `LICENSE` holds the licence text. The files the scaffold generated carry a licence header with a copyright line; the files written for this project carry none. Whether they get one, and in whose name, is the owner's decision |
 | 2 | A third posting state after a draft is published by hand on the site | Covered today by "Update post…" with Public; a way to only register the public address is not built |
 | 3 | Deployment to Agent Runtime, Terraform apply, Cloud DLP, export to Cloud Trace | Written, never run against the services. CI runs on every push (OPS-6); it validates the Terraform files and applies nothing |
-| 4 | `uv.lock` | The lock file names a package index that answers only inside the network it was written in. CI therefore resolves the dependencies again from PyPI (`UV_DEFAULT_INDEX` in `.github/workflows/ci.yml`) and does not install with `--locked`. Writing the lock file again against PyPI is left to the owner |
+| 4 | Lock file | The repository carries no `uv.lock`: the one that existed named a package index that answers only inside the network it was written in, and it is kept out of version control (`.gitignore`; the last copy is under the tag `v1.0-full`). CI and the container image resolve the dependencies from PyPI within the version ranges of `pyproject.toml`. Writing a lock file against PyPI and committing it is left to the owner |
 | 5 | What version 1.0 was not run with | A real model planning slides in working sessions, three languages at once; the structuring gateway with a real model; a real Medium address; the Google Slides API after the changes of this version; the access token on a host name behind a proxy. The Korean and Japanese texts of the catalogs were not read by a native reader. `README.md` keeps the list of what was run |
 | 6 | One plan for a talk, localized into the other languages, so that the three decks have the same slides | Not built; a candidate for a later version (section 7 of the plan) |
 
@@ -423,9 +423,9 @@ changed or added to it, in order.
 | 51 | The texts of the chips wrap; a prompt a person typed was shown in the interface language. Withdrawn by A-10: what a person typed stays as typed | — |
 
 Decisions 37 to 51 were taken during usability tests, in code, before this
-document was changed; [kr-AS-BUILT.md](./kr-AS-BUILT.md) records them. Version
+document was changed; [kr-AS-BUILT.md](https://github.com/agenthekim/trilingual-blog-agent/blob/v1.0-full/docs/kr-AS-BUILT.md) records them. Version
 1.0 kept, bounded or withdrew each of them with the decisions below, which
-carry the numbers of the plan ([kr-DESIGN-v1.md](./kr-DESIGN-v1.md), section
+carry the numbers of the plan ([kr-DESIGN-v1.md](https://github.com/agenthekim/trilingual-blog-agent/blob/v1.0-full/docs/kr-DESIGN-v1.md), section
 3). The questions the plan put to the owner were settled the way the plan
 recommended.
 

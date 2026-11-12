@@ -23,7 +23,9 @@ COPY ./pyproject.toml ./README.md ./uv.lock* ./
 
 COPY ./app ./app
 
-RUN uv sync --frozen
+# With a lock file in the build context it is used as it is; without one
+# (the repository carries none) the dependencies are resolved from PyPI.
+RUN if [ -f uv.lock ]; then uv sync --frozen; else uv sync; fi
 
 ARG AGENT_VERSION=0.0.0
 ENV AGENT_VERSION=${AGENT_VERSION}

@@ -233,3 +233,7 @@ workspace/
 
 # Eval outputs (traces contain local paths)
 artifacts/
+
+# Written against a package index that only answers inside one network;
+# see docs/SPEC.md, section 8, item 4.
+uv.lock

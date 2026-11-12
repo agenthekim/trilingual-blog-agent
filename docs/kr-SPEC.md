@@ -12,9 +12,9 @@
 
 > **버전 1.0, 2026-11-12.** 이 문서와 코드와 단위 테스트는 같은 시스템을
 > 말한다. 이 버전 전에는 코드가 문서보다 앞서 있었다. 커밋 `b5e1793` 시점의
-> 코드와 그때 찾은 차이는 [kr-AS-BUILT.md](./kr-AS-BUILT.md)에 기록되어 있고,
-> 둘을 다시 맞춘 작업의 계획은 [kr-DESIGN-v1.md](./kr-DESIGN-v1.md)에 있다.
-> 결정 목록은 부록 A에 있다.
+> 코드와 그때 찾은 차이는 [kr-AS-BUILT.md](https://github.com/agenthekim/trilingual-blog-agent/blob/v1.0-full/docs/kr-AS-BUILT.md)에 기록되어 있고,
+> 둘을 다시 맞춘 작업의 계획은 [kr-DESIGN-v1.md](https://github.com/agenthekim/trilingual-blog-agent/blob/v1.0-full/docs/kr-DESIGN-v1.md)에 있다.
+> 두 문서는 main 브랜치가 아니라 태그 `v1.0-full`에 보관되어 있다. 결정 목록은 부록 A에 있다.
 
 ---
 
@@ -341,7 +341,7 @@ flowchart TD
 | 1 | 라이선스 | Apache-2.0으로 정했다. `LICENSE`에 라이선스 전문이 있다. 스캐폴드가 만든 파일에는 저작권 줄이 든 라이선스 머리말이 있고, 이 프로젝트에서 쓴 파일에는 없다. 머리말을 붙일지, 누구 이름으로 붙일지는 소유자가 결정한다 |
 | 2 | 사이트에서 초안을 수동으로 공개한 뒤의 세 번째 게시 상태 | 현재는 Public을 선택한 "Update post…"로 처리한다. 공개 주소만 등록하는 방법은 구현되지 않았다 |
 | 3 | Agent Runtime 배포, Terraform apply, Cloud DLP, Cloud Trace 내보내기 | 작성만 했고 실제 서비스에 대고 실행한 적은 없다. CI는 푸시마다 실행되며(OPS-6), Terraform 파일을 검증만 하고 아무것도 적용하지 않는다 |
-| 4 | `uv.lock` | 잠금 파일에 적힌 패키지 인덱스는 그 파일을 만든 네트워크 안에서만 응답한다. 그래서 CI는 의존성을 PyPI에서 다시 해석하고(`.github/workflows/ci.yml`의 `UV_DEFAULT_INDEX`) `--locked`로 설치하지 않는다. 잠금 파일을 PyPI 기준으로 다시 만드는 일은 소유자에게 남긴다 |
+| 4 | 잠금 파일 | 저장소에는 `uv.lock`이 없다. 있던 파일에 적힌 패키지 인덱스는 그 파일을 만든 네트워크 안에서만 응답했고, 그래서 버전 관리에서 뺐다(`.gitignore`. 마지막 사본은 태그 `v1.0-full`에 있다). CI와 컨테이너 이미지는 `pyproject.toml`의 버전 범위 안에서 의존성을 PyPI에서 해석한다. PyPI 기준의 잠금 파일을 만들어 커밋하는 일은 소유자에게 남긴다 |
 | 5 | 버전 1.0에서 실행해 보지 않은 것 | 실제 모델로 작업 세션에서 세 언어의 슬라이드를 동시에 계획하는 것, 실제 모델로 구조화 관문을 지나는 것, 실제 Medium 주소, 이 버전의 변경 뒤의 Google Slides API, 프록시 뒤의 호스트 이름에서의 접근 토큰. 문구집의 한국어와 일본어 문구는 그 언어를 모국어로 쓰는 사람이 읽어 보지 않았다. 실제로 실행한 것의 목록은 `README.md`에 있다 |
 | 6 | 발표 계획을 하나만 세우고 다른 언어로 현지화해 세 덱의 슬라이드를 같게 하는 방식 | 구현되지 않았다. 이후 버전의 후보이다(계획 문서 7절) |
 
@@ -410,9 +410,9 @@ flowchart TD
 | 51 | 칩의 문구를 줄바꿈한다. 사람이 입력한 프롬프트를 화면 언어로 보여 주었다. A-10으로 철회되었다. 사람이 입력한 것은 입력한 그대로 둔다 | — |
 
 결정 37 ~ 51은 사용성 테스트를 거치며 이 문서를 고치기 전에 코드에서 먼저
-내려졌고, [kr-AS-BUILT.md](./kr-AS-BUILT.md)에 기록되어 있다. 버전 1.0은 아래
+내려졌고, [kr-AS-BUILT.md](https://github.com/agenthekim/trilingual-blog-agent/blob/v1.0-full/docs/kr-AS-BUILT.md)에 기록되어 있다. 버전 1.0은 아래
 결정으로 그 하나하나를 유지하거나, 범위를 정하거나, 철회했다. 번호는 계획
-문서([kr-DESIGN-v1.md](./kr-DESIGN-v1.md) 3절)의 번호이다. 계획 문서가
+문서([kr-DESIGN-v1.md](https://github.com/agenthekim/trilingual-blog-agent/blob/v1.0-full/docs/kr-DESIGN-v1.md) 3절)의 번호이다. 계획 문서가
 소유자에게 물은 항목은 계획 문서가 권장한 대로 정해졌다.
 
 | | 버전 1.0의 결정 | 대체한 것 |

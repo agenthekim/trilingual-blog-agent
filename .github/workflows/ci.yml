@@ -34,10 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       UV_PYTHON: "3.13"
-      # uv.lock was written against a package index this runner cannot reach.
-      # With PyPI named as the index, uv sees that the index of the lock is
-      # missing and resolves again from PyPI, keeping the locked versions
-      # where they exist there; so no --locked or --frozen below.
+      # The repository carries no lock file (docs/SPEC.md, section 8, item 4):
+      # the dependencies are resolved from PyPI within the ranges of
+      # pyproject.toml.
       UV_DEFAULT_INDEX: https://pypi.org/simple
     steps:
       - uses: actions/checkout@v4
