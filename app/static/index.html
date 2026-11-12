@@ -503,9 +503,9 @@ async function poll() {
 
 const TAG_RULES = {
   qiita:
-    'Qiita takes one to five tags without spaces, separated by commas. Good: "GoogleCloud, Lustre, HPC, Storage, GCP" · Bad: "GoogleCloud Lustre HPC Storage GCP" (missing commas) or "Google Cloud, HPC" (space inside a tag).',
+    'Qiita takes one to five tags without spaces, separated by commas.',
   devto:
-    'DEV Community takes up to four tags, lowercase letters and digits only (no spaces or hyphens), separated by commas. Good: "googlecloud, lustre, hpc, storage" · Bad: "GoogleCloud, google-cloud" or "gcp lustre hpc".',
+    'DEV Community takes up to four tags, lowercase letters and digits only, separated by commas.',
 };
 function checkTags(platform, tags) {
   if (platform === "qiita") {
@@ -522,7 +522,7 @@ async function postDraft(row, update) {
   const ruleText = TAG_RULES[row.platform] || "";
   const tagInput = keep(`tags:${row.platform}`, {
     id: "confirmTags",
-    placeholder: isQiita ? "GoogleCloud, Lustre, HPC, Storage, GCP" : "googlecloud, lustre, hpc, storage",
+    placeholder: isQiita ? "Python, Docker, GCP, AI, Architecture" : "python, docker, gcp, tutorial",
     "aria-label": `Tags for ${row.platform_name}`,
   });
   const tagError = el("span", {class: "small hidden", style: "color:var(--bad); font-weight:400"}, "");
