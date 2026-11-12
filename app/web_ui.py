@@ -534,6 +534,13 @@ async def start_job(request: StartRequest) -> dict[str, str]:
     return {"job_id": job.id}
 
 
+def _posts_ready(current: dict[str, Any], job: Job) -> bool:
+    """True when all blog posts are ready, even if slides are still being prepared."""
+    steps = progress(current, job.talk_languages, job.wants_decks)
+    post_step = next((s for s in steps if s["name"] == "Prepare posts"), None)
+    return bool(post_step and post_step["done"])
+
+
 @web.get("/api/jobs/{job_id}")
 async def job_status(job_id: str) -> dict[str, Any]:
     job = _job(job_id)
@@ -541,8 +548,10 @@ async def job_status(job_id: str) -> dict[str, Any]:
     view = overview(current)
     if job.source_text:
         view["source_text"] = job.source_text
+    posts_done = _posts_ready(current, job)
     return {
         "busy": job.busy,
+        "posts_busy": job.busy and not posts_done,
         "error": job.error,
         "notice": job.notice,
         "reply": job.reply,
@@ -582,13 +591,18 @@ async def post_draft(job_id: str, request: DraftRequest) -> dict[str, bool]:
         model(title="title", tags=request.tags)
     except ValidationError as exc:
         raise HTTPException(400, rule) from exc
-    if job.busy:
+    current = await job.pipeline.session_state()
+    posts_done = _posts_ready(current, job)
+    if job.busy and not posts_done:
         raise HTTPException(409, BUSY)
     # Said at once rather than after a round trip: finalize first, and so on.
-    if refusal := policy.posting_refusal(
-        await job.pipeline.session_state(), request.platform
-    ):
+    if refusal := policy.posting_refusal(current, request.platform):
         raise HTTPException(409, refusal.message)
+    if job.busy and posts_done:
+        asyncio.create_task(
+            job.pipeline.post(request.platform, request.tags, request.public)
+        )
+        return {"accepted": True}
     _start(
         job,
         lambda: job.pipeline.post(request.platform, request.tags, request.public),
@@ -632,6 +646,13 @@ async def export_deck_pdf(job_id: str, request: DeckPdfRequest) -> dict[str, boo
 async def finalize_post(job_id: str, request: FinalizeRequest) -> dict[str, Any]:
     """Mark a post as final. Posting needs it; editing the title or text undoes it."""
     job = _job(job_id)
+    if job.busy and _posts_ready(await job.pipeline.session_state(), job):
+        try:
+            return await job.pipeline.finalize_post(
+                request.language, request.acknowledge_findings
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     with _exclusive(job):
         try:
             return await job.pipeline.finalize_post(
@@ -683,6 +704,11 @@ async def sync_deck(job_id: str, request: DeckSyncRequest) -> dict[str, Any]:
 @web.post("/api/jobs/{job_id}/url")
 async def record_url(job_id: str, request: UrlRequest) -> dict[str, bool]:
     job = _job(job_id)
+    if job.busy and _posts_ready(await job.pipeline.session_state(), job):
+        asyncio.create_task(
+            job.pipeline.record_posted_url(request.platform, request.url)
+        )
+        return {"accepted": True}
     _start(
         job,
         lambda: job.pipeline.record_posted_url(request.platform, request.url),
@@ -821,6 +847,15 @@ async def view_diagram(job_id: str, diagram_id: str) -> Response:
 @web.put("/api/jobs/{job_id}/files/{name}")
 async def save_file(job_id: str, name: str, request: EditRequest) -> dict[str, Any]:
     job = _job(job_id)
+    if (
+        job.busy
+        and name.startswith("post.")
+        and _posts_ready(await job.pipeline.session_state(), job)
+    ):
+        try:
+            return await job.pipeline.save_edit(name, request.markdown, request.title)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     with _exclusive(job):
         try:
             return await job.pipeline.save_edit(name, request.markdown, request.title)

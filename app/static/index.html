@@ -730,8 +730,9 @@ function keep(key, attrs) {
   return input;
 }
 
-function languageRow(row, busy) {
+function languageRow(row, busy, postsBusy) {
   const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
+  const pBusy = postsBusy !== undefined ? postsBusy : busy;
   // "Ready to paste" would be untrue for a text nobody has finalized yet.
   const shown = row.status === "exported_for_manual_post" && row.next === "review" ? "not_posted" : row.status;
   const [, tone] = STATUS[shown] || [shown, ""];
@@ -769,7 +770,7 @@ function languageRow(row, busy) {
         ? (drafted ? "下書き作成後にタイトルまたは本文が変更されました。確定して更新してください。" : `post.${row.language}.md を確認・編集し、準備ができたら確定してください。`)
         : (drafted ? "The title or text changed after the draft was made. Finalize it to update the post." : `Review post.${row.language}.md and edit it if needed. Finalize it when it is ready.`);
       next.append(el("span", {class: "muted small"}, reviewHint),
-        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy, onclick: () => finalize(row)}, t.finalizeBtn || "Finalize")));
+        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: pBusy, onclick: () => finalize(row)}, t.finalizeBtn || "Finalize")));
     } else if (row.next === "post") {
       const postHint = currentUiLang === "ko"
         ? "원고가 확정되었습니다. 게시 승인 시 태그와 초안/공개 여부를 선택할 수 있습니다."
@@ -778,7 +779,7 @@ function languageRow(row, busy) {
         : "Finalized. You choose tags and draft or public when you approve.";
       next.append(
         el("span", {class: "muted small"}, postHint),
-        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: busy,
+        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: pBusy,
           onclick: () => postDraft(row, drafted)}, drafted ? (t.updatePostBtn || "Update post…") : (t.postBtn || "Post…"))));
     } else if (row.next === "paste") {
       const pasteHint = currentUiLang === "ko"
@@ -787,7 +788,7 @@ function languageRow(row, busy) {
         ? "確定済みです。naver_blog.html をNaverエディタに貼り付けて公開し、URLを登録してください。"
         : "Finalized. Paste naver_blog.html into the Naver editor, post, then register the URL.";
       const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
-      next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: busy, onclick: () => recordUrl(row, url.value)}, t.registerUrlBtn || "Register URL")),
+      next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: pBusy, onclick: () => recordUrl(row, url.value)}, t.registerUrlBtn || "Register URL")),
         el("span", {class: "muted small"}, pasteHint));
     }
   }
@@ -830,7 +831,8 @@ function render(data) {
   // The server says which steps are done, judged against what this run was asked for.
   const firstOpen = data.progress.findIndex((step) => !step.done);
   const postSteps = data.post_progress || [];
-  const stage1Done = firstOpen === -1 && data.progress.length > 0;
+  const postsBusy = data.posts_busy !== undefined ? data.posts_busy : busy;
+  const postsReady = !postsBusy && data.progress.length > 0;
   const firstPostOpen = postSteps.findIndex((step) => !step.done);
   const stepLi = (step, isNow) => {
     const label = (t.stepNames && t.stepNames[step.name]) || step.name;
@@ -845,7 +847,7 @@ function render(data) {
       stepLi(data.progress[1], busy && firstOpen === 1),
       stepLi(data.progress[2], busy && firstOpen === 2),
       stepLi(data.progress[4], busy && firstOpen === 4),
-      stepLi(postSteps[0], stage1Done && firstPostOpen === 0)
+      stepLi(postSteps[0], postsReady && firstPostOpen === 0)
     );
     // Row 2: Prepare slides directly beneath Prepare posts (column 3)
     $("slideSteps").replaceChildren(
@@ -857,16 +859,16 @@ function render(data) {
     );
     // Row 3: Finalize posts | Approve & draft | Publish posts | Verify & complete
     $("nextSteps").replaceChildren(
-      stepLi(postSteps[1], stage1Done && firstPostOpen === 1),
-      stepLi(postSteps[2], stage1Done && firstPostOpen === 2),
-      stepLi(postSteps[3], stage1Done && firstPostOpen === 3),
-      stepLi(postSteps[4], stage1Done && firstPostOpen === 4),
+      stepLi(postSteps[1], postsReady && firstPostOpen === 1),
+      stepLi(postSteps[2], postsReady && firstPostOpen === 2),
+      stepLi(postSteps[3], postsReady && firstPostOpen === 3),
+      stepLi(postSteps[4], postsReady && firstPostOpen === 4),
       spacerLi()
     );
   } else {
     $("steps").replaceChildren(...data.progress.map((step, i) => stepLi(step, busy && i === firstOpen)));
     $("slideSteps").replaceChildren();
-    $("nextSteps").replaceChildren(...postSteps.map((step, i) => stepLi(step, stage1Done && i === firstPostOpen)));
+    $("nextSteps").replaceChildren(...postSteps.map((step, i) => stepLi(step, postsReady && i === firstPostOpen)));
   }
   drawLive();
 
@@ -889,10 +891,10 @@ function render(data) {
   // Rebuilding a row would wipe what is being typed into it, so wait while a
   // text box in the table has the focus; a focused button does not hold it up.
   const active = document.activeElement;
-  const rowsKey = JSON.stringify([rows, busy]);
+  const rowsKey = JSON.stringify([rows, busy, postsBusy]);
   if (rowsKey !== shownRows && !($("rows").contains(active) && active.tagName === "INPUT")) {
     shownRows = rowsKey;
-    $("rows").replaceChildren(...rows.map((row) => languageRow(row, busy)));
+    $("rows").replaceChildren(...rows.map((row) => languageRow(row, busy, postsBusy)));
   }
 
   $("askCard").classList.toggle("hidden", !o.title && !busy && data.log.length === 0);
