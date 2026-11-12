@@ -2,6 +2,10 @@
 # Nothing here needs a credential: the unit tests refuse the network and
 # models, and Terraform is only formatted and validated, never planned or
 # applied.
+#
+# Every step writes what it prints to one file as well. When a step fails,
+# the end of that file is shown as an error on the commit, so the reason can
+# be read without opening the log.
 name: CI
 
 on:
@@ -14,6 +18,9 @@ permissions:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  LAST_OUTPUT: ${{ github.workspace }}/.ci-last-output.txt
 
 jobs:
   python:
@@ -28,13 +35,18 @@ jobs:
       # uv notices that and resolves again from PyPI, keeping the locked
       # versions where they exist there; so no --locked or --frozen here.
       - name: Install
-        run: uv sync --extra lint
+        run: uv sync --extra lint 2>&1 | tee "$LAST_OUTPUT"
       - name: Linter
-        run: uv run ruff check .
+        run: uv run ruff check . 2>&1 | tee "$LAST_OUTPUT"
       - name: Formatting
-        run: uv run ruff format --check .
+        run: uv run ruff format --check . 2>&1 | tee "$LAST_OUTPUT"
       - name: Unit tests
-        run: uv run pytest tests/unit -q
+        run: uv run pytest tests/unit -q 2>&1 | tee "$LAST_OUTPUT"
+      - name: Say why it failed
+        if: failure()
+        run: |
+          text="$(tail -c 6000 "$LAST_OUTPUT" | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\r//g;s/\n/%0A/g')"
+          echo "::error title=Last output of the failed step::$text"
 
   terraform:
     name: Terraform validation
@@ -42,11 +54,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+        with:
+          # The wrapper hides the exit code behind a pipe; plain terraform does not.
+          terraform_wrapper: false
       - name: Formatting
-        run: terraform fmt -check -recursive deployment/terraform
+        run: terraform fmt -check -diff -recursive deployment/terraform 2>&1 | tee "$LAST_OUTPUT"
       - name: Init without a backend
         working-directory: deployment/terraform/single-project
-        run: terraform init -backend=false -input=false
+        run: terraform init -backend=false -input=false 2>&1 | tee "$LAST_OUTPUT"
       - name: Validate
         working-directory: deployment/terraform/single-project
-        run: terraform validate
+        run: terraform validate -no-color 2>&1 | tee "$LAST_OUTPUT"
+      - name: Say why it failed
+        if: failure()
+        run: |
+          text="$(tail -c 12000 "$LAST_OUTPUT" | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\r//g;s/\n/%0A/g')"
+          echo "::error title=Last output of the failed step::$text"
