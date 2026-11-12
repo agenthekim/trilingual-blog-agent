@@ -210,9 +210,6 @@ function render(data) {
 
   $("progress").classList.remove("hidden");
   $("clearRun").classList.remove("hidden");
-  if (o.source_text) {
-    recordSourceUsage(o.source_text, o.title || "", jobId || "");
-  }
   if (restoredJob !== jobId && o.source_text) {
     restoredJob = jobId;
     if (!$("source").value.trim() && document.activeElement !== $("source")) {
@@ -691,9 +688,6 @@ if ($("clearPromptHistory")) {
   });
 }
 
-const SOURCE_HISTORY_KEY = "tba.source_history";
-const SOURCE_HIDDEN_KEY = "tba.source_hidden";
-
 function cleanSourceText(raw) {
   const s = (raw || "").trim();
   if (/^https?:\/\/\S+$/i.test(s)) {
@@ -708,102 +702,77 @@ function cleanSourceText(raw) {
   return s;
 }
 
-function getHiddenSources() {
-  try { return JSON.parse(localStorage.getItem(SOURCE_HIDDEN_KEY) || "[]"); } catch (e) { return []; }
+// "Recent sources" is the server's list of runs and nothing else (WEB-14):
+// the browser keeps no copy of it. An entry has a title, the kind of its
+// source and its length; the source text is asked for when an entry is picked.
+let recentSources = [];
+// What an earlier version of the page kept of it in this browser is dropped.
+for (const old of ["source_history", "source_hidden"]) localStorage.removeItem("tba." + old);
+
+function closeSourcesModal() {
+  if ($("sourcesModal").open) $("sourcesModal").close();
 }
 
-function getSourceHistory() {
+async function fillSourceFrom(entry) {
   try {
-    const hidden = new Set(getHiddenSources());
-    const raw = JSON.parse(localStorage.getItem(SOURCE_HISTORY_KEY) || "[]");
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .filter((item) => item && typeof item.text === "string" && item.text.trim() && !hidden.has(cleanSourceText(item.text)))
-      .sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
-  } catch (e) {
-    return [];
-  }
+    const answer = await api(`/api/jobs/${entry.job_id}/source`);
+    $("source").value = cleanSourceText(answer.source_text);
+    closeSourcesModal();
+    $("source").focus();
+  } catch (e) { toast(e.message); }
 }
 
-function saveSourceHistory(list) {
-  try { localStorage.setItem(SOURCE_HISTORY_KEY, JSON.stringify(list.slice(0, 30))); } catch (e) {}
+function openRecentRun(entry) {
+  // The run brings its source with it: render() fills the empty box.
+  $("source").value = "";
+  restoredJob = null;
+  closeSourcesModal();
+  watch(entry.job_id);
 }
 
-function recordSourceUsage(text, title = "", runJobId = "", timestamp = null) {
-  const clean = cleanSourceText(text);
-  if (!clean) return;
-  const hidden = new Set(getHiddenSources());
-  if (timestamp !== null && hidden.has(clean)) return;
-  const list = getSourceHistory();
-  const idx = list.findIndex((item) => cleanSourceText(item.text) === clean);
-  const now = timestamp || Date.now();
-  if (idx >= 0) {
-    list[idx].text = clean;
-    if (title) list[idx].title = title;
-    if (runJobId) list[idx].jobId = runJobId;
-    if (!timestamp || now > (list[idx].lastUsed || 0)) list[idx].lastUsed = now;
-  } else {
-    list.push({text: clean, title: title || "", jobId: runJobId || "", lastUsed: now});
-  }
-  saveSourceHistory(list);
-}
-
-function deleteSourceHistoryItem(text) {
-  const clean = cleanSourceText(text);
-  const hidden = getHiddenSources();
-  if (!hidden.includes(clean)) {
-    hidden.push(clean);
-    try { localStorage.setItem(SOURCE_HIDDEN_KEY, JSON.stringify(hidden)); } catch (e) {}
-  }
-  const list = getSourceHistory().filter((item) => cleanSourceText(item.text) !== clean);
-  saveSourceHistory(list);
-  renderSourcesModal();
-}
-
-function fillSourceInput(text) {
-  $("source").value = text;
-  if ($("sourcesModal") && $("sourcesModal").open) $("sourcesModal").close();
-  $("source").focus();
+async function hideRecentSource(entry) {
+  try {
+    await api(`/api/jobs/${entry.job_id}/hide`, {});
+    recentSources = recentSources.filter((other) => other.job_id !== entry.job_id);
+    renderSourcesModal();
+  } catch (e) { toast(e.message); }
 }
 
 function renderSourcesModal() {
   const box = $("sourcesHistoryList");
-  if (!box) return;
-  const history = getSourceHistory();
-  if (history.length === 0) {
+  if (recentSources.length === 0) {
     box.replaceChildren(el("span", {class: "muted small"}, t("noSourceHistoryText")));
     return;
   }
-  box.replaceChildren(...history.map((item) => {
-    const isUrl = /^https?:\/\/\S+$/i.test(item.text);
-    const firstLine = item.text.split("\n").find((l) => l.trim()) || item.text;
-    const primaryTitle = item.title || (isUrl ? item.text : firstLine.replace(/^#+\s*/, "").slice(0, 80));
-    const subLabel = isUrl ? item.text : t("sourceDraftLabel", {count: item.text.length.toLocaleString()});
+  box.replaceChildren(...recentSources.map((entry) => {
+    // A kind of address has a name of its own; the rest are named by the page.
+    const kind = entry.label || t("sourceKind." + entry.kind);
+    const details = typeof entry.chars === "number"
+      ? t("sourceKindAndLength", {kind, count: entry.chars.toLocaleString()})
+      : kind;
     return el("div", {class: "prompt-modal-item"},
       el("button", {
         type: "button",
         class: "prompt-fill",
         style: "display:grid; gap:2px",
-        onclick: () => fillSourceInput(item.text),
+        onclick: () => fillSourceFrom(entry),
       },
-        el("span", {style: "font-weight:600; font-size:13px"}, primaryTitle),
-        primaryTitle !== subLabel ? el("span", {class: "muted small", style: "font-size:11.5px"}, subLabel) : null
+        el("span", {style: "font-weight:600; font-size:13px"}, entry.title || entry.address || t("sourceUntitled")),
+        el("span", {class: "muted small", style: "font-size:11.5px"}, details),
+        entry.title && entry.address ? el("span", {class: "muted small", style: "font-size:11.5px; overflow-wrap:anywhere"}, entry.address) : null
       ),
-      item.jobId ? el("button", {
+      el("button", {
         type: "button",
         class: "ghost small",
         style: "font-size:11.5px; height:24px; padding:0 8px; border:1px solid var(--line); border-radius:4px; white-space:nowrap",
-        onclick: () => {
-          $("source").value = item.text;
-          if ($("sourcesModal") && $("sourcesModal").open) $("sourcesModal").close();
-          watch(item.jobId);
-        },
-      }, t("openRunBtn")) : null,
+        onclick: () => openRecentRun(entry),
+      }, t("openRunBtn")),
       el("button", {
         type: "button",
         class: "prompt-del",
-        title: t("removeFromHistory"),
-        onclick: () => deleteSourceHistoryItem(item.text),
+        title: t("hideFromList"),
+        "aria-label": t("hideFromList"),
+        onclick: () => hideRecentSource(entry),
       }, "×")
     );
   }));
@@ -813,25 +782,13 @@ async function openSourcesModal() {
   renderSourcesModal();
   $("sourcesModal").showModal();
   try {
-    const res = await api("/api/jobs");
-    if (res && Array.isArray(res.jobs)) {
-      for (const j of res.jobs) {
-        recordSourceUsage(j.source_text, j.title || "", j.job_id, (j.created || 0) * 1000);
-      }
-      renderSourcesModal();
-    }
-  } catch (e) {}
-}
-if ($("openSourcesModal")) $("openSourcesModal").addEventListener("click", openSourcesModal);
-if ($("closeSourcesModal")) $("closeSourcesModal").addEventListener("click", () => $("sourcesModal").close());
-if ($("clearSourceHistory")) {
-  $("clearSourceHistory").addEventListener("click", () => {
-    const all = getSourceHistory().map((i) => cleanSourceText(i.text));
-    try { localStorage.setItem(SOURCE_HIDDEN_KEY, JSON.stringify([...new Set([...getHiddenSources(), ...all])])); } catch (e) {}
-    saveSourceHistory([]);
+    const answer = await api("/api/jobs");
+    recentSources = Array.isArray(answer.jobs) ? answer.jobs : [];
     renderSourcesModal();
-  });
+  } catch (e) { toast(e.message); }
 }
+$("openSourcesModal").addEventListener("click", openSourcesModal);
+$("closeSourcesModal").addEventListener("click", closeSourcesModal);
 
 function submitMessage() {
   const text = $("message").value.trim();
@@ -870,7 +827,6 @@ zone.addEventListener("submit", async (e) => {
   $("run").disabled = true;
   try {
     const started = await api("/api/jobs", {text, ...settings});
-    recordSourceUsage(text, "", started.job_id);
     for (const key of Object.keys(typed)) delete typed[key];
     state = {log: []};
     $("rows").replaceChildren(); $("log").textContent = "";

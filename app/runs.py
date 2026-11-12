@@ -33,14 +33,16 @@ from typing import Any
 from opentelemetry.trace import StatusCode
 
 from app.observability import log_activity, log_event, root_span
-from app.pipeline import ArticlePipeline
+from app.pipeline import ArticlePipeline, describe_source
 from app.redaction import redact_credentials
 from app.settings import LANGUAGES, workspace_dir
+from app.tools.articles import title_of_draft
 
 MAIN = "main"
 SLIDES = "slides"
 LANES = (MAIN, SLIDES)
 MAX_LOG_LINES = 400
+MAX_LISTED_RUNS = 30
 _JOB_ID = re.compile(r"^[0-9a-f]{32}$")
 
 # One sentence per lane: it says that the lane works and which lane it is.
@@ -126,6 +128,15 @@ class Job:
     log: list[str] = field(default_factory=list)
     lanes: dict[str, Lane] = field(default_factory=_lanes)
     reply: str | None = None  # the agent's answer to "Ask the agent for a change"
+    # What "Recent sources" shows of this run (WEB-14). It is in the record so
+    # that the list is made from the records alone: the kind and the name
+    # people know it by from what was handed in, the title and the length
+    # when the source is stored.
+    title: str = ""
+    source_kind: str = ""
+    source_label: str = ""
+    source_chars: int | None = None
+    hidden: bool = False  # taken off the list by a person; its files stay
 
     @property
     def busy(self) -> bool:
@@ -153,6 +164,11 @@ class Job:
         # The same line, with the run id, in the structured log (OPS-1).
         log_activity(line, self.id)
 
+    def source_stored(self, title: str, chars: int) -> None:
+        """The source document is stored: its title and length are known."""
+        self.title, self.source_chars = title, chars
+        self.save()
+
     def save(self) -> None:
         """Write the record that lets this run be opened after a restart."""
         record = {
@@ -160,6 +176,11 @@ class Job:
             "session_id": self.pipeline.session_id,
             "created": self.created,
             "source_text": self.source_text,
+            "title": self.title,
+            "source_kind": self.source_kind,
+            "source_label": self.source_label,
+            "source_chars": self.source_chars,
+            "hidden": self.hidden,
             "talk_languages": self.talk_languages,
             "wants_decks": self.wants_decks,
             "busy": self.busy,
@@ -186,7 +207,9 @@ def new_job(talk_languages: list[str], wants_decks: bool, source_text: str = "")
         talk_languages=talk_languages,
         wants_decks=wants_decks,
     )
+    job.source_kind, job.source_label, _ = describe_source(source_text)
     job.pipeline.log = job.add_log
+    job.pipeline.source_stored = job.source_stored
     JOBS[job.id] = job
     job.save()
     return job
@@ -223,11 +246,18 @@ def reopen(job_id: str) -> Job | None:
             ],
             wants_decks=bool(record.get("wants_decks")),
             reply=record.get("reply"),
+            # A record written before these fields were kept lacks them.
+            title=str(record.get("title") or ""),
+            source_kind=str(record.get("source_kind") or ""),
+            source_label=str(record.get("source_label") or ""),
+            source_chars=_chars(record.get("source_chars")),
+            hidden=bool(record.get("hidden")),
         )
         recorded = _recorded_lanes(record)
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
     job.pipeline.log = job.add_log
+    job.pipeline.source_stored = job.source_stored
     log = jobs_dir() / f"{job_id}.log"
     if log.is_file():
         for line in log.read_text(encoding="utf-8").splitlines()[-MAX_LOG_LINES:]:
@@ -248,6 +278,62 @@ def reopen(job_id: str) -> Job | None:
         job.save()  # said once, not on every reopening
     JOBS[job_id] = job
     return job
+
+
+def _chars(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def recent() -> list[dict[str, Any]]:
+    """The runs "Recent sources" lists, newest first, from the records alone.
+
+    No run is opened and no session is read for this (WEB-14): an entry says
+    what its record says. A record written before the title, the kind and the
+    length were kept is listed with what it has; the kind, its name and the
+    address are read from what was handed in, which every record keeps, and
+    so are the title and the length of a draft. The source text itself is
+    not part of the list.
+    """
+    entries: list[dict[str, Any]] = []
+    for path in jobs_dir().glob("*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            job_id = str(record.get("id") or "")
+            source_text = str(record.get("source_text") or "")
+            if not _JOB_ID.match(job_id) or path.stem != job_id:
+                continue
+            if record.get("hidden") or not source_text.strip():
+                continue
+            kind, label, address = describe_source(source_text)
+            title, chars = record.get("title"), _chars(record.get("source_chars"))
+            if kind == "draft":
+                # A draft is its own source: what an older record lacks is
+                # in the text the record keeps.
+                title = title or title_of_draft(source_text, fallback="")
+                chars = len(source_text) if chars is None else chars
+            entries.append(
+                {
+                    "job_id": job_id,
+                    "created": float(record.get("created") or 0),
+                    "title": str(title or ""),
+                    "kind": str(record.get("source_kind") or kind),
+                    "label": str(record.get("source_label") or label),
+                    "chars": chars,
+                    "address": address,
+                }
+            )
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    entries.sort(key=lambda entry: entry["created"], reverse=True)
+    return entries[:MAX_LISTED_RUNS]
+
+
+def hide(job_id: str) -> None:
+    """Take a run off the list of recent sources. Its record, its log, its
+    session and its files stay, and its address still opens it."""
+    job = get_job(job_id)
+    job.hidden = True
+    job.save()
 
 
 def get_job(job_id: str) -> Job:

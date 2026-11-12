@@ -196,6 +196,9 @@ def test_every_text_the_page_asks_for_exists() -> None:
         "tagRule.": set(policy.API_PLATFORMS),
         "prompt.": set(_suggestions()),
         "slidePhase.": set(SLIDE_PHASES),
+        # The kinds of source the page names itself; a kind of address goes
+        # by the name people know it by, which the server sends (WEB-14).
+        "sourceKind.": {"draft", "request", "elsewhere"},
     }
     assert families == set(expected)
     for family, values in expected.items():

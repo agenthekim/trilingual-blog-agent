@@ -46,7 +46,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from app import policy, runs, secrets, state
+from app import policy, runs, secrets
 from app.google_slides import SlidesError, granted_account, mermaid_preview_url
 from app.observability import log_event, setup_tracing, traced_span
 from app.pipeline import (
@@ -406,31 +406,10 @@ async def config() -> dict[str, Any]:
 
 @web.get("/api/jobs")
 async def list_recent_jobs() -> dict[str, Any]:
-    """Recent runs with their source text and title, newest first."""
-    items: list[dict[str, Any]] = []
-    for path in sorted(
-        runs.jobs_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
-    )[:30]:
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-            job_id = str(record.get("id") or "")
-            source_text = str(record.get("source_text") or "").strip()
-            if not re.fullmatch(r"[0-9a-f]{32}", job_id) or not source_text:
-                continue
-            job = _job(job_id)
-            current = await job.pipeline.session_state()
-            title = str(current.get(state.SEED_TITLE) or "").strip()
-            items.append(
-                {
-                    "job_id": job_id,
-                    "source_text": source_text,
-                    "title": title,
-                    "created": float(record.get("created") or 0),
-                }
-            )
-        except Exception:
-            continue
-    return {"jobs": items}
+    """ "Recent sources": the runs on this server, newest first, each with its
+    title, the kind of its source and its length, read from the run records
+    alone (WEB-14). The source text is not in the list; see ``job_source``."""
+    return {"jobs": runs.recent()}
 
 
 @web.post("/api/jobs")
@@ -440,6 +419,21 @@ async def start_job(request: StartRequest) -> dict[str, str]:
     job = _new_job(languages, wants_slides and request.create_deck, request.text)
     runs.start_run(job, request.text, request.talk_minutes, languages, request.audience)
     return {"job_id": job.id}
+
+
+@web.get("/api/jobs/{job_id}/source")
+async def job_source(job_id: str) -> dict[str, str]:
+    """What was handed in for this run, as it was handed in: asked for when a
+    person picks the run in "Recent sources" to fill the source box."""
+    return {"source_text": _job(job_id).source_text}
+
+
+@web.post("/api/jobs/{job_id}/hide")
+async def hide_job(job_id: str) -> dict[str, bool]:
+    """Take a run off "Recent sources". Its files stay, and so does its
+    address (WEB-14)."""
+    runs.hide(job_id)
+    return {"hidden": True}
 
 
 @web.get("/api/jobs/{job_id}")

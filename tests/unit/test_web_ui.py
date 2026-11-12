@@ -1156,3 +1156,175 @@ def test_suggestions_come_from_the_catalogs_and_typed_requests_stay_as_typed(
         < page.index('data-i18n="myHistoryLabel">My history (as typed)<')
         < page.index('id="historyPromptsList"')
     )
+
+
+def _record(job_id: str) -> dict[str, Any]:
+    import json
+
+    from app import runs
+
+    return json.loads((runs.jobs_dir() / f"{job_id}.json").read_text("utf-8"))
+
+
+def test_listing_runs_reads_records_only(isolated_workspace, monkeypatch) -> None:
+    """WEB-14: "Recent sources" is made from the run records and nothing else."""
+    import asyncio
+    import json
+
+    from app import runs, state
+    from app.pipeline import ArticlePipeline
+
+    address = "https://qiita.com/author/items/0123456789abcdef0123"
+    draft = "# A draft of mine\n\n" + "It says something worth reading. " * 20
+    try:
+        post = web_ui._new_job([], False, address)
+        mine = web_ui._new_job(["en"], True, draft)
+        post.created, mine.created = 1000.0, 2000.0
+        mine.save()
+        # The kind is known from what was handed in; nothing was read for it.
+        assert (post.source_kind, post.source_label) == ("qiita", "Qiita")
+        assert (mine.source_kind, mine.source_label) == ("draft", "")
+        assert post.title == "" and post.source_chars is None
+
+        # The title and the length reach the record when the source is
+        # stored, before the localization has begun.
+        class Stop(Exception):
+            pass
+
+        async def stored(source_text: str, notes: list[str]) -> None:
+            await post.pipeline._update_state(
+                {state.SEED_TITLE: "Qiitaの記事", state.SEED_MARKDOWN: "x" * 4321}
+            )
+
+        async def localization(text: str) -> None:
+            raise Stop
+
+        monkeypatch.setattr(post.pipeline, "_store_source", stored)
+        monkeypatch.setattr(post.pipeline, "say", localization)
+        with pytest.raises(Stop):
+            asyncio.run(post.pipeline.run_posts(address))
+        assert _record(post.id)["title"] == "Qiitaの記事"
+        assert _record(post.id)["source_chars"] == 4321
+
+        # A record written before these fields were kept, a record without a
+        # source, and a file that is no record at all.
+        old_id, empty_id = "a" * 32, "b" * 32
+        old = {"id": old_id, "session_id": "s", "created": 500.0}
+        (runs.jobs_dir() / f"{old_id}.json").write_text(
+            json.dumps({**old, "source_text": "https://dev.to/author/a-post"}), "utf-8"
+        )
+        (runs.jobs_dir() / f"{empty_id}.json").write_text(
+            json.dumps({**old, "id": empty_id}), "utf-8"
+        )
+        (runs.jobs_dir() / f"{'c' * 32}.json").write_text("not a record", "utf-8")
+
+        # A new process holds no run. Listing opens none and reads no session.
+        web_ui.JOBS.clear()
+
+        def refuse(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError("listing the runs opened a run or read a session")
+
+        monkeypatch.setattr(runs, "reopen", refuse)
+        monkeypatch.setattr(runs, "ArticlePipeline", refuse)
+        monkeypatch.setattr(ArticlePipeline, "session_state", refuse)
+        listed = _browser().get("/api/jobs").json()["jobs"]
+        assert not web_ui.JOBS
+    finally:
+        web_ui.JOBS.clear()
+
+    assert listed == [
+        {
+            "job_id": mine.id,
+            "created": 2000.0,
+            "title": "A draft of mine",
+            "kind": "draft",
+            "label": "",
+            "chars": len(draft),
+            "address": "",
+        },
+        {
+            "job_id": post.id,
+            "created": 1000.0,
+            "title": "Qiitaの記事",
+            "kind": "qiita",
+            "label": "Qiita",
+            "chars": 4321,
+            "address": address,
+        },
+        # The older record is listed with what it has.
+        {
+            "job_id": old_id,
+            "created": 500.0,
+            "title": "",
+            "kind": "devto",
+            "label": "DEV Community",
+            "chars": None,
+            "address": "https://dev.to/author/a-post",
+        },
+    ]
+    # The list carries no source text; the page keeps no list of its own and
+    # writes nothing of it into the browser.
+    assert "source_text" not in json.dumps(listed)
+    script = (web_ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    for removed in (
+        "tba.source_history",
+        "tba.source_hidden",
+        "SOURCE_HISTORY_KEY",
+        "SOURCE_HIDDEN_KEY",
+        "recordSourceUsage",
+        "saveSourceHistory",
+    ):
+        assert removed not in script, removed
+    render = script.split("function render(data) {", 1)[1].split("\nfunction ", 1)[0]
+    assert "localStorage" not in render  # nothing is stored on every poll
+
+
+def test_a_hidden_run_is_not_listed_and_its_files_remain(isolated_workspace) -> None:
+    """WEB-14: hiding takes an entry off the list and leaves everything else."""
+    from app import runs
+
+    draft = "# Kept\n\n" + "The text of the article that stays. " * 20
+    client = _browser()
+    try:
+        kept = web_ui._new_job([], False, draft)
+        other = web_ui._new_job([], False, draft.replace("Kept", "Other"))
+        kept.add_log(">>> a line of the run")
+        folder = workspace_dir() / PROJECT_ID
+        folder.mkdir(parents=True)
+        (folder / "post.en.md").write_text("# Kept\n", "utf-8")
+        files = lambda: sorted(  # noqa: E731
+            path.name for path in runs.jobs_dir().iterdir() if kept.id in path.name
+        )
+        before = files()
+        assert before == [f"{kept.id}.json", f"{kept.id}.log"]
+
+        # The source is fetched when an entry is picked, as it was handed in.
+        assert client.get(f"/api/jobs/{kept.id}/source").json() == {
+            "source_text": draft
+        }
+        assert {
+            entry["job_id"] for entry in client.get("/api/jobs").json()["jobs"]
+        } == {
+            kept.id,
+            other.id,
+        }
+        assert client.post(f"/api/jobs/{kept.id}/hide").json() == {"hidden": True}
+        listed = client.get("/api/jobs").json()["jobs"]
+        assert [entry["job_id"] for entry in listed] == [other.id]
+
+        # Its record, its log and its article files are where they were, and
+        # a new process still opens it by its address and still hides it.
+        assert files() == before and _record(kept.id)["hidden"] is True
+        assert (folder / "post.en.md").read_text("utf-8") == "# Kept\n"
+        web_ui.JOBS.clear()
+        assert client.get(f"/api/jobs/{kept.id}").status_code == 200
+        assert client.get(f"/api/jobs/{kept.id}/source").json()["source_text"] == draft
+        assert web_ui.JOBS[kept.id].hidden is True
+        assert [e["job_id"] for e in client.get("/api/jobs").json()["jobs"]] == [
+            other.id
+        ]
+        for unknown in ("0" * 32, "..%2F..%2Fetc"):
+            assert client.post(f"/api/jobs/{unknown}/hide").status_code == 404
+            assert client.get(f"/api/jobs/{unknown}/source").status_code == 404
+    finally:
+        web_ui.JOBS.clear()

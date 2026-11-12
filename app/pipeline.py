@@ -591,6 +591,25 @@ def _failure(result: dict[str, Any]) -> str | None:
     return str(result.get("message") or f"it ended as '{result.get('status')}'")
 
 
+def describe_source(text: str) -> tuple[str, str, str]:
+    """What a person handed in, for a list of runs: kind, its name, address.
+
+    The kind is a name of ``app.sources.SOURCE_KINDS`` for a bare address
+    that can be read, else the name ``classify_source`` gives ('draft',
+    'request', 'elsewhere'). Its name is the one people know a kind of
+    address by ("Qiita", "Google Docs"), empty for the rest, which the page
+    names in its own language. The address is there for a bare address only.
+    Nothing is read or fetched for this.
+    """
+    kind, stripped = classify_source(text)
+    if kind in ("draft", "request"):
+        return kind, "", ""
+    known = sources.kind_of(stripped)
+    if known is None:
+        return kind, "", stripped[:500]
+    return known.name, known.label, stripped[:500]
+
+
 class ArticlePipeline:
     """One article, one agent session, driven step by step."""
 
@@ -632,6 +651,9 @@ class ArticlePipeline:
         # Activity lines go to whoever shows them (the page's run, the
         # script's terminal); nobody asked, they go to the structured log.
         self.log = log or self._log_activity
+        # Told the title and the length of the source document as soon as it
+        # is stored; a run keeps them in its record (WEB-14).
+        self.source_stored: Callable[[str, int], None] = lambda title, chars: None
         self._pending: list[Approval] = []
         self.last_reply = ""
         # Where the slides lane is with each language it worked on, one of
@@ -972,6 +994,11 @@ class ArticlePipeline:
         notes: list[str] = []
         if stopped := await self._store_source(source_text, notes):
             return False, stopped
+        stored = await self.session_state()
+        self.source_stored(
+            str(stored.get(state.SEED_TITLE) or ""),
+            len(stored.get(state.SEED_MARKDOWN) or ""),
+        )
 
         await self.say("Localize it into the other two languages.")
         current = await self.session_state()
