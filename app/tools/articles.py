@@ -484,7 +484,8 @@ def update_article_post(
     changing the title). Changes are saved to both session state and post.<lang>.md.
     """
     from app.markdown_checks import check_fidelity
-    from app.settings import MAX_TITLE_CHARS
+
+    max_title_chars = 120
 
     if language not in LANGUAGES:
         return tool_error(
@@ -501,7 +502,7 @@ def update_article_post(
             "Localize the seed article first.",
         )
     old_title = state.article_title(tool_context.state, language)
-    new_title = title.strip()[:MAX_TITLE_CHARS] if title and title.strip() else old_title
+    new_title = title.strip()[:max_title_chars] if title and title.strip() else old_title
     new_text = (markdown.rstrip() + "\n") if markdown and markdown.strip() else old_text
     if new_title != old_title and not (markdown and markdown.strip()):
         new_text = re.sub(r"\A(\s*#\s+)[^\n]+", rf"\g<1>{new_title}", new_text, count=1)
