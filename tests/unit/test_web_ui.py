@@ -507,6 +507,13 @@ def test_a_run_is_reopened_from_its_record_after_a_restart(real) -> None:
         "Prepare slides",
         "Summarize",
     ]
+    assert [step["name"] for step in after["post_progress"]] == [
+        "Review & edit",
+        "Finalize posts",
+        "Export slide PDFs",
+        "Approve & draft",
+        "Publish & verify",
+    ]
     # The notice is said once, not on every reopening.
     web_ui.JOBS.clear()
     again = client.get(f"/api/jobs/{job.id}").json()
@@ -575,6 +582,13 @@ def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
     # Columns follow the order of the work, with the next step last.
     columns = re.findall(r"<th>([^<]+)</th>", page)
     assert columns == ["Language", "Title", "Files", "Slides", "Next step"]
+    # Inside the progress card: title -> status bar (#live) -> bar 1 (#steps) -> bar 2 (#nextSteps).
+    assert (
+        page.index('id="articleTitle"')
+        < page.index('id="live"')
+        < page.index('id="steps"')
+        < page.index('id="nextSteps"')
+    )
     # Links carry no arrow symbol, and nothing is listed under the table.
     assert "↗" not in page and "Talk and summary" not in page
     # No name of a secret is written into the page.

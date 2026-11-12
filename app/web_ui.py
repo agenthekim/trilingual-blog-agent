@@ -47,7 +47,13 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from app import policy, secrets
 from app.google_slides import SlidesError, granted_account, mermaid_preview_url
 from app.observability import log_event
-from app.pipeline import ArticlePipeline, overview, progress, project_file
+from app.pipeline import (
+    ArticlePipeline,
+    overview,
+    post_progress,
+    progress,
+    project_file,
+)
 from app.redaction import redact_credentials
 from app.schemas import DevtoDraftInput, QiitaDraftInput
 from app.settings import (
@@ -503,6 +509,7 @@ async def job_status(job_id: str) -> dict[str, Any]:
         "approvals": job.pipeline.approvals,
         "overview": overview(current),
         "progress": progress(current, job.talk_languages, job.wants_decks),
+        "post_progress": post_progress(current, job.talk_languages),
     }
 
 

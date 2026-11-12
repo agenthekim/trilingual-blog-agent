@@ -197,8 +197,9 @@
       <h2 id="articleTitle">Starting…</h2>
       <span class="muted small" id="elapsed"></span>
     </div>
-    <ol class="steps" id="steps"></ol>
     <div class="live" id="live"></div>
+    <ol class="steps" id="steps"></ol>
+    <ol class="steps" id="nextSteps"></ol>
     <div id="notices"></div>
   </section>
 
@@ -411,6 +412,11 @@ function render(data) {
   const firstOpen = data.progress.findIndex((step) => !step.done);
   $("steps").replaceChildren(...data.progress.map((step, i) =>
     el("li", {class: step.done ? "done" : (busy && i === firstOpen ? "now" : "")}, (step.done ? "✓ " : "") + step.name)));
+  const postSteps = data.post_progress || [];
+  const stage1Done = firstOpen === -1 && data.progress.length > 0;
+  const firstPostOpen = postSteps.findIndex((step) => !step.done);
+  $("nextSteps").replaceChildren(...postSteps.map((step, i) =>
+    el("li", {class: step.done ? "done" : (stage1Done && i === firstPostOpen ? "now" : "")}, (step.done ? "✓ " : "") + step.name)));
   drawLive();
 
   const notices = [];

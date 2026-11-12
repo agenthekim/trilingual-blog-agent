@@ -245,6 +245,63 @@ def progress(
     return steps
 
 
+def post_progress(
+    session_state: dict[str, Any], talk_languages: list[str]
+) -> list[dict[str, Any]]:
+    """The five review-and-publishing steps after Summarize, computed from state."""
+    project_id = session_state.get(state.PROJECT_ID) or ""
+    summarized = bool(project_file(project_id, "manifest.md"))
+    publishable = [
+        lang
+        for lang in LANGUAGES
+        if policy.publication(session_state, PLATFORM_FOR_LANGUAGE[lang]).get("state")
+        != "existing_source"
+    ]
+    has_posts = bool(publishable) and all(
+        bool(state.article_markdown(session_state, lang)) for lang in publishable
+    )
+    reviewed = summarized and any(
+        policy.is_finalized(session_state, lang)
+        or policy.publication(session_state, PLATFORM_FOR_LANGUAGE[lang]).get("state")
+        in ("draft", "published")
+        for lang in publishable
+    )
+    all_finalized = has_posts and all(
+        policy.is_finalized(session_state, lang)
+        or policy.publication(session_state, PLATFORM_FOR_LANGUAGE[lang]).get("state")
+        == "published"
+        for lang in publishable
+    )
+    slide_langs = talk_languages or list(session_state.get(state.SLIDE_PLANS) or {})
+    pdfs_ready = bool(slide_langs) and all(
+        bool(project_file(project_id, slide_pdf_file(lang))) for lang in slide_langs
+    )
+    api_langs = [
+        lang for lang in publishable if PLATFORM_FOR_LANGUAGE[lang] in API_PLATFORMS
+    ]
+    drafted = (
+        all_finalized
+        and bool(api_langs)
+        and all(
+            policy.publication(session_state, PLATFORM_FOR_LANGUAGE[lang]).get("state")
+            in ("draft", "published")
+            for lang in api_langs
+        )
+    )
+    published = has_posts and all(
+        policy.publication(session_state, PLATFORM_FOR_LANGUAGE[lang]).get("state")
+        in ("existing_source", "published")
+        for lang in LANGUAGES
+    )
+    return [
+        {"name": "Review & edit", "done": reviewed},
+        {"name": "Finalize posts", "done": all_finalized},
+        {"name": "Export slide PDFs", "done": pdfs_ready},
+        {"name": "Approve & draft", "done": drafted},
+        {"name": "Publish & verify", "done": published},
+    ]
+
+
 @dataclass(frozen=True)
 class Approval:
     """One request the agent is waiting for a person to answer."""
