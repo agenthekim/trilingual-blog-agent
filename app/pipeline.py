@@ -121,6 +121,8 @@ def classify_source(text: str) -> tuple[str, str]:
     if re.fullmatch(r"https?://\S+", stripped):
         if stripped.startswith("https://") and platforms.is_google_doc_url(stripped):
             return "gdoc", stripped
+        if stripped.startswith("https://") and platforms.is_medium_url(stripped):
+            return "medium", stripped
         readable = bool(urls) and stripped.startswith("https://")
         return ("url" if readable else "elsewhere"), stripped
     if urls and len(stripped) <= _MAX_URL_REQUEST_CHARS:
@@ -618,6 +620,11 @@ class ArticlePipeline:
                 text = await platforms.google_doc_get_markdown(doc_id)
             except platforms.PlatformError as exc:
                 return f"The Google Docs document could not be read. {exc.message}"
+        if kind == "medium":
+            try:
+                text = await platforms.medium_get_markdown(text)
+            except platforms.PlatformError as exc:
+                return f"The Medium post could not be read. {exc.message}"
         # Said in plain words here, before a validator says it in its own.
         if len(text.strip()) < MIN_DRAFT_CHARS:
             return (

@@ -824,7 +824,9 @@ function render(data) {
     }
   }
   const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
-  $("articleTitle").textContent = o.title || (busy ? "Reading the source document…" : "No article was stored");
+  const readingText = currentUiLang === "ko" ? "원본 문서를 읽는 중…" : currentUiLang === "ja" ? "元記事を読み込み中…" : "Reading the source document…";
+  const noArticleText = currentUiLang === "ko" ? "저장된 원고가 없습니다" : currentUiLang === "ja" ? "記事が保存されませんでした" : "No article was stored";
+  $("articleTitle").textContent = o.title || (busy ? readingText : noArticleText);
   // The server says which steps are done, judged against what this run was asked for.
   const firstOpen = data.progress.findIndex((step) => !step.done);
   const postSteps = data.post_progress || [];
@@ -916,11 +918,12 @@ function drawLive() {
       el("span", {class: "last"}, `· ${lastLine || "starting"} · quiet for ${clock(Date.now() - lastLogAt)}`));
   } else {
     const manifest = state.overview.manifest;
-    const key = `${jobId}|${currentUiLang}|${state.error ? "stopped" : "finished"}|${manifest || ""}`;
+    const stopped = Boolean(state.error || (!state.overview.title && state.notice));
+    const key = `${jobId}|${currentUiLang}|${stopped ? "stopped" : "finished"}|${manifest || ""}`;
     if (key === liveKey) return;   // keep the link in place; a rebuilt link can swallow a click
     liveKey = key;
     $("elapsed").textContent = "";
-    const done = [el("span", {class: "muted"}, state.error ? (t.stoppedText || "Stopped.") : (t.finishedText || "Finished. Review the results below."))];
+    const done = [el("span", {class: "muted"}, stopped ? (t.stoppedText || "Stopped.") : (t.finishedText || "Finished. Review the results below."))];
     if (manifest) done.push(el("span", {class: "muted"}, t.summaryRunText || "· Summary of this run: ", el("a", {href: fileUrl(manifest), target: "_blank", rel: "noopener"}, manifest)));
     $("live").replaceChildren(...done);
   }
@@ -1126,7 +1129,8 @@ if ($("uiLanguageSelect")) {
 }
 $("clearRun").addEventListener("click", () => {
   $("source").value = ""; $("file").value = "";
-  $("fileInfo").textContent = "or drop a file anywhere on this card";
+  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
+  $("fileInfo").textContent = t.dropHint || "or drop a file anywhere on this card";
   forget();
 });
 $("attach").addEventListener("click", () => $("file").click());

@@ -572,8 +572,12 @@ async def test_a_draft_without_a_title_line_says_which_title_was_taken(
 
 
 def test_an_address_that_cannot_be_read_is_told_apart_from_a_draft() -> None:
-    for text in (
+    assert classify_source("https://medium.com/@someone/a-post-1a2b3c") == (
+        "medium",
         "https://medium.com/@someone/a-post-1a2b3c",
+    )
+    for text in (
+        "https://example.com/@someone/a-post-1a2b3c",
         "http://qiita.com/someone/items/0123456789abcdef0123",  # not https
     ):
         assert classify_source(text) == ("elsewhere", text)
@@ -586,7 +590,7 @@ async def test_what_cannot_be_used_as_a_source_is_said_in_plain_words(
     pipeline = _new_pipeline()
     said = _stand_in_agent(pipeline)
     elsewhere = await pipeline.run_stages(
-        "https://medium.com/@a/post-1", talk_minutes=0
+        "https://example.com/@a/post-1", talk_minutes=0
     )
     assert elsewhere.startswith("That address cannot be read")
     assert "Qiita, DEV Community and Naver Blog" in elsewhere

@@ -791,3 +791,144 @@ async def google_doc_get_markdown(doc_id: str) -> str:
             "Ask the user for a document with article text.",
         )
     return text
+
+
+_MEDIUM_PATH = re.compile(r"^/(@[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$")
+
+
+def parse_medium_post(url: str) -> tuple[str, str]:
+    """Return (author_or_pub, slug) of an https Medium post URL, or raise PlatformError."""
+    try:
+        parsed = httpx.URL(url.strip())
+    except (httpx.InvalidURL, TypeError) as exc:
+        raise PlatformError(
+            "MEDIUM_URL_FORMAT",
+            "Not a valid Medium URL.",
+            "Ask for an https://medium.com/@author/slug URL.",
+        ) from exc
+    host = parsed.host.lower().removeprefix("www.")
+    match = _MEDIUM_PATH.match(parsed.path.rstrip("/"))
+    if (
+        parsed.scheme != "https"
+        or host != "medium.com"
+        or parsed.port is not None
+        or parsed.userinfo
+        or not match
+    ):
+        raise PlatformError(
+            "MEDIUM_URL_FORMAT",
+            "Not a Medium article URL.",
+            "Ask for an https://medium.com/@author/slug URL.",
+        )
+    return match.group(1), match.group(2)
+
+
+def is_medium_url(url: str) -> bool:
+    """Whether ``url`` is an https Medium post URL."""
+    try:
+        parse_medium_post(url)
+        return True
+    except PlatformError:
+        return False
+
+
+class _MediumHtmlToMarkdown(HTMLParser):
+    """Convert Medium RSS <content:encoded> HTML into clean Markdown."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.out: list[str] = []
+        self._href: str | None = None
+        self._link_text: list[str] = []
+        self._in_pre = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        d = dict(attrs)
+        if tag in ("h1", "h2", "h3", "h4"):
+            level = int(tag[1])
+            self.out.append(f"\n\n{'#' * max(2, level)} ")
+        elif tag in ("p", "blockquote"):
+            self.out.append("\n\n" + ("> " if tag == "blockquote" else ""))
+        elif tag == "br":
+            self.out.append("\n")
+        elif tag == "li":
+            self.out.append("\n- ")
+        elif tag == "pre":
+            self._in_pre = True
+            self.out.append("\n\n```\n")
+        elif tag == "code" and not self._in_pre:
+            self.out.append("`")
+        elif tag == "a" and d.get("href"):
+            self._href = d["href"]
+            self._link_text = []
+        elif tag == "img" and d.get("src"):
+            src = d["src"]
+            if "medium.com/_/stat" not in src:
+                alt = (d.get("alt") or "image").strip()
+                self.out.append(f"\n\n![{alt}]({src})\n\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "pre":
+            self._in_pre = False
+            self.out.append("\n```\n\n")
+        elif tag == "code" and not self._in_pre:
+            self.out.append("`")
+        elif tag == "a" and self._href:
+            txt = "".join(self._link_text).strip() or self._href
+            self.out.append(f"[{txt}]({self._href})")
+            self._href = None
+            self._link_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._href is not None:
+            self._link_text.append(data)
+        else:
+            self.out.append(data)
+
+
+async def medium_get_markdown(url: str) -> str:
+    """Fetch a Medium post from its RSS feed and convert it to Markdown."""
+    import xml.etree.ElementTree as ET
+
+    author_or_pub, slug = parse_medium_post(url)
+    post_id = slug.rsplit("-", 1)[-1] if "-" in slug else slug
+    feed_url = f"https://medium.com/feed/{author_or_pub}"
+    with traced_span("medium.fetch_rss", author=author_or_pub, post_id=post_id):
+        try:
+            async with _client() as client:
+                response = await client.get(feed_url)
+        except Exception as exc:
+            raise _transport_error("medium", exc) from exc
+    if response.status_code >= 400:
+        raise PlatformError(
+            "MEDIUM_NOT_READABLE",
+            f"Medium feed returned HTTP {response.status_code}.",
+            "Ask the user to paste the article text or attach a .md file.",
+        )
+    try:
+        root = ET.fromstring(response.text)
+    except ET.ParseError as exc:
+        raise PlatformError(
+            "MEDIUM_BAD_FEED",
+            "Could not parse the Medium RSS feed.",
+            "Ask the user to paste the article text or attach a .md file.",
+        ) from exc
+    ns = {"content": "http://purl.org/rss/1.0/modules/content/"}
+    for item in root.findall("./channel/item"):
+        link = (item.findtext("link") or "") + " " + (item.findtext("guid") or "")
+        if post_id in link or slug in link:
+            title = (item.findtext("title") or "").strip() or "Untitled"
+            encoded = item.findtext("content:encoded", default="", namespaces=ns) or (
+                item.findtext("description") or ""
+            )
+            parser = _MediumHtmlToMarkdown()
+            parser.feed(encoded)
+            body = re.sub(r"\n{3,}", "\n\n", "".join(parser.out).strip())
+            if not body:
+                break
+            return f"# {title}\n\n{body}\n"
+    raise PlatformError(
+        "MEDIUM_POST_NOT_IN_FEED",
+        "This Medium post was not found in the author's recent RSS feed.",
+        "Copy the article text into the Source document box or attach a .md file.",
+    )
