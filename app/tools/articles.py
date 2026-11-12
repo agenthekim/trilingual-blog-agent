@@ -20,12 +20,16 @@ from app.schemas import (
     LanguageCode,
     LoadDraftInput,
     PassageReplacementInput,
+    PostEditOutput,
+    PostReadOutput,
     PostTitleInput,
     PublicationRecord,
     SaveSeedInput,
+    SeedFinalizedOutput,
     SeedSavedOutput,
     checked_language,
     tool_error,
+    tool_output,
     validation_error,
 )
 from app.settings import (
@@ -299,7 +303,7 @@ async def fetch_published_article_markdown(
             f" Note: the article is written in '{language}', which is normally "
             f"posted on {PLATFORM_FOR_LANGUAGE[language]}, not {platform}."
         )
-    output = FetchArticleOutput(
+    return FetchArticleOutput(
         platform=platform,  # type: ignore[arg-type]
         url=request.url,
         title=title,
@@ -308,15 +312,12 @@ async def fetch_published_article_markdown(
         markdown_chars=len(markdown),
         extraction=extraction,  # type: ignore[arg-type]
         note=note,
-    ).model_dump()
-    output.update(
         project_id=saved.project_id,
         seed_finalized=saved.finalized,
         target_languages=saved.target_languages,
         file=saved.file,
         next_step=saved.next_step,
-    )
-    return output
+    ).model_dump()
 
 
 def load_markdown_draft_file(
@@ -450,15 +451,16 @@ def finalize_seed_article(tool_context: ToolContext) -> dict[str, Any]:
     tool_context.state[state.SEED_FINALIZED] = True
     get_article_store().save_project(project_id, {"seed_finalized": True})
     targets = tool_context.state.get(state.TARGET_LANGUAGES) or []
-    return {
-        "status": "success",
-        "project_id": project_id,
-        "source_language": tool_context.state.get(state.SOURCE_LANGUAGE),
-        "target_languages": targets,
-        "next_step": "Offer to localize into "
+    return tool_output(
+        SeedFinalizedOutput,
+        status="success",
+        project_id=project_id,
+        source_language=tool_context.state.get(state.SOURCE_LANGUAGE),
+        target_languages=targets,
+        next_step="Offer to localize into "
         + " and ".join(targets)
         + " by transferring to localization_pipeline.",
-    }
+    )
 
 
 def read_article_post(
@@ -489,12 +491,13 @@ def read_article_post(
             f"There is no {language} post in this session yet.",
             "Localize the seed article first.",
         )
-    return {
-        "status": "success",
-        "language": language,
-        "title": state.article_title(tool_context.state, language),
-        "markdown": text,
-    }
+    return tool_output(
+        PostReadOutput,
+        status="success",
+        language=language,
+        title=state.article_title(tool_context.state, language),
+        markdown=text,
+    )
 
 
 _HEADING_LINE = re.compile(r"^(#\s+)(\S.*?)\s*$")
@@ -615,15 +618,16 @@ def apply_post_edit(
 
     get_article_store().add_version(project_id, language, "edited", new_text)
     file = write_workspace_file(project_id, f"post.{language}.md", new_text)
-    return {
-        "status": "success",
-        "language": language,
-        "title": new_title,
-        "file": file,
-        "markdown_chars": len(new_text),
-        "check": check,
-        "naver_file": _naver_file_follows(tool_context, project_id, language),
-    }
+    return tool_output(
+        PostEditOutput,
+        status="success",
+        language=language,
+        title=new_title,
+        file=file,
+        markdown_chars=len(new_text),
+        check=check,
+        naver_file=_naver_file_follows(tool_context, project_id, language),
+    )
 
 
 def _naver_file_follows(

@@ -180,3 +180,180 @@ async def test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool(
         assert result["error_code"] == "INVALID_ARGUMENTS", f"{name}: {result}"
         assert any(arg in result["message"] for arg in enumerated), result
         assert context.state == {} and context.confirmation_requests == [], name
+
+
+def test_every_tool_has_a_declared_output_model_with_described_fields() -> None:
+    """OPS-5. A tool that is added without an output model fails here."""
+    import app.schemas as schemas
+    from app.schemas import TOOL_OUTPUT_MODELS, ToolOutput
+
+    assert set(TOOL_OUTPUT_MODELS) == set(TOOLS)
+    for name, model in TOOL_OUTPUT_MODELS.items():
+        assert issubclass(model, ToolOutput), name
+        assert model.model_config.get("extra") == "forbid", name
+        assert "status" in model.model_fields, name
+        undescribed = [
+            field
+            for field, info in model.model_fields.items()
+            if field != "status" and not info.description
+        ]
+        assert not undescribed, f"{model.__name__}: no description on {undescribed}"
+        # The schema the model stands for can be written out as JSON Schema.
+        assert model.model_json_schema()["properties"]["status"], name
+
+    # What a tool checks its arguments through says what each argument is.
+    inputs = [
+        model
+        for model_name, model in vars(schemas).items()
+        if model_name.endswith("Input") and inspect.isclass(model)
+    ]
+    assert len(inputs) >= 9
+    for model in inputs:
+        undescribed = [
+            field for field, info in model.model_fields.items() if not info.description
+        ]
+        assert not undescribed, f"{model.__name__}: no description on {undescribed}"
+
+
+def _fits(name: str, result: dict[str, Any], status: str = "success") -> None:
+    """The result has the status and validates against the tool's output model."""
+    from app.schemas import TOOL_OUTPUT_MODELS
+
+    assert result["status"] == status, f"{name}: {result}"
+    # Undeclared keys are refused by the model, so this is the whole result.
+    TOOL_OUTPUT_MODELS[name].model_validate(result)
+
+
+@pytest.mark.asyncio
+async def test_a_success_result_validates_against_the_output_model_of_every_tool(
+    finalized_project, monkeypatch
+) -> None:
+    """OPS-5. Every tool of the agent tree is driven to success once, with the
+    stand-ins the other tests use for platforms and Google Slides, and what
+    it returns is held against its declared output model."""
+    from app import google_slides, platforms, state
+    from app.settings import workspace_dir
+    from tests.unit.conftest import SEED_KO, finalize
+
+    context = finalized_project
+    checked: set[str] = set()
+
+    async def call(
+        name: str, *arguments: Any, on: Any = None, approve: Any = False
+    ) -> dict[str, Any]:
+        """Call the tool; with ``approve`` it first has to wait for a person."""
+        target = on or context
+        target.tool_confirmation = None
+        result = TOOLS[name](*arguments, tool_context=target)
+        if inspect.isawaitable(result):
+            result = await result
+        if approve is not False:
+            _fits(name, result, "pending_human_approval")
+            target.decline()
+            declined = TOOLS[name](*arguments, tool_context=target)
+            if inspect.isawaitable(declined):
+                declined = await declined
+            _fits(name, declined, "declined")
+            target.approve(approve)
+            result = TOOLS[name](*arguments, tool_context=target)
+            if inspect.isawaitable(result):
+                result = await result
+            target.tool_confirmation = None
+        _fits(name, result)
+        checked.add(name)
+        return result
+
+    # The seed and the posts.
+    await call("finalize_seed_article")
+    await call("read_article_post", "en")
+    await call("set_article_post_title", "en", "A new title")
+    edited = await call("replace_passage_in_article_post", "ko", "끝입니다.", "끝.")
+    assert edited["naver_file"] in ("written", "removed")
+
+    # Posting: sign-off, the Naver file, the two platforms, addresses.
+    # None stands for a call from the page, where the click is the answer.
+    context.function_call_id = None
+    await call("finalize_localized_post", "en", approve=None)
+    finalize(context, "ko", "ja")
+    await call("export_naver_blog_paste_ready_html")
+
+    async def qiita(**kwargs: Any) -> dict[str, Any]:
+        return {"id": "abc", "url": "https://qiita.com/u/private/abc"}
+
+    async def devto(**kwargs: Any) -> dict[str, Any]:
+        return {"id": 42, "url": "https://dev.to/u/t-42"}
+
+    async def page(url: str) -> tuple[int, str]:
+        return 200, "A title"
+
+    async def item(item_id: str) -> dict[str, Any]:
+        return {"id": item_id, "title": "タイトル", "body": SEED_KO, "tags": []}
+
+    async def own_article(article_id: str) -> dict[str, Any]:
+        return {"id": article_id, "title": "A new title"}
+
+    monkeypatch.setattr(platforms, "qiita_save_item", qiita)
+    monkeypatch.setattr(platforms, "devto_save_article", devto)
+    monkeypatch.setattr(platforms, "fetch_status_and_title", page)
+    monkeypatch.setattr(platforms, "qiita_get_item", item)
+    monkeypatch.setattr(platforms, "devto_find_own_article", own_article)
+    await call("publish_qiita_article_draft", ["AI"], approve=None)
+    await call("publish_devto_article_draft", ["ai"], approve=None)
+    await call(
+        "record_manually_posted_url", "naver_blog", "https://blog.naver.com/u/123"
+    )
+    verified = await call("verify_published_article_urls")
+    assert len(verified["checks"]) == 3 and verified["all_reachable"]
+
+    # Slides.
+    plan = {
+        "language": "en",
+        "deck_title": "Deck",
+        "audience": "developers",
+        "opening_script": "Welcome.",
+        "closing_script": "Thank you.",
+        "slides": [
+            {
+                "number": 1,
+                "title": "Slide 1",
+                "bullets": ["first point", "second point"],
+                "visual_note": "text only",
+                "speaker_script": "Script for slide 1.",
+            }
+        ],
+    }
+    await call("set_presentation_brief", "en", "software engineers", 3)
+    context.state[state.SLIDE_PLANS] = {"en": plan}
+    timing = await call("check_slide_script_timing", "en")
+    assert timing["passed"] is False and timing["recovery_instruction"]
+    await call("export_slide_plan_markdown", "en")
+
+    async def create(plan: Any, allowed_images: Any, *tables: Any) -> dict[str, Any]:
+        return {"presentation_id": "deck-en", "url": google_slides.deck_url("deck-en")}
+
+    monkeypatch.setattr(google_slides, "create_deck", create)
+    monkeypatch.setattr(google_slides, "granted_account", lambda: "owner@example.com")
+    await call("create_google_slides_deck_with_speaker_notes", "en", approve=None)
+    on_the_page = FakeToolContext({**context.state, state.SURFACE: state.SURFACE_WEB})
+    await call(
+        "request_approval_to_create_slide_decks",
+        ["en", "ko"],
+        0,
+        "",
+        on=on_the_page,
+        approve=None,
+    )
+    await call("compile_artifact_manifest_markdown")
+
+    # Bringing an article in, last: each of these starts another article.
+    draft = workspace_dir() / "drafts" / "a-draft.md"
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    draft.write_text(SEED_KO, encoding="utf-8")
+    await call("load_markdown_draft_file", "drafts/a-draft.md", "ko")
+    await call("save_seed_article_revision", "제목", SEED_KO, "ko", "none", "", False)
+    await call(
+        "fetch_published_article_markdown",
+        "https://qiita.com/someone/items/0123456789abcdef0123",
+    )
+
+    assert checked == set(TOOLS), sorted(set(TOOLS) - checked)

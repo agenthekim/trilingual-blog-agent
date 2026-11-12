@@ -32,14 +32,19 @@ from app.persistence import get_article_store
 from app.schemas import (
     DevtoDraftInput,
     LanguageCode,
+    NaverExportOutput,
     PlatformName,
     PostedUrlInput,
+    PostedUrlOutput,
+    PostFinalizedOutput,
     PublicationRecord,
     PublishOutput,
     QiitaDraftInput,
     UrlCheck,
+    UrlVerificationOutput,
     checked_language,
     tool_error,
+    tool_output,
     validation_error,
 )
 from app.settings import (
@@ -343,10 +348,11 @@ def finalize_localized_post(
             f"reviewed and ready to send?{warning}",
             payload={"action": "finalize", "language": language, "title": title},
         )
-        return {
-            "status": "pending_human_approval",
-            "message": f"Waiting for the user to confirm that the {name} post is final.",
-        }
+        return tool_output(
+            PostFinalizedOutput,
+            status="pending_human_approval",
+            message=f"Waiting for the user to confirm that the {name} post is final.",
+        )
     if call_id:
         expected = asked.pop(call_id, None)
         tool_context.state[state.FINALIZATIONS_ASKED] = asked
@@ -359,10 +365,11 @@ def finalize_localized_post(
                 "call finalize_localized_post again when they say it is ready.",
             )
     if not confirmation.confirmed:
-        return {
-            "status": "declined",
-            "message": f"The user did not finalize the {name} post.",
-        }
+        return tool_output(
+            PostFinalizedOutput,
+            status="declined",
+            message=f"The user did not finalize the {name} post.",
+        )
     # Findings are accepted only by a person who was shown them and said so
     # in the approval itself; a plain yes is not enough.
     if found and not acknowledged:
@@ -377,15 +384,16 @@ def finalize_localized_post(
     marks = dict(tool_context.state.get(state.FINALIZED_POSTS) or {})
     marks[language] = policy.finalization(tool_context.state, language, acknowledged)
     tool_context.state[state.FINALIZED_POSTS] = marks
-    return {
-        "status": "success",
-        "language": language,
-        "title": title,
-        "finalized": True,
-        "structure_check": (tool_context.state.get(state.FIDELITY_REPORT) or {}).get(
+    return tool_output(
+        PostFinalizedOutput,
+        status="success",
+        language=language,
+        title=title,
+        finalized=True,
+        structure_check=(tool_context.state.get(state.FIDELITY_REPORT) or {}).get(
             language
         ),
-    }
+    )
 
 
 def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, Any]:
@@ -420,16 +428,17 @@ def export_naver_blog_paste_ready_html(tool_context: ToolContext) -> dict[str, A
             title=title,
         )
         _remember_publication(tool_context, project_id, record)
-    return {
-        "status": "success",
-        "file": file,
-        "title": title,
-        "publication": record.model_dump(),
-        "message": "Not posted: Naver Blog must be posted by hand. Tell the user to "
+    return tool_output(
+        NaverExportOutput,
+        status="success",
+        file=file,
+        title=title,
+        publication=record.model_dump(),
+        message="Not posted: Naver Blog must be posted by hand. Tell the user to "
         "open the HTML file in a browser, select all, copy, paste it into the Naver "
         "Blog editor, type the title above into the editor's title field, publish, "
         "and then give you the post URL.",
-    }
+    )
 
 
 async def publish_qiita_article_draft(
@@ -650,7 +659,9 @@ def record_manually_posted_url(
         or state.article_title(tool_context.state, language),
     )
     _remember_publication(tool_context, project_id, record)
-    return {"status": "success", "publication": record.model_dump()}
+    return tool_output(
+        PostedUrlOutput, status="success", publication=record.model_dump()
+    )
 
 
 async def _check_publication(record: dict[str, Any]) -> UrlCheck:
@@ -731,8 +742,9 @@ async def verify_published_article_urls(tool_context: ToolContext) -> dict[str, 
     checks = await asyncio.gather(
         *(_check_publication(record) for record in publications.values())
     )
-    return {
-        "status": "success",
-        "all_reachable": all(check.reachable for check in checks),
-        "checks": [check.model_dump() for check in checks],
-    }
+    return tool_output(
+        UrlVerificationOutput,
+        status="success",
+        all_reachable=all(check.reachable for check in checks),
+        checks=[check.model_dump() for check in checks],
+    )

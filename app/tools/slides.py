@@ -20,12 +20,19 @@ from app.markdown_checks import (
 )
 from app.persistence import get_article_store
 from app.schemas import (
+    DeckCreatedOutput,
     LanguageCode,
+    ManifestOutput,
     PresentationBriefInput,
+    PresentationBriefOutput,
     SlideDeckPlan,
+    SlidePlanExportOutput,
     SlideRequestInput,
+    SlideRequestOutput,
+    SlideTimingOutput,
     checked_language,
     tool_error,
+    tool_output,
     validation_error,
 )
 from app.settings import (
@@ -129,11 +136,12 @@ def set_presentation_brief(
     # language, left in the working area must not reach this one.
     tool_context.state[state.SLIDE_DECK_PLAN] = None
     tool_context.state[state.SLIDE_DRAFT_TIMING] = None
-    return {
-        "status": "success",
-        "brief": brief.model_dump(),
-        "next_step": "Transfer to slide_planning_pipeline to draft the deck.",
-    }
+    return tool_output(
+        PresentationBriefOutput,
+        status="success",
+        brief=brief.model_dump(),
+        next_step="Transfer to slide_planning_pipeline to draft the deck.",
+    )
 
 
 def slide_request_summary(
@@ -262,15 +270,17 @@ def request_approval_to_create_slide_decks(
             hint=slide_request_hint(summary),
             payload={"action": "slides", **summary},
         )
-        return {
-            "status": "pending_human_approval",
-            "message": "Waiting for the user's approval before any slides are made.",
-        }
+        return tool_output(
+            SlideRequestOutput,
+            status="pending_human_approval",
+            message="Waiting for the user's approval before any slides are made.",
+        )
     if not confirmation.confirmed:
-        return {
-            "status": "declined",
-            "message": "The user declined. No slides and no deck were made.",
-        }
+        return tool_output(
+            SlideRequestOutput,
+            status="declined",
+            message="The user declined. No slides and no deck were made.",
+        )
     accepted = {
         "languages": summary["languages"],
         "minutes": summary["minutes"],
@@ -279,12 +289,13 @@ def request_approval_to_create_slide_decks(
     # The run's slides lane takes this when the turn has ended (RUN-1); a
     # request that was waiting and not yet taken is replaced, not added to.
     tool_context.state[state.SLIDE_REQUEST] = accepted
-    return {
-        "status": "success",
-        "request": accepted,
-        "message": "Approved. The page is making the slides now and shows the "
+    return tool_output(
+        SlideRequestOutput,
+        status="success",
+        request=accepted,
+        message="Approved. The page is making the slides now and shows the "
         "progress; tell the user that, and do not plan or create them here.",
-    }
+    )
 
 
 def plan_of_record(session_state: Any, language: str) -> SlideDeckPlan | None:
@@ -387,7 +398,7 @@ def slide_timing_report(plan: SlideDeckPlan, expected_slides: int) -> dict[str, 
             + "; ".join(fixes)
             + f". Target about {per_minute} {unit} per slide."
         )
-    return report
+    return tool_output(SlideTimingOutput, **report)
 
 
 def _expected_slides(session_state: Any, plan: SlideDeckPlan) -> int:
@@ -574,7 +585,9 @@ def export_slide_plan_markdown(
     file = write_workspace_file(
         project_id, slide_plan_file(language), render_slide_plan_markdown(plan)
     )
-    return {"status": "success", "file": file, "slide_count": len(plan.slides)}
+    return tool_output(
+        SlidePlanExportOutput, status="success", file=file, slide_count=len(plan.slides)
+    )
 
 
 def slide_plan_file(language: str) -> str:
@@ -688,7 +701,7 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
         ]
     manifest = "\n".join(lines) + "\n"
     file = write_workspace_file(project_id, "manifest.md", manifest)
-    return {"status": "success", "file": file, "manifest": manifest}
+    return tool_output(ManifestOutput, status="success", file=file, manifest=manifest)
 
 
 def article_images(session_state: Any, language: str) -> dict[str, str]:
@@ -773,15 +786,17 @@ async def create_google_slides_deck_with_speaker_notes(
                 "slides": len(plan.slides),
             },
         )
-        return {
-            "status": "pending_human_approval",
-            "message": "Waiting for the user's approval before creating the deck.",
-        }
+        return tool_output(
+            DeckCreatedOutput,
+            status="pending_human_approval",
+            message="Waiting for the user's approval before creating the deck.",
+        )
     if not confirmation.confirmed:
-        return {
-            "status": "declined",
-            "message": "The user declined. No Google Slides deck was created.",
-        }
+        return tool_output(
+            DeckCreatedOutput,
+            status="declined",
+            message="The user declined. No Google Slides deck was created.",
+        )
     try:
         tables = article_tables(tool_context.state, language)
         deck = await google_slides.create_deck(
@@ -805,8 +820,9 @@ async def create_google_slides_deck_with_speaker_notes(
     synced = dict(tool_context.state.get(state.DECK_TEXT_BASELINE) or {})
     synced[language] = plan_text(plan)
     tool_context.state[state.DECK_TEXT_BASELINE] = synced
-    return {
-        "status": "success",
-        "deck": deck,
-        "message": "The deck was created. Give the user its URL to review.",
-    }
+    return tool_output(
+        DeckCreatedOutput,
+        status="success",
+        deck=deck,
+        message="The deck was created. Give the user its URL to review.",
+    )
