@@ -490,24 +490,28 @@ async function poll() {
   }
 }
 
+const TAG_RULES = {
+  qiita:
+    'Qiita takes one to five tags without spaces, separated by commas. Good: "GoogleCloud, Lustre, HPC, Storage, GCP" · Bad: "GoogleCloud Lustre HPC Storage GCP" (missing commas) or "Google Cloud, HPC" (space inside a tag).',
+  devto:
+    'DEV Community takes up to four tags, lowercase letters and digits only (no spaces or hyphens), separated by commas. Good: "googlecloud, lustre, hpc, storage" · Bad: "GoogleCloud, google-cloud" or "gcp lustre hpc".',
+};
 function checkTags(platform, tags) {
   if (platform === "qiita") {
     if (tags.length < 1 || tags.length > 5 || tags.some((t) => /\s/.test(t)))
-      return "Qiita takes one to five tags without spaces (separate tags with commas, e.g. GoogleCloud, Lustre, HPC).";
+      return TAG_RULES.qiita;
   } else if (platform === "devto") {
     if (tags.length > 4 || tags.some((t) => !/^[a-z0-9]{1,30}$/.test(t)))
-      return "DEV Community takes up to four tags, lowercase letters and digits only, no spaces or hyphens.";
+      return TAG_RULES.devto;
   }
   return null;
 }
 async function postDraft(row, update) {
   const isQiita = row.platform === "qiita";
-  const ruleText = isQiita
-    ? "Qiita takes one to five tags without spaces (comma-separated, e.g. GoogleCloud, Lustre, HPC)."
-    : "DEV Community takes up to four tags, lowercase letters and digits only (comma-separated, e.g. googlecloud, lustre, hpc).";
+  const ruleText = TAG_RULES[row.platform] || "";
   const tagInput = keep(`tags:${row.platform}`, {
     id: "confirmTags",
-    placeholder: isQiita ? "GoogleCloud, Lustre, HPC" : "googlecloud, lustre, hpc",
+    placeholder: isQiita ? "GoogleCloud, Lustre, HPC, Storage, GCP" : "googlecloud, lustre, hpc, storage",
     "aria-label": `Tags for ${row.platform_name}`,
   });
   const tagError = el("span", {class: "small hidden", style: "color:var(--bad); font-weight:400"}, "");
@@ -519,7 +523,7 @@ async function postDraft(row, update) {
     summary: [["Title", row.title]],
     extra: [el("label", {class: "field", for: "confirmTags"}, "Tags", tagInput, el("span", {class: "hint"}, ruleText), tagError)],
     validate: () => {
-      parsedTags = tagInput.value.split(/[\s,]+/).map((t) => (isQiita ? t.trim() : t.trim().toLowerCase())).filter(Boolean);
+      parsedTags = tagInput.value.split(",").map((t) => (isQiita ? t.trim() : t.trim().toLowerCase())).filter(Boolean);
       const err = checkTags(row.platform, parsedTags);
       if (err) { tagError.textContent = err; tagError.classList.remove("hidden"); tagInput.focus(); return false; }
       return true;

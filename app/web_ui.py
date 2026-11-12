@@ -514,10 +514,17 @@ async def job_status(job_id: str) -> dict[str, Any]:
 
 
 _TAG_RULES = {
-    "qiita": (QiitaDraftInput, "Qiita takes one to five tags without spaces."),
+    "qiita": (
+        QiitaDraftInput,
+        "Qiita takes one to five tags without spaces, separated by commas "
+        '(Good: "GoogleCloud, Lustre, HPC, Storage, GCP" · '
+        'Bad: "GoogleCloud Lustre HPC Storage GCP").',
+    ),
     "devto": (
         DevtoDraftInput,
-        "DEV Community takes up to four tags, lowercase letters and digits only.",
+        "DEV Community takes up to four tags, lowercase letters and digits only, "
+        'separated by commas (Good: "googlecloud, lustre, hpc, storage" · '
+        'Bad: "GoogleCloud, google-cloud" or "gcp lustre hpc").',
     ),
 }
 
