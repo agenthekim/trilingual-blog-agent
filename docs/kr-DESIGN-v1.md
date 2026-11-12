@@ -252,7 +252,7 @@ flowchart TD
 #### WP-03 레인 (M, B-02, G-07)
 
 - SPEC: RUN-1, RUN-3 신설. WEB-11 개정.
-- 코드: 실행 관리(`Job`, 시작, 기록 저장)를 `app/web_ui.py`에서 `app/runs.py`로 옮기고 레인을 둡니다. `_posts_ready` 우회와 `asyncio.create_task`로 띄우는 경로를 지웁니다. `run_stages`를 글 부분과 슬라이드 부분으로 나누고, 글 부분이 끝나면 매니페스트를 쓰고 슬라이드 부분을 슬라이드 레인에 시작시킵니다. 상태 응답에 `lanes`를 싣습니다. `scripts/run_pipeline.py`는 두 부분을 차례로 부릅니다.
+- 코드: 실행 관리(`Job`, 시작, 기록 저장)를 `app/web_ui.py`에서 `app/runs.py`로 옮기고 레인을 둡니다. `_posts_ready` 우회와 `asyncio.create_task`로 띄우는 경로를 지웁니다. `run_stages`를 글 부분과 슬라이드 부분으로 나누고, 글 부분이 끝나면 매니페스트를 쓰고 슬라이드 부분을 슬라이드 레인에 시작시킵니다. 상태 응답에 `lanes`를 싣고, 페이지에서 `busy`와 `posts_busy`를 보던 곳을 레인별 값으로 바꿉니다. `scripts/run_pipeline.py`는 두 부분을 차례로 부릅니다. 테스트가 쓰는 `web_ui.JOBS`는 새 모듈의 것을 그대로 내보내 유지합니다.
 - 테스트: `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_every_started_action_ends_as_done_or_as_a_notice`.
 - 완료 기준: `web_ui.py`에 결과를 받지 않는 작업이 없습니다.
 
@@ -267,14 +267,14 @@ flowchart TD
 #### WP-05 슬라이드 요청의 구조화와 승인 (M, B-03, B-08, G-06)
 
 - SPEC: INV-6 개정, WEB-9 개정.
-- 코드: `POST /api/jobs/{id}/slides`를 더하고 `/deck`의 `replan`을 없앱니다. `send_message`의 후처리, `_requested_slide_languages`, `_LANG_MENTIONS`, `hasattr` 검사를 지웁니다. `request_slides(languages, minutes, audience)` 도구와 상태 키 `SLIDE_REQUEST`, `SURFACE`를 더합니다. 상태 응답에 `slide_request`를 싣고 승인과 거절 경로를 둡니다. `set_presentation_brief`의 기본 인자를 없애고, 0과 빈 문자열을 "지금 값 유지"로 정의합니다. 코디네이터 지시문의 슬라이드 문단을 새 도구에 맞춥니다.
+- 코드: `POST /api/jobs/{id}/slides`를 더하고 `/deck`의 `replan`을 없앱니다. `send_message`의 후처리, `_requested_slide_languages`, `_LANG_MENTIONS`, `hasattr` 검사를 지웁니다. `request_slides(languages, minutes, audience)` 도구와 상태 키 `SLIDE_REQUEST`, `SURFACE`를 더합니다. 상태 응답에 `slide_request`를 싣고 승인과 거절 경로를 둡니다. `set_presentation_brief`의 기본 인자를 없애고, 0과 빈 문자열을 "지금 값 유지"로 정의합니다. 코디네이터 지시문의 슬라이드 문단을 새 도구에 맞춥니다. 페이지에는 4.2의 승인 대화상자와, 계획이 없는 언어의 "슬라이드 생성…" 버튼, 에이전트가 남긴 요청의 승인 알림을 이 작업에서 함께 넣습니다. 채팅으로 덱을 만들던 길을 없애는 작업이므로 대체 수단이 같은 커밋에 있어야 합니다.
 - 테스트: `test_a_message_to_the_agent_creates_no_deck`, `test_a_slide_request_from_the_agent_waits_for_a_persons_approval`, `test_slides_for_several_languages_are_one_request`, `test_on_the_page_the_brief_tool_points_to_request_slides`.
 - 완료 기준: `web_ui.py`에 요청문을 들여다보는 코드가 없습니다.
 
 #### WP-06 글 편집 단일 경로 (M, B-05, G-04, G-05)
 
 - SPEC: PUB-7 개정, PUB-11 신설, SRC-6 개정, WEB-15 신설, 7절의 편집 한계 문단 개정.
-- 코드: `app/tools/articles.py`에 `apply_post_edit`를 두고 `save_edit`의 글 부분과 에이전트 도구가 이것을 부릅니다. `update_article_post`를 `set_post_title`과 `replace_post_text`로 바꿉니다. 현지화 보고 단계에서 `LOCALIZED_FROM`(언어별 원본 다이제스트)을 기록하고 행에 `older_than_source`를 싣습니다. 제목 길이 상수를 한 곳에 둡니다. `save_edit` 설명문과 편집기의 안내 문장을 고칩니다.
+- 코드: `app/tools/articles.py`에 `apply_post_edit`를 두고 `save_edit`의 글 부분과 에이전트 도구가 이것을 부릅니다. `update_article_post`를 `set_post_title`과 `replace_post_text`로 바꿉니다. 현지화 보고 단계에서 `LOCALIZED_FROM`(언어별 원본 다이제스트)을 기록하고 행에 `older_than_source`를 싣습니다. 제목 길이 상수를 한 곳에 둡니다. `save_edit` 설명문과 편집기의 안내 문장을 고칩니다. 코디네이터 지시문의 글 수정 문단을 새 도구 두 개에 맞추고 `tests/unit/test_prompts.py`에서 그 문장을 고정합니다. `replace_post_text`가 거절할 때는 구절이 몇 번 나왔는지와, 한 번만 나오도록 더 길게 인용하라는 안내를 돌려줍니다.
 - 테스트: `test_a_post_is_changed_through_one_function_whoever_changes_it`, `test_the_agent_replaces_a_quoted_passage_and_nothing_else`, `test_a_passage_that_is_missing_or_repeated_is_refused`, `test_a_public_post_is_not_changed_by_the_agent`, `test_the_naver_file_follows_an_edit_by_the_agent`, `test_a_localization_older_than_the_source_is_marked`.
 
 #### WP-07 원문 보관, 구조화 검증, 모델 관문 (M, G-02, G-03, B-07)
@@ -312,7 +312,7 @@ flowchart TD
 #### WP-12 슬라이드 열과 언어별 진행 (M, G-09, G-10)
 
 - SPEC: WEB-3, WEB-5 개정.
-- 코드: 4.5의 버튼과 4.2의 대화상자, 진행 표시 2행의 언어별 상태.
+- 코드: WP-05에서 넣은 버튼에 더해 4.5의 나머지 상태(덱 생성, 다시 만들기, PDF와 내보낸 시각, 덱 갱신, 진행 중 표시)와 진행 표시 2행의 언어별 상태.
 - 테스트: `test_each_row_offers_the_slide_action_its_state_allows`.
 
 #### WP-13 제안과 내 기록 (S ~ M, G-11)
@@ -383,6 +383,7 @@ flowchart TD
 4. 실제 플랫폼 게시와 Drive 파일 생성이 따르는 확인은 사람이 합니다. 구현 중에는 단위 테스트와 대역으로만 확인합니다.
 5. 사람이 쓰고 있는 서버를 다시 띄우지 않습니다. 확인이 필요하면 `--port 8503`, 별도의 `BLOG_AGENT_WORKSPACE_DIR`과 `LOCAL_SESSION_DB`로 띄웁니다. 실행 기록 파일은 고치지 않습니다.
 6. 묶음 1은 순서를 지킵니다(WP-01, 02, 03, 04, 05). WP-06 ~ 09는 WP-02 뒤라면 순서가 자유롭습니다. 묶음 2는 WP-10, WP-11을 먼저 합니다.
+7. 작업 하나가 끝날 때마다 페이지에서 그 전에 되던 일이 계속 되어야 합니다. 기능을 없애는 작업은 대체 수단을 같은 작업에 넣습니다.
 
 ## 6. 결정이 필요한 항목
 
@@ -391,8 +392,8 @@ flowchart TD
 | 번호 | 질문 | 권장 | 다른 선택 | 영향 |
 | :--- | :--- | :--- | :--- | :--- |
 | Q1 | 직접 입력한 프롬프트를 칩에 계속 보여 줄까요 | 칩은 제안만, 직접 입력한 것은 모달의 "내 기록"에 입력한 그대로 | 지금처럼 칩에 섞고 화면 언어로 번역 | WP-13. 다른 선택이면 번역 호출을 관문 모듈로 옮겨 유지합니다 |
-| Q2 | 문장으로 슬라이드를 요청했을 때 승인 대화상자를 거칠까요 | 거칩니다. 클릭 한 번이 늘지만 Drive에 파일이 생기는 일은 항상 승인을 지납니다 | 지금처럼 바로 생성 | WP-05. 다른 선택이면 INV-6을 "문장으로 요청해도 된다"로 고쳐야 합니다 |
-| Q3 | 평문 자동 구조화를 어떻게 할까요 | 유지하되 글자 보존 검사를 통과한 경우에만 적용 | 기능 삭제, 또는 실행 옵션의 체크박스로 | WP-07 |
+| Q2 | 문장으로 슬라이드를 요청했을 때 승인 대화상자를 거칠까요 | 거칩니다. 클릭 한 번이 늘지만 Drive에 파일이 생기는 일은 항상 승인을 지납니다 | 지금처럼 바로 생성. 또는 채팅에서는 버튼을 쓰라고 안내만 하기(가장 단순하고 `request_slides` 도구가 필요 없음) | WP-05. 바로 생성을 고르면 INV-6을 "문장으로 요청해도 된다"로 고쳐야 합니다 |
+| Q3 | 평문 자동 구조화를 어떻게 할까요 | 유지하되 글자 보존 검사를 통과한 경우에만 적용 | 기능 삭제, 또는 실행 옵션의 체크박스로 | WP-07. 검사가 엄격해서 모델이 낱말을 더하거나 뺀 구조화본은 버려집니다. 그때는 원문으로 진행하고 알림에 그렇게 적습니다 |
 | Q4 | 글 확정 때 PDF를 자동으로 내보내던 동작을 없애도 될까요 | 없애고 버튼으로만 | 유지 | WP-09. 유지하면 글 레인의 확정이 슬라이드 레인의 덱 기록을 고치게 되어 레인의 경계가 흐려집니다 |
 | Q5 | 접근 토큰을 v1에 넣을까요 | 넣습니다. 다른 주소로 띄워 쓰는 경우 게시 권한이 열려 있습니다 | v1 뒤로 미룸 | WP-17 |
 | Q6 | 세 언어의 슬라이드 계획을 동시에 돌릴까요 | 동시에(기본 3). 할당량 오류가 나면 1로 낮춥니다 | 차례로(기본 1) | WP-04의 기본값 |
@@ -402,7 +403,7 @@ flowchart TD
 
 | 항목 | 이유 |
 | :--- | :--- |
-| 슬라이드를 한 번 계획하고 다른 언어로 현지화해 세 덱의 구성을 맞추는 방식 | 지금은 언어마다 따로 계획해 슬라이드 구성이 언어별로 다릅니다. 구성이 같은 편이 발표 자료로는 낫고 추론 모델 호출도 줄지만, 4단계의 에이전트 구성과 SLD 요구사항을 다시 써야 합니다. v1.1 후보로 남깁니다 |
+| 슬라이드를 한 번 계획하고 다른 언어로 현지화해 세 덱의 구성을 맞추는 방식 | 지금은 언어마다 따로 계획합니다. 기록된 실행에서도 영어와 일본어 덱은 4번 슬라이드부터 구성이 서로 달랐습니다. 같은 발표를 세 언어로 하는 자료라면 구성이 같은 편이 낫다고 보고, 추론 모델 호출도 줄어듭니다. 다만 4단계의 에이전트 구성과 SLD 요구사항을 다시 써야 하므로 v1.1 후보로 남깁니다 |
 | 현지화 단계를 코디네이터 없이 직접 실행 | 슬라이드와 같은 방식으로 가능하지만 지금 문제를 일으키지 않습니다 |
 | 폴링을 서버 전송 이벤트나 증분 응답으로 교체 | 한 사람이 쓰는 로컬 도구에서는 2초 폴링으로 충분합니다 |
 | ADK `Workflow`로 이전 | `Workflow`를 LLM 에이전트의 하위에 둘 수 없는 동안은 유지합니다 (README에 기록됨) |
