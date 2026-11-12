@@ -49,7 +49,16 @@ def _new_project_id(title: str) -> str:
 
 
 def write_workspace_file(project_id: str, name: str, content: str) -> str:
-    """Write a generated file under ``<workspace>/<project_id>/`` and return its path."""
+    """Write a generated file under ``<workspace>/<project_id>/`` and return its path.
+
+    Args:
+        project_id: The article project; its folder is made when it is missing.
+        name: The file name inside that folder, for example ``post.ko.md``.
+        content: The text to write, as UTF-8; an existing file is replaced.
+
+    Returns:
+        The path of the file that was written, as a string.
+    """
     folder = workspace_dir() / project_id
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / name
@@ -90,12 +99,27 @@ def _heading_title(markdown: str) -> str:
 
 
 def has_title_line(markdown: str) -> bool:
-    """Whether a Markdown draft names its own title with a level-1 heading."""
+    """Whether a Markdown draft names its own title with a level-1 heading.
+
+    Args:
+        markdown: The draft. Front matter and fenced code blocks are not looked at.
+
+    Returns:
+        True when a line outside them is a level-1 heading (``# Title``).
+    """
     return bool(_heading_title(markdown))
 
 
 def title_of_draft(markdown: str, fallback: str = "Untitled") -> str:
-    """Title of a draft: its level-1 heading, else its front-matter title, else its first line."""
+    """Title of a draft: its level-1 heading, else its front-matter title, else its first line.
+
+    Args:
+        markdown: The draft.
+        fallback: What to return when the draft has no line that can be a title.
+
+    Returns:
+        The title, at most 200 characters, or ``fallback``.
+    """
     title = _heading_title(markdown)
     if not title:
         front = _FRONT_MATTER.match(markdown)
@@ -579,9 +603,17 @@ def apply_post_edit(
     localizations and slide plans (SRC-6); they are then shown as older than
     the source (``state.older_than_source``).
 
-    Returns a tool result: status 'success' with language, title, file,
-    markdown_chars, check (the structure check) and naver_file ('written',
-    'removed' or None), or a ``ToolError``.
+    Args:
+        language: Which post: 'ko', 'en' or 'ja'; the caller has checked it.
+        title: The new title, or an empty string to keep the title.
+        markdown: The whole new text, or an empty string to keep the text.
+        tool_context: The session the post is read from and written to.
+
+    Returns:
+        A tool result that validates against ``PostEditOutput``: status
+        'success' with language, title, file, markdown_chars, check (the
+        structure check) and naver_file ('written', 'removed' or None). A
+        ``ToolError`` dict when there is no such post or it is public.
     """
     found = _post_that_may_change(tool_context, language)
     if isinstance(found, dict):

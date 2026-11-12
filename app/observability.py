@@ -177,7 +177,28 @@ def log_activity(line: str, run_id: str) -> None:
 
 @contextmanager
 def traced_span(name: str, **attributes: Any) -> Iterator[trace.Span]:
-    """Open a child span. Attribute values are stringified and never include bodies."""
+    """Open a child span. Attribute values are stringified and never include bodies.
+
+    Spans are linked inside this process: the root span of the action
+    (``root_span``), under it the spans ADK opens for agents and tools, and
+    under those one child span, opened here, for each outbound call. The
+    trace ends there, on purpose: this application does not instrument its
+    HTTP client and adds no ``traceparent`` header, so on the page and in
+    the script the third-party services that are called (Qiita, DEV
+    Community, Naver, Medium, Google Docs and Slides, mermaid.ink) are sent
+    no trace ids. They take no part in the trace, and the header would only
+    hand them the ids. One surface is not decided here: when the agent API
+    server runs on Agent Runtime, ADK itself instruments ``httpx`` for calls
+    between agents, and that instrumentation adds the header to every request
+    the process makes.
+
+    Args:
+        name: The name of the span, for example ``qiita.get_item``.
+        attributes: Short values that say what the call was about.
+
+    Yields:
+        The span, current until the block ends.
+    """
     with _tracer.start_as_current_span(name) as span:
         _set_attributes(span, attributes)
         yield span

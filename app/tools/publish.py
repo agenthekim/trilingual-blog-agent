@@ -146,6 +146,21 @@ class _Sanitizer(HTMLParser):
 
 
 def sanitize_html(markup: str) -> str:
+    """Remove from HTML everything that could run code where it is pasted.
+
+    ``script``, ``style``, ``iframe``, ``object``, ``template``, ``svg`` and
+    ``math`` are dropped with their content; form controls, ``embed``,
+    ``link``, ``meta`` and ``base`` are dropped as tags. Event handler
+    attributes (``on...``) and ``srcdoc`` are dropped, and an address in
+    ``href``, ``src`` and the like is kept only when it is relative or uses
+    http, https or mailto. Text is escaped again on the way out.
+
+    Args:
+        markup: HTML, as the Markdown renderer produced it from an article.
+
+    Returns:
+        The same HTML without those tags and attributes.
+    """
     parser = _Sanitizer()
     parser.feed(markup)
     parser.close()
@@ -158,6 +173,13 @@ def markdown_to_inline_styled_html(markdown: str) -> str:
     Rich editors such as Naver SmartEditor drop ``<style>`` blocks and class
     names, so every element carries its own ``style`` attribute. Raw HTML in
     the article is kept only as far as it cannot run code.
+
+    Args:
+        markdown: The Markdown text of the article.
+
+    Returns:
+        The HTML, sanitized by ``sanitize_html``, with a ``style`` attribute on
+        every heading, paragraph, code block, quote, table cell and list item.
     """
     html = sanitize_html(
         markdown_lib.markdown(

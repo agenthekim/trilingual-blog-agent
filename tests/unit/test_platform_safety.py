@@ -975,3 +975,25 @@ def test_api_server_listens_on_localhost_by_default(monkeypatch) -> None:
     assert module["listen_host"]() == "0.0.0.0"
     monkeypatch.setenv("BLOG_AGENT_API_HOST", "  ")
     assert module["listen_host"]() == "127.0.0.1"
+
+
+def test_history_compaction_and_the_context_cache_are_configured() -> None:
+    """OPS-9. Long sessions are summarized by the fast model past a token
+    threshold, and the coordinator's stable prefix is cached."""
+    from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
+
+    from app.agent import app
+    from app.models import FAST_MODEL, MODEL_ROUTES
+
+    compaction = app.events_compaction_config
+    assert compaction is not None
+    assert compaction.token_threshold > 0
+    assert compaction.event_retention_size > 0
+    assert isinstance(compaction.summarizer, LlmEventSummarizer)
+    # Summarising history is well-specified, high-volume work: the fast tier.
+    assert MODEL_ROUTES["summarize_history"] == FAST_MODEL
+    assert compaction.summarizer._llm.model == FAST_MODEL
+
+    cache = app.context_cache_config
+    assert cache is not None
+    assert cache.min_tokens > 0 and cache.ttl_seconds > 0 and cache.cache_intervals > 0

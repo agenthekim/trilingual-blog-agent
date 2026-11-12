@@ -198,7 +198,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| OPS-1 | 모든 도구 호출은 의도와 결과로 나누어, 마스킹을 적용한 구조화된 JSON으로 로그에 남기며, 모델을 직접 부르는 호출도 그렇게 남긴다. 사람이 페이지나 스크립트로 시작한 액션은 모두 추적 하나 안에서 실행된다. 액션의 루트 스팬이 있고, 그 아래에 에이전트와 도구의 스팬이 이어지며, 밖으로 나가는 호출(플랫폼, Google Slides, 다이어그램 서비스, 모델)마다 자식 스팬이 있다. 로그 기록은 추적 id와 스팬 id를 싣는다. `BLOG_AGENT_TRACE_EXPORT=cloud`이면 스팬을 Cloud Trace로 내보낸다. 페이지에 보이는 활동 줄은 실행 id와 함께 구조화된 기록으로도 남긴다. `app/`의 어떤 코드도 `print`로 로그를 쓰지 않는다. `app/`의 어떤 모듈도 자기만의 로거를 두지 않고 모두 하나의 구조화 로거로 기록한다. 유일한 예외는 접근 토큰이 든 주소를 한 번 보여 주는 터미널 줄(SEC-7)이며, 이 줄은 의도적으로 구조화 로그에 넣지 않는다 |
+| OPS-1 | 모든 도구 호출은 의도와 결과로 나누어, 마스킹을 적용한 구조화된 JSON으로 로그에 남기며, 모델을 직접 부르는 호출도 그렇게 남긴다. 사람이 페이지나 스크립트로 시작한 액션은 모두 추적 하나 안에서 실행된다. 액션의 루트 스팬이 있고, 그 아래에 에이전트와 도구의 스팬이 이어지며, 밖으로 나가는 호출(플랫폼, Google Slides, 다이어그램 서비스, 모델)마다 자식 스팬이 있다. 로그 기록은 추적 id와 스팬 id를 싣는다. `BLOG_AGENT_TRACE_EXPORT=cloud`이면 스팬을 Cloud Trace로 내보낸다. 페이지에 보이는 활동 줄은 실행 id와 함께 구조화된 기록으로도 남긴다. `app/`의 어떤 코드도 `print`로 로그를 쓰지 않는다. `app/`의 어떤 모듈도 자기만의 로거를 두지 않고 모두 하나의 구조화 로거로 기록한다. 유일한 예외는 접근 토큰이 든 주소를 한 번 보여 주는 터미널 줄(SEC-7)이며, 이 줄은 의도적으로 구조화 로그에 넣지 않는다. 스팬은 프로세스 안에서만 이어진다. 애플리케이션은 HTTP 클라이언트를 계측하지 않고 `traceparent` 헤더도 쓰지 않으므로, 페이지와 스크립트는 블로그 플랫폼과 Google에 추적 id를 보내지 않는다 |
 | OPS-2 | `uv run pytest tests/unit`은 모델, 네트워크, 자격 증명 없이 실행되며, 부록 B가 단위 테스트에 배정한 모든 요구사항을 다룬다. 이것은 픽스처가 보장한다. 픽스처는 네트워크 연결과 모델 관문을 거부하고, `.env`는 읽지 않는다 |
 | OPS-3 | 모델 이름은 설정값(`FAST_MODEL_NAME`, `REASONING_MODEL_NAME`)이며 코드 수정으로 바꾸지 않는다 |
 | OPS-4 | 모델을 부르는 곳은 둘이다. `app/agent.py`의 에이전트와 `app/llm.py`의 관문이다. 웹 계층은 모델도 플랫폼도 부르지 않고 파이프라인의 액션을 시작한다 |
@@ -206,6 +206,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | OPS-6 | 푸시할 때마다 CI(`.github/workflows/ci.yml`)에서 린터, 단위 테스트, Terraform 검증을 실행한다. 어느 것도 자격 증명이 필요 없다 |
 | OPS-7 | `README.md`의 표 "Where each capability lives"는 실제로 있는 것만 가리킨다. 표에 적힌 파일과 폴더는 모두 저장소에 있고, 코드로 적힌 이름은 모두 그 행이 가리키는 파일 가운데 하나에 있다. 표의 행은 과정 루브릭의 열아홉 기준이며, 루브릭의 이름과 순서를 따른다 |
 | OPS-8 | 한 턴에서 작성자와 코디네이터가 한 말(SEC-4)은 백그라운드에서 장기 메모리에 기록한다. 턴을 끝내는 콜백은 기록을 예약만 하고 반환하므로 어떤 응답도 기록을 기다리지 않는다. 기록 작업은 턴이 끝나기 전에 이벤트, 메모리 서비스, 세션 식별자를 받아 두고 그 뒤로는 턴의 어떤 것도 쓰지 않는다. 작업은 끝날 때까지 참조를 유지하며, 실패하거나 취소된 기록은 예외가 아니라 구조화된 로그 기록으로 남는다. 페이지, 스크립트, 에이전트 API 서버, Agent Runtime은 프로세스마다 하나의 메모리 서비스(`get_memory_service`)를 쓴다. 로컬에서는 인메모리, Agent Runtime에서는 Memory Bank다 |
+| OPS-9 | 코디네이터의 애플리케이션은 긴 세션을 모델의 컨텍스트 안에 유지한다. 프롬프트가 토큰 임계값(`COMPACTION_TOKEN_THRESHOLD`, 기본 60,000)을 넘으면 오래된 이벤트를 `summarize_history`에 배정된 빠른 계층 모델이 요약하고, 최근 이벤트(`COMPACTION_RETAIN_EVENTS`, 기본 8개)는 그대로 둔다. 변하지 않는 지시문과 도구 선언은 턴마다 다시 보내지 않고 모델 쪽에 캐시한다 |
 
 ### 5.10 실행
 
@@ -544,7 +545,7 @@ flowchart TD
 | SEC-6 | `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_settings_names_the_account_that_decks_go_to` |
 | SEC-7 | `test_another_address_needs_the_token`, `test_localhost_needs_no_token` |
 | SEC-8 | `test_the_page_runs_no_inline_script`, `test_the_files_of_the_page_are_served_fresh_and_by_name_only` |
-| OPS-1 | `test_log_records_are_scrubbed_before_emission`, `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action`, `test_activity_lines_are_also_structured_records`, `test_the_application_never_logs_with_print`, `test_every_logger_of_the_application_writes_structured_json` |
+| OPS-1 | `test_log_records_are_scrubbed_before_emission`, `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action`, `test_activity_lines_are_also_structured_records`, `test_the_application_never_logs_with_print`, `test_every_logger_of_the_application_writes_structured_json`, `test_the_application_sends_no_trace_context_to_other_services` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: 코드를 수정하는 사람을 위한 규칙이다. 기본값은 `app/models.py`에 있으며 환경 변수에서 읽는다 |
 | OPS-4 | `test_models_are_called_from_the_agents_and_the_gateway_only` |
@@ -552,6 +553,7 @@ flowchart TD
 | OPS-6 | No unit test: 워크플로는 단위 테스트가 아니라 GitHub에서 실행된다. 통과 여부는 실행 대상 커밋에 표시된다 |
 | OPS-7 | `test_every_place_the_readme_points_to_exists`, `test_the_readme_table_has_the_nineteen_criteria_in_order` |
 | OPS-8 | `test_memory_is_written_in_the_background_after_the_callback_returned`, `test_a_failing_memory_write_is_logged_and_not_raised`, `test_the_page_and_the_script_use_the_shared_memory_service`, `test_what_is_sent_to_the_memory_service_is_the_filtered_list`, `test_a_turn_with_nothing_to_remember_schedules_nothing` |
+| OPS-9 | `test_history_compaction_and_the_context_cache_are_configured` |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs`, `test_finalizing_a_post_does_not_touch_slides` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |

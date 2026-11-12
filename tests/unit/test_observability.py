@@ -505,6 +505,41 @@ async def test_every_logger_of_the_application_writes_structured_json(
     assert "owner@example.com" not in stream.getvalue()
 
 
+def test_the_application_sends_no_trace_context_to_other_services() -> None:
+    """OPS-1. Spans are linked inside the process. Nothing in ``app/`` turns
+    on an instrumentation of the HTTP client or writes a trace header, so the
+    blog platforms and Google are not handed the ids of a trace."""
+    for path in sorted((ROOT / "app").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported = [
+            alias.name if isinstance(node, ast.Import) else node.module or ""
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        ]
+        name = path.relative_to(ROOT).as_posix()
+        assert not [
+            module
+            for module in imported
+            if module.startswith(
+                ("opentelemetry.instrumentation", "opentelemetry.propagate")
+            )
+        ], name
+        calls = [
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        ]
+        assert "instrument" not in calls and "inject" not in calls, name
+        strings = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
+        # Named in a docstring that says it is not sent; never set as a header.
+        assert not [text for text in strings if text.strip().lower() == "traceparent"]
+
+
 def test_activity_lines_are_also_structured_records(isolated_workspace, capsys) -> None:
     stream = io.StringIO()
     handler = StructuredLogHandler(stream=stream)

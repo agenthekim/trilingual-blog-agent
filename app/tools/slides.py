@@ -58,6 +58,14 @@ def slide_length(session_state: Any, language: str, minutes: int) -> int:
     length of that language's plan; without a plan it takes the length the
     run was started with, and failing that 15 minutes. Code decides this, not
     a model.
+
+    Args:
+        session_state: The state of the session.
+        language: The language whose talk is meant.
+        minutes: The length a request gave; 0 or less when it gave none.
+
+    Returns:
+        The length of the talk in minutes, which is also the number of slides.
     """
     if minutes and minutes > 0:
         return minutes
@@ -73,7 +81,16 @@ def slide_length(session_state: Any, language: str, minutes: int) -> int:
 
 
 def slide_audience(session_state: Any, audience: str) -> str:
-    """Who the talk is for when a request says ``audience``; empty keeps it."""
+    """Who the talk is for when a request says ``audience``; empty keeps it.
+
+    Args:
+        session_state: The state of the session.
+        audience: The audience a request gave; empty when it gave none.
+
+    Returns:
+        The audience given, else the one of the run, else the one of the last
+        brief, else ``DEFAULT_AUDIENCE``.
+    """
     if audience and audience.strip():
         return audience.strip()
     options = session_state.get(state.RUN_OPTIONS) or {}
@@ -153,6 +170,16 @@ def slide_request_summary(
     confirmation the agent's request tool pauses for (INV-6): the languages,
     the length of each, the audience, the account whose Drive receives the
     decks, and what an approval replaces.
+
+    Args:
+        session_state: The state of the session.
+        languages: The languages slides are asked for.
+        minutes: The length the request gave; 0 keeps each language's length.
+        audience: The audience the request gave; empty keeps the audience.
+
+    Returns:
+        A dict with ``languages``, ``minutes`` (per language), ``audience``,
+        ``account``, ``replaces_plans`` and ``replaces_decks``.
     """
     plans = session_state.get(state.SLIDE_PLANS) or {}
     decks = session_state.get(state.GOOGLE_SLIDES_DECKS) or {}
@@ -170,7 +197,15 @@ def slide_request_summary(
 
 
 def slide_request_hint(summary: dict[str, Any]) -> str:
-    """One paragraph a person reads before approving a slide request."""
+    """One paragraph a person reads before approving a slide request.
+
+    Args:
+        summary: What ``slide_request_summary`` returned.
+
+    Returns:
+        The paragraph, in English: what is made, for whom, in whose Drive, and
+        which plans and decks an approval replaces.
+    """
     lengths = ", ".join(
         f"{LANGUAGE_NAMES[language]} ({minutes} min)"
         for language, minutes in summary["minutes"].items()
@@ -299,7 +334,16 @@ def request_approval_to_create_slide_decks(
 
 
 def plan_of_record(session_state: Any, language: str) -> SlideDeckPlan | None:
-    """The slide plan of ``language``, or None when there is none that reads as one."""
+    """The slide plan of ``language``, or None when there is none that reads as one.
+
+    Args:
+        session_state: The state of the session.
+        language: The language of the plan.
+
+    Returns:
+        The plan as a ``SlideDeckPlan``, or None when there is none or what is
+        stored does not validate.
+    """
     raw = (session_state.get(state.SLIDE_PLANS) or {}).get(language)
     if not raw:
         return None
@@ -330,7 +374,15 @@ def _load_plan(
 
 
 def numbering_problem(plan: SlideDeckPlan) -> str | None:
-    """Slides are numbered 1..N, each once; anything else cannot become a deck."""
+    """Slides are numbered 1..N, each once; anything else cannot become a deck.
+
+    Args:
+        plan: The slide plan.
+
+    Returns:
+        None when the numbers are 1..N in order, else a phrase that says what
+        to fix and what the numbers are now.
+    """
     numbers = [slide.number for slide in plan.slides]
     if numbers != list(range(1, len(numbers) + 1)):
         return (
@@ -340,7 +392,17 @@ def numbering_problem(plan: SlideDeckPlan) -> str | None:
 
 
 def slide_timing_report(plan: SlideDeckPlan, expected_slides: int) -> dict[str, Any]:
-    """Evaluate a slide plan against the one-slide-per-minute rule (pure function)."""
+    """Evaluate a slide plan against the one-slide-per-minute rule (pure function).
+
+    Args:
+        plan: The slide plan to evaluate.
+        expected_slides: How many slides were asked for (one per minute).
+
+    Returns:
+        A dict that validates against ``SlideTimingOutput``: ``passed``, the
+        counts, the assumed speaking rate, one estimate per slide, and
+        ``recovery_instruction`` when the plan does not pass.
+    """
     unit, per_minute = SPEECH_UNITS_PER_MINUTE[plan.language]
     slides, too_short, too_long = [], [], []
     for slide in plan.slides:
@@ -437,7 +499,16 @@ def check_slide_script_timing(
 
 
 def render_slide_plan_markdown(plan: SlideDeckPlan) -> str:
-    """Render a slide plan, with speaker scripts, as Markdown."""
+    """Render a slide plan, with speaker scripts, as Markdown.
+
+    Args:
+        plan: The slide plan.
+
+    Returns:
+        The Markdown text ``parse_slide_plan_markdown`` reads back: the deck
+        title, the audience, the opening words, each slide with its bullets,
+        visual note, image and speaker script, and the closing words.
+    """
     lines = [
         f"# {plan.deck_title}",
         "",
@@ -482,6 +553,17 @@ def parse_slide_plan_markdown(text: str, language: str) -> SlideDeckPlan:
     A person may have edited the file, so the layout is read leniently, but
     the parts a deck cannot be built without must be there. A file that does
     not have them raises ValueError saying what is missing and where.
+
+    Args:
+        text: The Markdown of a slide plan file, possibly edited by a person.
+        language: The language of the plan; the file does not say it.
+
+    Returns:
+        The plan as a ``SlideDeckPlan``.
+
+    Raises:
+        ValueError: A part a deck cannot be built without is missing or wrong;
+            the message says which and where.
     """
     lines = text.splitlines()
     deck_title = next((ln[2:].strip() for ln in lines if ln.startswith("# ")), "")
@@ -591,6 +673,15 @@ def export_slide_plan_markdown(
 
 
 def slide_plan_file(language: str) -> str:
+    """The name of the Markdown file that holds one language's slide plan.
+
+    Args:
+        language: The language of the plan: 'ko', 'en' or 'ja'.
+
+    Returns:
+        The file name inside the project's workspace folder, for example
+        ``slides.en.md``.
+    """
     return f"slides.{language}.md"
 
 
@@ -615,6 +706,14 @@ def deck_outdated(session_state: Any, language: str) -> bool:
     recorded when the deck was made or last synced. What a person changed in
     the deck itself is not known here, and a deck without that record is not
     called outdated.
+
+    Args:
+        session_state: The state of the session.
+        language: The language of the deck.
+
+    Returns:
+        True when a deck exists, a text was recorded for it, and the plan of
+        record now reads differently; False in every other case.
     """
     if not _deck_of(session_state, language):
         return False
@@ -630,6 +729,13 @@ def slides_state(session_state: Any, language: str) -> str:
 
     'deck' as soon as a deck was made; 'plan' with a plan and no deck. Whether
     the deck is behind its plan is said separately (deck_outdated).
+
+    Args:
+        session_state: The state of the session.
+        language: The language of the slides.
+
+    Returns:
+        'none', 'plan' or 'deck'.
     """
     if _deck_of(session_state, language):
         return "deck"
@@ -705,7 +811,17 @@ def compile_artifact_manifest_markdown(tool_context: ToolContext) -> dict[str, A
 
 
 def article_images(session_state: Any, language: str) -> dict[str, str]:
-    """References a plan may use, mapped to image addresses that are in the article."""
+    """References a plan may use, mapped to image addresses that are in the article.
+
+    Args:
+        session_state: The state of the session.
+        language: The language of the deck; diagrams are taken from that
+            language's article so that their labels match the slides.
+
+    Returns:
+        A dict from reference (an image address, or ``mermaid:N`` when diagram
+        rendering is enabled) to the address of the image to place.
+    """
     images = {
         url: url
         for code in LANGUAGES
@@ -722,7 +838,17 @@ def article_images(session_state: Any, language: str) -> dict[str, str]:
 
 
 def article_tables(session_state: Any, language: str) -> dict[str, list[list[str]]]:
-    """References a plan may use, mapped to Markdown table rows from the article."""
+    """References a plan may use, mapped to Markdown table rows from the article.
+
+    Args:
+        session_state: The state of the session.
+        language: The language of the deck; tables come from that language's
+            article.
+
+    Returns:
+        A dict from ``table:N`` to the rows of the N-th table, each row a list
+        of cell texts.
+    """
     article = state.article_markdown(session_state, language) or ""
     return {
         google_slides.table_reference(number): rows
