@@ -186,11 +186,20 @@ def root_span(name: str, **attributes: Any) -> Iterator[trace.Span]:
 
 
 class ObservabilityPlugin(BasePlugin):
-    """Logs what each tool call intended to do and what actually happened."""
+    """Logs what each tool call intended to do and what actually happened.
+
+    A tool that raises gets its outcome record here, with status
+    ``exception`` and the type of the exception; this plugin answers nothing,
+    so ``ToolFailurePlugin`` after it can give the model a guided error.
+    """
 
     def __init__(self) -> None:
         super().__init__(name="observability")
         self._started: dict[str, float] = {}
+        # Calls whose outcome record was written when the tool raised. When a
+        # later plugin answers the exception, ADK passes that answer through
+        # ``after_tool_callback``; the call has its outcome already.
+        self._raised: set[str] = set()
 
     @staticmethod
     def _call_id(tool: BaseTool, tool_context: ToolContext) -> str:
@@ -227,6 +236,11 @@ class ObservabilityPlugin(BasePlugin):
         result: dict[str, Any],
     ) -> dict[str, Any] | None:
         call_id = self._call_id(tool, tool_context)
+        if call_id in self._raised:
+            # One intent, one outcome: the record of the exception stands, and
+            # the guided error the model was given instead is not a second one.
+            self._raised.discard(call_id)
+            return None
         outcome = result if isinstance(result, dict) else {"result": result}
         log_event(
             f"outcome: {tool.name}",
@@ -262,4 +276,6 @@ class ObservabilityPlugin(BasePlugin):
             error_code=type(error).__name__,
             latency_ms=self._latency_ms(call_id),
         )
+        if isinstance(error, Exception):  # a cancelled call has no answer
+            self._raised.add(call_id)
         return None

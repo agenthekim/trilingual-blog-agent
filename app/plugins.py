@@ -18,6 +18,10 @@ Rules enforced:
 
 Quality self-evaluation (does the translation preserve the source?) is handled
 separately by the localization review loop in ``app/agent.py``.
+
+``ToolFailurePlugin`` is the last resort of guided error handling (OPS-5): a
+tool that raises something nobody expected still answers the model with an
+``error_code`` and a ``recovery_instruction``.
 """
 
 from __future__ import annotations
@@ -128,3 +132,41 @@ class ContentPolicyPlugin(BasePlugin):
             ],
         )
         return cleaned
+
+
+class ToolFailurePlugin(BasePlugin):
+    """Turns an exception a tool raised into a guided error for the model.
+
+    The tools return ``tool_error`` for every failure they know of. This is
+    for the one they do not know of: a bug, or a library that raises something
+    new. ADK asks the plugins in the order they are registered and takes the
+    first answer, then treats that answer as the tool's result, so the model
+    reads what to do next instead of the run ending in a traceback.
+
+    Register it after ``ObservabilityPlugin``: a plugin that answers ends the
+    round, and the outcome record of the exception has to be written first.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(name="tool_failure")
+
+    async def on_tool_error_callback(
+        self,
+        *,
+        tool: BaseTool,
+        tool_args: dict[str, Any],
+        tool_context: ToolContext,
+        error: Exception,
+    ) -> dict[str, Any] | None:
+        if not isinstance(error, Exception):
+            # A cancelled call is told to the plugins for cleanup only; it is
+            # not a failure of the tool and nothing answers it.
+            return None
+        # The type of the exception only: its text could repeat article text
+        # or a credential, and this result is stored in the session.
+        return tool_error(
+            "TOOL_FAILED",
+            f"The tool {tool.name} failed unexpectedly ({type(error).__name__}).",
+            "Do not call the tool again with the same arguments. Tell the user "
+            "that this step failed and what they can do instead.",
+        )

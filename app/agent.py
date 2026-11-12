@@ -34,7 +34,7 @@ from app import prompts, state
 from app.memory import schedule_memory_consolidation
 from app.models import model_for
 from app.observability import ObservabilityPlugin
-from app.plugins import ContentPolicyPlugin
+from app.plugins import ContentPolicyPlugin, ToolFailurePlugin
 from app.schemas import LocalizedTitles, ReviewVerdict, SlideDeckPlan
 from app.settings import LANGUAGES
 from app.tools.articles import (
@@ -285,7 +285,9 @@ app = App(
     root_agent=root_agent,
     # Must equal the agent directory name; evaluation infers it from the path.
     name="app",
-    plugins=[ContentPolicyPlugin(), ObservabilityPlugin()],
+    # In this order: the policy may refuse a call, the log records what
+    # happened, and only then is an exception answered with a guided error.
+    plugins=[ContentPolicyPlugin(), ObservabilityPlugin(), ToolFailurePlugin()],
     # Long revision sessions carry whole articles in history. Once the prompt
     # passes the token threshold, older events are summarised by the fast model
     # and only the most recent events are kept verbatim.
@@ -310,12 +312,13 @@ def build_slide_planning_app(planner_model: Any = None) -> App:
     The page and the script plan each language in a working session of this
     application, so a planning run never writes to the record session of a
     run while a person works on the posts (RUN-2). Same plugins as ``app``:
-    the content policy and the intent and outcome log apply here too.
+    the content policy, the intent and outcome log and the guided error for
+    a tool that raises apply here too.
     """
     return App(
         root_agent=build_slide_planning_pipeline(planner_model),
         name="slide_planning",
-        plugins=[ContentPolicyPlugin(), ObservabilityPlugin()],
+        plugins=[ContentPolicyPlugin(), ObservabilityPlugin(), ToolFailurePlugin()],
     )
 
 

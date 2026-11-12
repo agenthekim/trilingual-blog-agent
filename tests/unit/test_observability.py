@@ -22,6 +22,7 @@ from google.adk.apps import App
 from google.adk.sessions import InMemorySessionService
 from google.cloud.logging_v2.handlers import StructuredLogHandler
 from opentelemetry import trace
+from pydantic import Field
 
 from app import google_slides, llm, observability, runs, web_ui
 from app.observability import ObservabilityPlugin, _RedactionFilter, traced_span
@@ -217,6 +218,97 @@ async def test_a_tool_that_raises_still_leaves_an_outcome_for_its_intent(
     assert intent["call_id"] == outcome["call_id"]
     assert outcome["status"] == "exception"
     assert outcome["error_code"] == "RuntimeError"
+
+
+class _RecordingModel(ScriptedModel):
+    """A scripted model that keeps the function responses it was given."""
+
+    responses: list[dict[str, Any]] = Field(default_factory=list)
+
+    async def generate_content_async(self, llm_request: Any, stream: bool = False):
+        for content in llm_request.contents:
+            for part in content.parts or []:
+                if part.function_response:
+                    self.responses.append(dict(part.function_response.response))
+        async for response in super().generate_content_async(llm_request, stream):
+            yield response
+
+
+async def save_the_article(title: str) -> dict[str, Any]:
+    """Stands for a tool with a bug nobody has found yet.
+
+    Args:
+        title: The title of the article.
+
+    Returns:
+        Nothing: it raises.
+    """
+    raise RuntimeError(f"cannot save {title}: token=hunter2-not-for-the-model")
+
+
+@pytest.mark.asyncio
+async def test_a_tool_that_raises_gives_the_model_a_guided_error(
+    isolated_workspace,
+) -> None:
+    """OPS-5. Nothing propagates, the model reads what to do next, and the
+    log has one intent and one outcome that says the call ended in an
+    exception."""
+    from app.agent import app as agent_app
+    from app.agent import slide_planning_app
+    from app.plugins import ToolFailurePlugin
+
+    # Both applications answer an exception, after the log has recorded it.
+    for application in (agent_app, slide_planning_app):
+        kinds = [type(plugin) for plugin in application.plugins]
+        assert kinds.index(ObservabilityPlugin) < kinds.index(ToolFailurePlugin)
+        assert kinds[-1] is ToolFailurePlugin
+
+    model = _RecordingModel(
+        model="scripted",
+        script=[_calls(("save_the_article", {"title": "A private draft"}))],
+    )
+    agent = Agent(
+        name="trilingual_blog_agent",
+        model=model,
+        instruction="Do what the user asks for.",
+        tools=[save_the_article],
+    )
+    pipeline = ArticlePipeline(
+        log=lambda _: None,
+        session_service=InMemorySessionService(),
+        agent_app=App(
+            name="app",
+            root_agent=agent,
+            plugins=[type(plugin)() for plugin in agent_app.plugins],
+        ),
+    )
+    stream = io.StringIO()
+    handler = StructuredLogHandler(stream=stream)
+    logger = observability.get_logger()
+    logger.addHandler(handler)
+    try:
+        await pipeline.say("Save it.")  # must not raise
+    finally:
+        logger.removeHandler(handler)
+
+    (response,) = model.responses
+    assert response["status"] == "error"
+    assert response["error_code"] == "TOOL_FAILED"
+    assert "save_the_article" in response["message"]
+    assert "RuntimeError" in response["message"]
+    # The text of the exception is not passed on: it can carry anything.
+    assert "hunter2" not in str(response) and "private draft" not in str(response)
+    assert "Do not call the tool again" in response["recovery_instruction"]
+    assert pipeline.last_reply == "Done."  # the model had its turn after it
+
+    records = [json.loads(line) for line in stream.getvalue().splitlines()]
+    intents = [r for r in records if r.get("event_phase") == "INTENT"]
+    outcomes = [r for r in records if r.get("event_phase") == "OUTCOME"]
+    assert len(intents) == 1 and len(outcomes) == 1
+    assert intents[0]["function_call_id"] == outcomes[0]["function_call_id"]
+    assert outcomes[0]["status"] == "exception"
+    assert outcomes[0]["error_code"] == "RuntimeError"
+    assert "hunter2" not in stream.getvalue()
 
 
 def test_spans_leave_the_process_only_when_export_is_asked_for(monkeypatch) -> None:
