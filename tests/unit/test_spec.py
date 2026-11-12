@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / "docs" / "SPEC.md"
 KOREAN = ROOT / "docs" / "kr-SPEC.md"
-_ID = r"(?:INV|SRC|LOC|PUB|SLD|SYN|WEB|PER|SEC|OPS)-\d+"
+_ID = r"(?:INV|SRC|LOC|PUB|SLD|SYN|WEB|PER|SEC|OPS|RUN)-\d+"
 _ROW = re.compile(rf"^\| ({_ID}) \| (.+) \|$", re.M)
 
 

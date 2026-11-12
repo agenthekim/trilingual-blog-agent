@@ -14,6 +14,8 @@ says so when it did not, instead of trusting that a reply meant success.
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import hashlib
 import inspect
 import re
@@ -23,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from google.adk.errors import StaleSessionError
 from google.adk.events import Event, EventActions
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
@@ -100,6 +103,49 @@ _SAFE_FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 # A message this short that contains a supported URL is a request about a
 # published post; anything else is treated as the draft itself.
 _MAX_URL_REQUEST_CHARS = 600
+
+
+# State keys whose value is a dictionary keyed by language or platform. A write
+# by code changes the entries it changed and leaves the others as the record
+# has them now, so two actions on different languages keep both changes (RUN-2).
+MERGED_KEYS = frozenset(
+    {
+        state.LOCALIZED_TITLES,
+        state.FIDELITY_REPORT,
+        state.FINALIZED_POSTS,
+        state.FINALIZATIONS_ASKED,
+        state.PUBLICATIONS,
+        state.SLIDE_PLANS,
+        state.SLIDE_TIMING,
+        state.GOOGLE_SLIDES_DECKS,
+        state.DECK_TEXT_BASELINE,
+    }
+)
+
+
+def merge_delta(
+    base: dict[str, Any], fresh: dict[str, Any], delta: dict[str, Any]
+) -> dict[str, Any]:
+    """What to write so that ``delta`` changes only what its author changed.
+
+    ``base`` is the state the author read before it worked, ``fresh`` the
+    state of the record now, ``delta`` the keys the author wrote. For the
+    dictionaries in ``MERGED_KEYS`` an entry is taken from ``delta`` when it
+    differs from ``base``, removed when the author removed it, and otherwise
+    left as ``fresh`` has it. Every other key is written as given.
+    """
+    merged: dict[str, Any] = {}
+    for key, value in delta.items():
+        if key in MERGED_KEYS and isinstance(value, dict):
+            before = base.get(key) or {}
+            now = dict(fresh.get(key) or {})
+            now.update({k: v for k, v in value.items() if before.get(k) != v})
+            for gone in before.keys() - value.keys():
+                now.pop(gone, None)
+            merged[key] = now
+        else:
+            merged[key] = value
+    return merged
 
 
 def _host(url: str) -> str:
@@ -425,6 +471,9 @@ class ArticlePipeline:
         self.log = log
         self._pending: list[Approval] = []
         self.last_reply = ""
+        # The record has one writer at a time (RUN-2): an agent turn holds
+        # this for the whole turn, a write by code for one read and one write.
+        self._write_lock = asyncio.Lock()
 
     async def _session(self, *, events: bool = True) -> Any | None:
         config = None if events else GetSessionConfig(num_recent_events=0)
@@ -453,6 +502,11 @@ class ArticlePipeline:
         return [approval.public() for approval in self._pending]
 
     async def _send(self, content: types.Content) -> None:
+        """One agent turn. It is the writer of the record until it ends."""
+        async with self._write_lock:
+            await self._turn(content)
+
+    async def _turn(self, content: types.Content) -> None:
         self._pending = []
         self.last_reply = ""
         async for event in self._runner.run_async(
@@ -532,9 +586,11 @@ class ArticlePipeline:
         ``approval`` is the payload of the approval the person gave with the
         action (an empty dict for a plain yes); leave it None for tools that
         ask for none. What the tool wrote to the state is recorded in the
-        session as one event.
+        session as one event: it waits for an agent turn that is writing, and
+        changes only the entries the tool changed (RUN-2).
         """
         current = await self.session_state()
+        base = copy.deepcopy(current)  # what the tool was shown, kept apart
         context = PersonContext(
             _StateEdits(current),
             None
@@ -547,7 +603,7 @@ class ArticlePipeline:
         if inspect.isawaitable(result):
             result = await result
         if context.state.delta:
-            await self._update_state(context.state.delta)
+            await self._update_state(context.state.delta, base)
         failure = _failure(result)
         log_event(
             "tool call for a person's action",
@@ -899,21 +955,46 @@ class ArticlePipeline:
         check = (current.get(state.FIDELITY_REPORT) or {}).get(language)
         return {"language": language, "finalized": True, "check": check}
 
-    async def _update_state(self, delta: dict[str, Any]) -> None:
-        """Record a change made outside any agent turn."""
-        session = await self._session()
-        if session is None:
-            session = await self._sessions.create_session(
-                app_name=self._app.name, user_id=USER_ID, session_id=self.session_id
-            )
-        await self._sessions.append_event(
-            session,
-            Event(
-                author="human_editor",
-                invocation_id=f"edit-{uuid.uuid4().hex[:8]}",
-                actions=EventActions(state_delta=delta),
-            ),
-        )
+    async def _update_state(
+        self, delta: dict[str, Any], base: dict[str, Any] | None = None
+    ) -> None:
+        """Record a change made outside any agent turn (RUN-2).
+
+        ``base`` is the state the change was worked out from. Every caller in
+        the application passes it; without it ``delta`` is written as given,
+        whole dictionaries included.
+        The write waits for an agent turn, reads the record as it is then,
+        and writes once. Something that writes without the lock (ADK's own
+        event compaction) can still get in between the read and the write;
+        the record is then read again and the write made once more.
+        """
+        for attempt in (1, 2):
+            async with self._write_lock:
+                session = await self._session()
+                if session is None:
+                    session = await self._sessions.create_session(
+                        app_name=self._app.name,
+                        user_id=USER_ID,
+                        session_id=self.session_id,
+                    )
+                merged = (
+                    delta
+                    if base is None
+                    else merge_delta(base, dict(session.state), delta)
+                )
+                try:
+                    await self._sessions.append_event(
+                        session,
+                        Event(
+                            author="human_editor",
+                            invocation_id=f"edit-{uuid.uuid4().hex[:8]}",
+                            actions=EventActions(state_delta=merged),
+                        ),
+                    )
+                    return
+                except StaleSessionError:
+                    if attempt == 2:
+                        raise
 
     async def _save_slide_plan(
         self, path: Path, text: str, language: str
@@ -937,7 +1018,8 @@ class ArticlePipeline:
                 "secrets": [],
             }
         path.write_text(render_slide_plan_markdown(plan), encoding="utf-8")
-        await self._update_state(await self._plan_of_record(language, plan))
+        current = await self.session_state()
+        await self._update_state(self._plan_of_record(current, language, plan), current)
         self.log(f">>> edited {path.name} by hand ({len(plan.slides)} slides)")
         return {
             "saved": path.name,
@@ -1011,8 +1093,8 @@ class ArticlePipeline:
             }
         }
         if direction == "pull":
-            delta.update(await self._plan_of_record(language, plan))
-        await self._update_state(delta)
+            delta.update(self._plan_of_record(current, language, plan))
+        await self._update_state(delta, current)
         if direction == "push" and project_file(project_id, slide_pdf_file(language)):
             await self.act(export_google_slides_pdf, language)
         where = "deck from the file" if direction == "push" else "file from the deck"
@@ -1023,9 +1105,15 @@ class ArticlePipeline:
         result["applied"] = True
         return result
 
-    async def _plan_of_record(self, language: str, plan: Any) -> dict[str, Any]:
-        """State change that makes ``plan`` the plan of its language, with its timing."""
-        current = await self.session_state()
+    @staticmethod
+    def _plan_of_record(
+        current: dict[str, Any], language: str, plan: Any
+    ) -> dict[str, Any]:
+        """State change that makes ``plan`` the plan of its language, with its timing.
+
+        Worked out from ``current``, which the caller passes on as the base of
+        the write so that only this language's entries are changed.
+        """
         timing = dict(current.get(state.SLIDE_TIMING) or {})
         expected = (timing.get(language) or {}).get("expected_slide_count")
         timing[language] = slide_timing_report(plan, int(expected or len(plan.slides)))
@@ -1096,7 +1184,7 @@ class ArticlePipeline:
                     **(current.get(state.LOCALIZED_TITLES) or {}),
                     language: title.strip()[:MAX_TITLE_CHARS],
                 }
-        await self._update_state(delta)
+        await self._update_state(delta, current)
         get_article_store().add_version(project_id, language, "edited", text)
         path.write_text(text, encoding="utf-8")
         if (
