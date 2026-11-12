@@ -1,0 +1,52 @@
+# Runs on every push and pull request (OPS-6 in docs/SPEC.md).
+# Nothing here needs a credential: the unit tests refuse the network and
+# models, and Terraform is only formatted and validated, never planned or
+# applied.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Linter and unit tests
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      # uv.lock was written against a package index this runner cannot reach.
+      # uv notices that and resolves again from PyPI, keeping the locked
+      # versions where they exist there; so no --locked or --frozen here.
+      - name: Install
+        run: uv sync --extra lint
+      - name: Linter
+        run: uv run ruff check .
+      - name: Formatting
+        run: uv run ruff format --check .
+      - name: Unit tests
+        run: uv run pytest tests/unit -q
+
+  terraform:
+    name: Terraform validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Formatting
+        run: terraform fmt -check -recursive deployment/terraform
+      - name: Init without a backend
+        working-directory: deployment/terraform/single-project
+        run: terraform init -backend=false -input=false
+      - name: Validate
+        working-directory: deployment/terraform/single-project
+        run: terraform validate

@@ -195,6 +195,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | OPS-2 | `uv run pytest tests/unit`은 모델, 네트워크, 자격 증명 없이 실행되며, 부록 B가 단위 테스트에 배정한 모든 요구사항을 다룬다. 이것은 픽스처가 보장한다. 픽스처는 네트워크 연결과 모델 관문을 거부하고, `.env`는 읽지 않는다 |
 | OPS-3 | 모델 이름은 설정값(`FAST_MODEL_NAME`, `REASONING_MODEL_NAME`)이며 코드 수정으로 바꾸지 않는다 |
 | OPS-5 | 에이전트가 도구로 부를 수 있는 모든 함수는 다음을 갖춘다. 무엇을 어디에 하는지 말하는 이름, 목적과 각 인자와 반환값을 적은 독스트링, 기본값이 없고 타입이 선언된 인자(허용되는 언어, 플랫폼, 코드 방식은 모델에 보이는 열거형이다), 어떤 일도 일어나기 전에 Pydantic 모델로 하는 인자 검사, 그리고 요청한 일을 할 수 없을 때 예외 대신 `error_code`와 `recovery_instruction`이 든 결과 |
+| OPS-6 | 푸시할 때마다 CI(`.github/workflows/ci.yml`)에서 린터, 단위 테스트, Terraform 검증을 실행한다. 어느 것도 자격 증명이 필요 없다 |
 
 ### 5.10 실행
 
@@ -290,7 +291,7 @@ flowchart TD
 | :--- | :--- | :--- |
 | 1 | 라이선스 | `README.md`에는 Apache-2.0이라고 적혀 있으나 저장소에 `LICENSE` 파일이 없다. 소유자가 결정한다 |
 | 2 | 사이트에서 초안을 수동으로 공개한 뒤의 세 번째 게시 상태 | 현재는 Public을 선택한 "Update post…"로 처리한다. 공개 주소만 등록하는 방법은 구현되지 않았다 |
-| 3 | Agent Runtime 배포, Terraform apply, Cloud DLP, CI | 작성만 했고 실행한 적은 없다 |
+| 3 | Agent Runtime 배포, Terraform apply, Cloud DLP | 작성만 했고 실행한 적은 없다. CI는 푸시마다 실행되며(OPS-6), Terraform 파일을 검증만 하고 아무것도 적용하지 않는다 |
 
 <!-- requirements:end -->
 
@@ -430,6 +431,7 @@ flowchart TD
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: 코드를 수정하는 사람을 위한 규칙이다. 기본값은 `app/models.py`에 있으며 환경 변수에서 읽는다 |
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
+| OPS-6 | No unit test: 워크플로는 단위 테스트가 아니라 GitHub에서 실행된다. 통과 여부는 실행 대상 커밋에 표시된다 |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
