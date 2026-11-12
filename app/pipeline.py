@@ -47,6 +47,7 @@ from app.settings import (
     PLATFORM_FOR_LANGUAGE,
     workspace_dir,
 )
+from app.structurer import auto_structure_markdown, needs_markdown_structuring
 from app.tools.articles import (
     fetch_published_article_markdown,
     finalize_seed_article,
@@ -564,14 +565,34 @@ class ArticlePipeline:
             if failure := _failure(result):
                 return f"The post could not be read. {failure}"
             if not result.get("seed_finalized"):
-                # Naver has no Markdown export; the run goes on with what the
-                # page gave, and the person is told to look at it.
-                await self.act(finalize_seed_article)
-                notes.append(
-                    "The text was rebuilt from the Naver page, so headings, lists, "
-                    "images and links may be missing. Check the Korean file "
-                    "before using the results."
-                )
+                # Naver has no Markdown export; automatically structure plain text into Markdown.
+                current = await self.session_state()
+                raw_markdown = current.get(state.SEED_MARKDOWN) or ""
+                structured = await auto_structure_markdown(raw_markdown)
+                if structured and structured != raw_markdown:
+                    await self.act(
+                        save_seed_article_revision,
+                        title=title_of_draft(structured)
+                        or current.get(state.SEED_TITLE)
+                        or "",
+                        markdown=structured,
+                        source_language=current.get(state.SOURCE_LANGUAGE) or "ko",
+                        code_mode="inline_markdown" if "```" in structured else "none",
+                        code_repo_url="",
+                        finalized=True,
+                    )
+                    notes.append(
+                        "The text was rebuilt from the Naver page and automatically structured into "
+                        "Markdown with headings, lists, and tables. Check the Korean file "
+                        "before using the results."
+                    )
+                else:
+                    await self.act(finalize_seed_article)
+                    notes.append(
+                        "The text was rebuilt from the Naver page, so headings, lists, "
+                        "images and links may be missing. Check the Korean file "
+                        "before using the results."
+                    )
             return None
         if kind == "request":
             await self.say(text)
@@ -607,22 +628,31 @@ class ArticlePipeline:
                 f"The draft could not be stored. It has {len(text):,} characters; "
                 f"the limit for one article is {MAX_ARTICLE_CHARS:,}."
             )
-        # A draft is stored as it was handed in. No model retypes it.
+        # A draft is stored as it was handed in. If it lacks headings, auto-structure it into Markdown.
+        draft_text = text
+        if needs_markdown_structuring(draft_text):
+            structured = await auto_structure_markdown(draft_text)
+            if structured and structured != draft_text:
+                draft_text = structured
+                notes.append(
+                    "Automatically structured plain text into Markdown with headings, "
+                    "lists, and tables. Review the file before using the results."
+                )
         result = await self.act(
             save_seed_article_revision,
-            title=title_of_draft(text),
-            markdown=text,
-            source_language=platforms.guess_language(text),
-            code_mode="inline_markdown" if "```" in text else "none",
+            title=title_of_draft(draft_text),
+            markdown=draft_text,
+            source_language=platforms.guess_language(draft_text),
+            code_mode="inline_markdown" if "```" in draft_text else "none",
             code_repo_url="",
             finalized=True,
         )
         if failure := _failure(result):
             return f"The draft could not be stored. {failure}"
-        if not has_title_line(text):
+        if not has_title_line(draft_text):
             notes.append(
                 "The draft has no '# Title' line, so this was taken as the "
-                f"title: '{title_of_draft(text)}'. If that is not the title, "
+                f"title: '{title_of_draft(draft_text)}'. If that is not the title, "
                 "add a '# Title' line at the top and run again."
             )
         return None
