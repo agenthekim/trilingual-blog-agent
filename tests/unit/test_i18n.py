@@ -344,7 +344,9 @@ def test_notices_carry_a_code_the_page_can_translate(isolated_workspace) -> None
             {"code": None, "params": {}, "text": "the connection was reset"}
         ]
 
-        refused = client.post(f"/api/jobs/{job.id}/pdf", json={"language": "en"})
+        refused = client.post(
+            f"/api/jobs/{job.id}/deck", json={"language": "en", "approved": True}
+        )
         assert refused.status_code == 409
         assert refused.json() == {
             "detail": runs.BUSY[runs.SLIDES],

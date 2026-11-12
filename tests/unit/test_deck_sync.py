@@ -415,6 +415,7 @@ async def test_a_pdf_never_outlives_the_deck_it_was_made_from(
     from datetime import datetime
 
     from app.pipeline import project_file
+    from app.tools.slides import export_google_slides_pdf
 
     plan = _plan()
     pipeline, _, _ = await _pipeline_with_deck(monkeypatch, plan)
@@ -449,8 +450,8 @@ async def test_a_pdf_never_outlives_the_deck_it_was_made_from(
     assert before["slides_pdf"] is None and before["pdf_exported_at"] is None
     assert "Slides PDF" not in await manifest()
 
-    # Exported on demand: the row and the manifest say when.
-    assert await pipeline.export_pdf("ko") is None
+    # Exported by the agent's tool: the row and the manifest say when.
+    assert (await pipeline.act(export_google_slides_pdf, "ko"))["status"] == "success"
     exported_row = await row()
     record = (await pipeline.session_state())[state.GOOGLE_SLIDES_DECKS]["ko"]
     when = record["pdf_exported_at"]
@@ -491,7 +492,7 @@ async def test_a_pdf_never_outlives_the_deck_it_was_made_from(
     )
 
     # The next PDF is of the new deck.
-    assert await pipeline.export_pdf("ko") is None
+    assert (await pipeline.act(export_google_slides_pdf, "ko"))["status"] == "success"
     assert exported[-1] == "deck-ko-2" and pdf.read_bytes().endswith(b"deck-ko-2")
     assert (await row())["slides_pdf"] == "slides.ko.pdf"
 

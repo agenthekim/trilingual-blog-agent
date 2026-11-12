@@ -138,7 +138,6 @@ TEMPLATES: dict[str, str] = {
         "after two attempts; its speaker notes say how long each slide runs."
     ),
     "deck_not_created": "The {language} Google Slides deck was not created. {reason}",
-    "pdf_not_exported": "The {language} PDF was not exported. {reason}",
     # --- editing and deck text sync ---
     "file_not_editable": "This file cannot be edited here.",
     "post_read_from_platform": (

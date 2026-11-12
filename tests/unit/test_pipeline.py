@@ -1170,31 +1170,32 @@ async def test_a_medium_post_missing_from_the_feed_is_refused_in_plain_words(
     assert said == [] and await pipeline.session_state() == {}
 
 
-def test_slides_of_a_run_that_stopped_before_the_posts_did_not_fail() -> None:
-    """WEB-3: the source could not be read, so no slides were tried."""
-    from app.pipeline import slides_progress
+def test_the_slides_step_is_one_step_for_the_languages_asked_for() -> None:
+    """WEB-3: "Prepare slides" is there when slides were asked for, done or not."""
+    from app.pipeline import mark_slide_rows_in_progress, progress
 
-    def phases(view):
-        entries = slides_progress(
-            view, {}, ["en", "ko", "ja"], True, slides_busy=False, slides_to_come=False
+    def step(session_state, phases, talk_languages):
+        languages = mark_slide_rows_in_progress(
+            overview(session_state), phases, talk_languages, slides_busy=False
         )
-        return {entry["language"]: entry["phase"] for entry in entries}
+        steps = progress(session_state, languages, True)
+        return languages, [s for s in steps if s["name"] == "Prepare slides"]
 
-    # No article was stored: every language waits; none is marked as failed.
-    assert phases(overview({})) == {"en": "waiting", "ko": "waiting", "ja": "waiting"}
+    # No slides were asked for: there is no slides step.
+    assert step({}, {}, []) == ([], [])
 
-    # With the posts there and nothing made, the slides were asked for, could
-    # have been made and are missing: that is still said as failed.
-    with_posts = {
-        state.PROJECT_ID: "proj-x",
-        state.SEED_TITLE: "제목",
-        state.SEED_MARKDOWN: "# 제목\n\n본문\n",
-        state.SOURCE_LANGUAGE: "ko",
-        state.localized_key("en"): "# Title\n\nBody\n",
-        state.LOCALIZED_TITLES: {"en": "Title"},
-    }
-    assert phases(overview(with_posts)) == {
-        "en": "failed",
-        "ko": "failed",
-        "ja": "waiting",  # no Japanese post was written
-    }
+    # Asked for with the run: the step is there, in the order asked, and it is
+    # one step that is done or not. A run that stopped before the posts shows
+    # it as not done; no language is marked on its own.
+    assert step({}, {}, ["ja", "en"]) == (
+        ["ja", "en"],
+        [{"name": "Prepare slides", "done": False}],
+    )
+
+    # Asked for later: a language the slides lane worked on comes after those
+    # of the run options, and brings the step when the run asked for none.
+    assert step({}, {"ko": "failed"}, ["ja", "en"])[0] == ["ja", "en", "ko"]
+    assert step({}, {"ko": "failed"}, []) == (
+        ["ko"],
+        [{"name": "Prepare slides", "done": False}],
+    )

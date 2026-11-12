@@ -111,14 +111,6 @@ function keep(key, attrs) {
   return input;
 }
 
-// The mark of each phase of the slides lane, next to the code of a language
-// in the slides step (WEB-3); its words are the texts slidePhase.<phase>.
-const SLIDE_MARK = {waiting: "–", planning: "…", creating: "…", done: "✓", failed: "✗"};
-// When a PDF was exported, as the browser writes a date in the page's language.
-function exportTime(iso) {
-  const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? iso : at.toLocaleString(currentUiLang, {dateStyle: "medium", timeStyle: "short"});
-}
 // One thing the Slides column offers, by the name the server gives it.
 function slideAction(row, action, slidesBusy) {
   const link = (href, text, attrs) => el("a", {href, target: "_blank", rel: "noopener", ...attrs}, text);
@@ -127,11 +119,6 @@ function slideAction(row, action, slidesBusy) {
   if (action === "open_deck") return el("div", {}, link(row.deck.url, "Google Slides", {style: "font-weight:600"}));
   if (action === "notes") return el("div", {class: "muted small"}, link(fileUrl(row.slides_file), t("speakerNotes"), {title: row.slides_file}));
   if (action === "create_deck") return el("div", {}, button(t("createDeckBtn"), () => createDeck(row)));
-  if (action === "pdf") return el("div", {class: "small"}, link(fileUrl(row.slides_pdf), "PDF", {title: row.slides_pdf}),
-    el("span", {class: "muted"}, t("pdfExportedAt", {time: exportTime(row.pdf_exported_at)})));
-  if (action === "export_pdf") return el("div", {}, button(t("exportPdfBtn"), () => exportPdf(row)));
-  // A new plan and a new deck: the same approval as the first time (INV-6).
-  if (action === "recreate") return el("div", {}, button(t("recreateDeckBtn"), () => requestSlides([row])));
   // The speaker notes changed after the deck was made: the editor of the
   // notes opens and asks, listing the slides, before the deck is written.
   if (action === "update_deck") return el("div", {}, link(`/edit?job=${jobId}&file=${encodeURIComponent(row.slides_file)}&push=1`, t("updateDeckBtn")));
@@ -220,7 +207,7 @@ function render(data) {
   const firstOpen = data.progress.findIndex((step) => !step.done);
   const postSteps = data.post_progress || [];
   // Two lanes (RUN-1): the main lane makes and posts the posts and talks to
-  // the agent, the slides lane makes plans, decks and PDFs.
+  // the agent, the slides lane makes plans and decks.
   const lanes = data.lanes || {main: {busy}, slides: {busy}};
   const postsBusy = lanes.main.busy, slidesBusy = lanes.slides.busy;
   const postsReady = !postsBusy && data.progress.length > 0;
@@ -229,14 +216,6 @@ function render(data) {
     return el("li", {class: step.done ? "done" : (isNow ? "now" : "")}, (step.done ? "✓ " : "") + stepText(step.name));
   };
   const spacerLi = () => el("li", {class: "spacer"}, "");
-  // The slides step says where each language asked for stands (WEB-3).
-  const slidesLi = (step) => {
-    const li = stepLi(step, slidesBusy && !step.done);
-    const marks = (data.slides_progress || []).map((entry) => el("span", {class: "slide-lang " + entry.phase, title: t("slidePhase." + entry.phase)},
-      `${entry.language.toUpperCase()} ${SLIDE_MARK[entry.phase] || ""}`));
-    if (marks.length) li.append(el("div", {class: "slide-langs"}, ...marks));
-    return li;
-  };
 
   if (data.progress.length >= 5 && postSteps.length >= 5) {
     // Row 1: Source document | Transform | Prepare posts | Summarize | Review & edit
@@ -251,7 +230,7 @@ function render(data) {
     $("slideSteps").replaceChildren(
       spacerLi(),
       spacerLi(),
-      slidesLi(data.progress[3]),
+      stepLi(data.progress[3], slidesBusy && !data.progress[3].done),
       spacerLi(),
       spacerLi()
     );
@@ -459,8 +438,7 @@ async function requestSlides(rows, options) {
   if (withPlan.length) summary.push([t("planLabel"), about(withPlan, t("slidesPlanReplaced"))]);
   if (withDeck.length) summary.push([t("deckLabel"), about(withDeck, t("slidesDeckKept"))]);
   const again = withPlan.length > 0;
-  const title = options ? t("missingSlidesTitle")
-    : again ? t("slidesAgainTitle", {language: names(rows)}) : t("slidesTitle", {language: names(rows)});
+  const title = options ? t("missingSlidesTitle") : t("slidesTitle", {language: names(rows)});
   const ok = await confirmAction({title, summary, okLabel: again ? t("slidesAgainOk") : t("slidesOk")});
   if (ok) act("slides", {
     languages: rows.map((row) => row.language),
@@ -479,10 +457,6 @@ async function createDeck(row) {
     summary: [[t("fromLabel"), row.slides_file || t("deckFromNotes")], [t("whereLabel"), whereDesc], [t("containsLabel"), t("deckContainsValue")]],
     okLabel: t("deckOk")});
   if (ok) act("deck", {language: row.language, approved: true});
-}
-// The deck as slides.<lang>.pdf, a file on this machine: nothing leaves it.
-function exportPdf(row) {
-  act("pdf", {language: row.language});
 }
 
 const MAX_FILE_BYTES = 80000;

@@ -61,12 +61,12 @@ from app.google_slides import SlidesError, granted_account, mermaid_preview_url
 from app.notices import join, notice, parts_of
 from app.observability import log_event, setup_tracing, traced_span
 from app.pipeline import (
+    mark_slide_rows_in_progress,
     missing_slides,
     overview,
     post_progress,
     progress,
     project_file,
-    slides_progress,
 )
 from app.schemas import DevtoDraftInput, QiitaDraftInput
 from app.settings import (
@@ -393,10 +393,6 @@ class SlidesRequest(BaseModel):
         return list(dict.fromkeys(value))
 
 
-class DeckPdfRequest(BaseModel):
-    language: Language
-
-
 class UrlRequest(BaseModel):
     platform: Literal["naver_blog", "qiita", "devto"]
     url: str = Field(pattern=r"^https://\S+$", max_length=500)
@@ -663,17 +659,15 @@ async def job_status(job_id: str) -> dict[str, Any]:
     view = overview(current)
     if job.source_text:
         view["source_text"] = job.source_text
-    # Where each language slides were asked for stands; the rows of the
-    # languages the slides lane works on right now say so too (WEB-3, WEB-5).
+    # The rows of the languages the slides lane works on right now say so
+    # (WEB-5); the languages slides were asked for, in the run options or later.
     slides_busy = job.lanes[runs.SLIDES].busy
     slides_to_come = job.lanes[runs.MAIN].action == "run_posts"
-    slides = slides_progress(
+    slide_languages = mark_slide_rows_in_progress(
         view,
         job.pipeline.slide_phases,
         job.talk_languages,
-        job.wants_decks,
         slides_busy=slides_busy,
-        slides_to_come=slides_to_come,
     )
     return {
         # Whether anything runs at all; what may be started depends on the lane.
@@ -687,10 +681,7 @@ async def job_status(job_id: str) -> dict[str, Any]:
         "overview": view,
         # The slides step is there for every language slides were asked for,
         # in the run options or later.
-        "progress": progress(
-            current, [entry["language"] for entry in slides], job.wants_decks
-        ),
-        "slides_progress": slides,
+        "progress": progress(current, slide_languages, job.wants_decks),
         "post_progress": post_progress(current, job.talk_languages),
         # What the run was asked to make of slides, and the languages whose
         # slides are not there. The page offers to make those with these
@@ -772,19 +763,6 @@ async def request_slides(job_id: str, request: SlidesRequest) -> dict[str, bool]
         languages=",".join(request.languages),
     )
     runs.start_slides(job, list(request.languages), request.minutes, request.audience)
-    return {"accepted": True}
-
-
-@web.post("/api/jobs/{job_id}/pdf")
-async def export_deck_pdf(job_id: str, request: DeckPdfRequest) -> dict[str, bool]:
-    """Export one language's Google Slides deck as slides.<lang>.pdf (SLD-12)."""
-    job = _job(job_id)
-    _start(
-        job,
-        runs.SLIDES,
-        lambda: job.pipeline.export_pdf(request.language),
-        "export_pdf",
-    )
     return {"accepted": True}
 
 

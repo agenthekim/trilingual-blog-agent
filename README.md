@@ -104,7 +104,7 @@ starts.
 
 On the page a run has two lanes (`app/runs.py`). The main lane holds the
 source document, the localization, the posts and requests to the agent; the
-slides lane holds plans, decks, PDF export and deck text sync. One action runs
+slides lane holds plans, decks and deck text sync. One action runs
 at a time in a lane and the two lanes run at the same time, so posts can be
 reviewed, finalized and posted while slides are made. Every action ends as
 done or as a notice on the page.
@@ -167,10 +167,11 @@ are missing.
 More of the page:
 
 - The Slides column offers, per language, what its state allows: "Create
-  slides…", "Speaker notes", "Create deck…", "Google Slides", "PDF" with the
-  time it was exported or "Export PDF", "Re-create…" and "Update deck…".
-  Creating a deck again makes a new file and keeps the address of the earlier
-  one. `BLOG_AGENT_SLIDE_PARALLELISM` (3 unless set) is how many languages
+  slides…", "Speaker notes", "Create deck…", "Google Slides" and "Update
+  deck…"; while the slides of a language are made, its cell says so. The page
+  has no PDF export and no button to make existing slides again: both are
+  asked of the agent in words (a PDF also through the API). Creating a deck
+  again makes a new file and keeps the address of the earlier one. `BLOG_AGENT_SLIDE_PARALLELISM` (3 unless set) is how many languages
   are planned at once.
 - "Ask the agent for a change" sends one line to the agent. The agent changes
   a title, or replaces a passage it quotes from a post. A request for slides

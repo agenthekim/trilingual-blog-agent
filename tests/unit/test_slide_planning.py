@@ -265,12 +265,12 @@ async def test_the_number_of_languages_planned_at_once_can_be_lowered(
 
 
 @pytest.mark.asyncio
-async def test_the_slides_step_says_where_each_language_asked_for_stands(
+async def test_a_row_says_what_the_slides_lane_is_doing_with_its_language(
     isolated_workspace, tmp_path, monkeypatch
 ) -> None:
-    """WEB-3: waiting, planning, creating the deck, done or failed, per language."""
+    """WEB-5: waiting, planning or creating the deck, in the row, while it lasts."""
     from app import google_slides
-    from app.pipeline import SLIDE_PHASES, overview, slides_progress
+    from app.pipeline import SLIDE_PHASES, mark_slide_rows_in_progress, overview
 
     deck_started, deck_may_end = asyncio.Event(), asyncio.Event()
 
@@ -290,72 +290,60 @@ async def test_the_slides_step_says_where_each_language_asked_for_stands(
     pipeline = await _pipeline(tmp_path, model)
     asked = ["en", "ko", "ja"]
 
-    async def stands(
-        busy: bool, to_come: bool = False, phases: dict[str, str] | None = None
-    ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+    async def rows_now(busy: bool) -> dict[str, dict[str, Any]]:
         view = overview(await pipeline.session_state())
-        entries = slides_progress(
-            view,
-            pipeline.slide_phases if phases is None else phases,
-            asked,
-            True,
-            slides_busy=busy,
-            slides_to_come=to_come,
+        languages = mark_slide_rows_in_progress(
+            view, pipeline.slide_phases, asked, slides_busy=busy
         )
-        assert all(entry["phase"] in SLIDE_PHASES for entry in entries)
-        return (
-            {entry["language"]: entry["phase"] for entry in entries},
-            {row["language"]: row for row in view["rows"]},
+        # What comes back is the languages alone: no phase per language.
+        assert languages == asked
+        rows = {row["language"]: row for row in view["rows"]}
+        assert all(
+            row["slides_progress"] in (None, *SLIDE_PHASES) for row in rows.values()
         )
+        return rows
 
-    async def until(wanted: dict[str, str]) -> dict[str, dict[str, Any]]:
+    async def until(wanted: dict[str, str | None]) -> dict[str, dict[str, Any]]:
         for _ in range(500):
-            phases, rows = await stands(busy=True)
-            if phases == wanted:
+            rows = await rows_now(busy=True)
+            said = {code: rows[code]["slides_progress"] for code in asked}
+            if said == wanted:
                 return rows
             await asyncio.sleep(0.01)
-        raise AssertionError(f"the languages stand at {phases}, not {wanted}")
+        raise AssertionError(f"the rows say {said}, not {wanted}")
 
-    # The posts are still being made: every language asked for waits.
-    phases, _ = await stands(busy=False, to_come=True)
-    assert phases == {"en": "waiting", "ko": "waiting", "ja": "waiting"}
+    # Nothing was started: no row says anything, each offers its action.
+    rows = await rows_now(busy=False)
+    assert all(rows[code]["slides_progress"] is None for code in asked)
+    assert all(rows[code]["slides_actions"] == ["create_slides"] for code in asked)
 
     slides = asyncio.create_task(pipeline.make_slides(asked, 3, "engineers", True))
     await model.all_started()
     # Two are planned at once; the third waits for its turn.
     rows = await until({"en": "planning", "ko": "planning", "ja": "waiting"})
-    assert [rows[code]["slides_progress"] for code in asked] == [
-        "planning",
-        "planning",
-        "waiting",
-    ]
     assert all(rows[code]["slides_actions"] == [] for code in asked)
 
     model.release()
     await asyncio.wait_for(deck_started.wait(), timeout=5)
     # English is at its deck, Korean failed, Japanese has its plan and waits
     # for the deck before it. A language that failed offers its action again.
-    rows = await until({"en": "creating", "ko": "failed", "ja": "waiting"})
-    assert rows["ko"]["slides_progress"] is None
+    rows = await until({"en": "creating", "ko": None, "ja": "waiting"})
     assert rows["ko"]["slides_actions"] == ["create_slides"]
     assert rows["en"]["slides_actions"] == rows["ja"]["slides_actions"] == []
 
     deck_may_end.set()
     await slides
-    phases, rows = await stands(busy=False)
-    assert phases == {"en": "done", "ko": "failed", "ja": "done"}
-    assert rows["en"]["slides_progress"] is None
-    assert rows["en"]["slides_actions"][0] == "open_deck"
+    rows = await rows_now(busy=False)
+    assert all(rows[code]["slides_progress"] is None for code in asked)
+    assert rows["en"]["slides_actions"] == ["open_deck", "notes"]
+    assert rows["ko"]["slides_actions"] == ["create_slides"]
 
-    # After a restart nothing the lane said is left: what is in the record says
-    # whether a language asked for got its slides.
-    phases, _ = await stands(busy=False, phases={})
-    assert phases == {"en": "done", "ko": "failed", "ja": "done"}
-
-    # The page shows a mark for each phase and has its words in the catalog.
+    # The page says it in the row and nowhere else: the slides step has no
+    # mark per language (decision 54).
     from app import web_ui
 
     script = (web_ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
-    marks = re.search(r"const SLIDE_MARK = \{([^}]*)\}", script).group(1)
-    assert re.findall(r"(\w+):", marks) == list(SLIDE_PHASES)
-    assert "data.slides_progress" in script
+    assert 't("slidePhase." + row.slides_progress)' in script
+    assert "SLIDE_MARK" not in script and "data.slides_progress" not in script
+    styles = (web_ui.STATIC_DIR / "app.css").read_text(encoding="utf-8")
+    assert "slide-lang" not in styles
