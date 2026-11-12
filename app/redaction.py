@@ -86,6 +86,8 @@ _PII_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ),
 ]
 
+_EMAIL_PATTERN = dict(_PII_PATTERNS)["EMAIL_ADDRESS"]
+
 # A card number stands by itself. Digits attached to an ASCII letter or an
 # underscore, directly or through one hyphen, are part of an identifier
 # (``call_4539148803436467``, a UUID) and are left alone (SEC-4).
@@ -139,19 +141,68 @@ def redact_credentials(text: str) -> str:
     return text
 
 
+def _redact_numbers(text: str) -> str:
+    """Replace the personal data that is written in digits: resident and
+    social security numbers, phone numbers, card numbers."""
+    for label, pattern in _PII_PATTERNS:
+        if label != "EMAIL_ADDRESS":
+            text = pattern.sub(f"[REDACTED_{label}]", text)
+    return _CARD_PATTERN.sub(_card_replacer, text)
+
+
 def redact_text(text: str) -> str:
     """Replace credentials and personal data in ``text`` with typed placeholders."""
     if not text:
         return text
-    redacted = text
-    for label, pattern in _SECRET_PATTERNS:
-        redacted = pattern.sub(f"[REDACTED_{label}]", redacted)
-    for label, pattern in _PII_PATTERNS:
-        redacted = pattern.sub(f"[REDACTED_{label}]", redacted)
-    redacted = _CARD_PATTERN.sub(_card_replacer, redacted)
+    redacted = redact_credentials(text)
+    redacted = _EMAIL_PATTERN.sub("[REDACTED_EMAIL_ADDRESS]", redacted)
+    redacted = _redact_numbers(redacted)
     if env_flag("BLOG_AGENT_ENABLE_DLP"):
         redacted = _redact_with_cloud_dlp(redacted)
     return redacted
+
+
+# An address in an activity line: of a post, a deck, a repository.
+_WEB_ADDRESS = re.compile(r"https?://[^\s<>\"'`)\]]+")
+
+
+def redact_stored_line(line: str) -> str:
+    """Redact one activity line before it is stored and shown on the page (SEC-4).
+
+    The line gets the same patterns as a log record: credentials, e-mail
+    addresses, resident and social security numbers, phone numbers and card
+    numbers. Two things differ from ``redact_text``, both on purpose.
+
+    Regular expressions only, never Cloud DLP. A run writes these lines one
+    after another from the event loop that also answers the page; a network
+    call for each line would hold the page up, and a line that waits for a
+    service cannot be stored before it is shown. The structured record of
+    the same line (``log_activity``) passes the log filter like every other
+    record, with Cloud DLP when that is enabled.
+
+    The digit patterns are not applied inside a web address. An activity
+    line says where a post or a deck is, and a person has to be able to open
+    that address: a long number in a path or a query (a post number, a
+    timestamp) is part of the address, not a phone or card number. A
+    credential or an e-mail address inside an address is still replaced.
+
+    Args:
+        line: The activity line as the run wrote it.
+
+    Returns:
+        The line with typed placeholders where the patterns matched.
+    """
+    if not line:
+        return line
+    line = redact_credentials(line)
+    line = _EMAIL_PATTERN.sub("[REDACTED_EMAIL_ADDRESS]", line)
+    parts, position = [], 0
+    for address in _WEB_ADDRESS.finditer(line):
+        parts.append(_redact_numbers(line[position : address.start()]))
+        parts.append(address.group(0))
+        position = address.end()
+    parts.append(_redact_numbers(line[position:]))
+    return "".join(parts)
 
 
 def redact_value(value: Any, *, max_chars: int = 500) -> Any:

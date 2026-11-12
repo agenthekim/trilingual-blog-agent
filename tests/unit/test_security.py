@@ -283,3 +283,74 @@ def test_policy_plugin_blocks_disallowed_urls_for_any_tool(tool_context) -> None
         )
     )
     assert allowed is None
+
+
+def test_activity_lines_are_redacted_before_they_are_stored(
+    isolated_workspace, monkeypatch
+) -> None:
+    """SEC-4. What a run keeps of its activity, on the page and in its file,
+    has passed the redaction of credentials and of personal data."""
+    from google.adk.sessions import InMemorySessionService
+
+    from app import redaction, runs
+    from app.pipeline import ArticlePipeline
+
+    # Cloud DLP is enabled, and must not be asked for a line of the page.
+    asked: list[str] = []
+    monkeypatch.setenv("BLOG_AGENT_ENABLE_DLP", "true")
+    monkeypatch.setenv("DLP_PROJECT_ID", "a-project")
+    monkeypatch.setattr(
+        redaction, "_redact_with_cloud_dlp", lambda text: asked.append(text) or text
+    )
+    monkeypatch.setattr(runs, "log_activity", lambda line, run_id: None)
+
+    job = runs.Job(
+        id="d" * 32,
+        pipeline=ArticlePipeline(
+            log=lambda _: None, session_service=InMemorySessionService()
+        ),
+    )
+    key = "AIza" + "B" * 35
+    job.add_log(f"[writer] mail kim@example.com or call 010-1234-5678, key {key}")
+    job.add_log(f"[writer] the card {CARD} and the number 900101-1234567")
+    # What a person has to read stays as it is: titles, files, addresses of
+    # posts and decks, also when a long number is part of the address.
+    readable = [
+        ">>> English post finalized by a person: 'ADK 2.0 in 15 minutes'",
+        "Saved workspace/adk-memory-0a1b2c/post.ko.md (12034 characters)",
+        "Naver Blog: https://blog.naver.com/someone/223456789012",
+        "Qiita: https://qiita.com/someone/items/0123456789abcdef0123",
+        "DEV: https://dev.to/someone/adk-in-2026-11-12-4k2a",
+        f"Deck: https://docs.google.com/presentation/d/1Ab-{CARD}_xY/edit",
+        f"Opened https://example.com/posts/{CARD}?t=1731436800000 (200)",
+        "Planned 15 slides in 2026-11-12 18:43:33, 3 of 3 languages done",
+    ]
+    for line in readable:
+        job.add_log(line)
+
+    stored = [
+        json.loads(line)
+        for line in (runs.jobs_dir() / f"{job.id}.log")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert stored == job.log  # the page shows what the file holds
+    first, second, *rest = stored
+    assert first == (
+        "[writer] mail [REDACTED_EMAIL_ADDRESS] or call [REDACTED_PHONE_NUMBER], "
+        "key [REDACTED_GOOGLE_API_KEY]"
+    )
+    assert second == (
+        "[writer] the card [REDACTED_CREDIT_CARD] and the number "
+        "[REDACTED_KR_RESIDENT_NUMBER]"
+    )
+    assert rest == readable
+    assert asked == []
+
+    # Inside an address a credential and an e-mail address are still replaced.
+    assert (
+        redaction.redact_stored_line(
+            f"https://example.com/?to=kim@example.com&access_token={'a1' * 12}"
+        )
+        == "https://example.com/?to=[REDACTED_EMAIL_ADDRESS]&[REDACTED_ASSIGNED_SECRET]"
+    )

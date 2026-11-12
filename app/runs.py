@@ -35,7 +35,7 @@ from opentelemetry.trace import StatusCode
 from app.notices import Notice, join, notice, parts_of, restore
 from app.observability import log_activity, log_event, root_span
 from app.pipeline import ArticlePipeline, describe_source
-from app.redaction import redact_credentials
+from app.redaction import redact_credentials, redact_stored_line
 from app.settings import LANGUAGES, workspace_dir
 from app.tools.articles import title_of_draft
 
@@ -174,7 +174,13 @@ class Job:
         }
 
     def add_log(self, line: str) -> None:
-        line = redact_credentials(line)
+        """Keep one activity line: for the page, in the run's file, in the log.
+
+        The line is redacted before it is kept anywhere (SEC-4): credentials
+        and personal data, by ``redact_stored_line``, which says why it uses
+        regular expressions only and leaves web addresses readable.
+        """
+        line = redact_stored_line(line)
         self.log.append(line)
         del self.log[:-MAX_LOG_LINES]
         with (jobs_dir() / f"{self.id}.log").open("a", encoding="utf-8") as file:
