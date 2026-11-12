@@ -74,7 +74,7 @@ _VIEW_HEADERS = {
     "frame-ancestors 'none'",
     "X-Content-Type-Options": "nosniff",
 }
-_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>{title}</title>
+_PAGE = """<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><title>{title}</title>
 <style>body{{font:16px/1.7 system-ui,sans-serif;max-width:820px;margin:2rem auto;
 padding:0 1rem;color:#1f2328}}pre{{background:#f6f8fa;padding:12px;overflow:auto;
 border-radius:6px}}code{{font-family:ui-monospace,monospace;font-size:.9em}}
@@ -82,7 +82,7 @@ table{{border-collapse:collapse}}td,th{{border:1px solid #d0d7de;padding:6px 10p
 img{{max-width:100%}}.diagram{{margin:1rem 0}}.diagram img{{display:block;margin:0 auto;
 max-height:80vh}}.diagram summary{{font-size:.85em;color:#57606a;cursor:pointer}}.bar{{font-size:.85em;color:#57606a;border-bottom:1px solid
 #d0d7de;padding-bottom:.5rem;margin-bottom:1rem}}</style></head><body>
-<div class="bar">{title} &middot; {edit}<a href="?raw=1">raw text</a></div>{body}</body></html>"""
+<div class="bar">{title} &middot; {edit}<a href="?raw=1">{raw}</a></div>{body}</body></html>"""
 
 web = FastAPI(title="Trilingual Blog Agent", docs_url=None, redoc_url=None)
 
@@ -291,10 +291,23 @@ _PAGE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-store",
 }
-# The files a page loads: styles and script, by the names they are written
-# under and nothing else in the folder (SEC-2).
-_ASSET_NAME = re.compile(r"[a-z][a-z0-9_-]*\.(css|js)")
-_ASSET_TYPES = {"css": "text/css", "js": "text/javascript"}
+# The files a page loads: styles, script and the texts of each language, by
+# the names they are written under and nothing else in the folder (SEC-2).
+_ASSET_NAME = re.compile(r"[a-z][a-z0-9_-]*\.(css|js)|i18n/[a-z]{2}\.(json)")
+_ASSET_TYPES = {"css": "text/css", "js": "text/javascript", "json": "application/json"}
+I18N_DIR = STATIC_DIR / "i18n"
+
+
+def page_text(lang: str, key: str) -> str:
+    """A text from the catalogs of the page (WEB-13), for the few words the
+    server itself writes into a preview. An unknown language, or a text that
+    language lacks, is answered in English."""
+    for code in (lang, "en"):
+        if code in LANGUAGES:
+            texts = json.loads((I18N_DIR / f"{code}.json").read_text(encoding="utf-8"))
+            if isinstance(texts.get(key), str):
+                return texts[key]
+    return key
 
 
 def _static(name: str) -> FileResponse:
@@ -316,17 +329,18 @@ async def file_editor() -> FileResponse:
     return _static("edit.html")
 
 
-@web.get("/static/{name}")
+@web.get("/static/{name:path}")
 async def static_file(name: str) -> FileResponse:
-    """A style sheet or a script of the page, never kept by the browser: a
-    page loaded after the server changed runs the script that goes with it."""
+    """A style sheet, a script or a catalog of texts of the page, never kept
+    by the browser: a page loaded after the server changed runs the script and
+    shows the texts that go with it."""
     match = _ASSET_NAME.fullmatch(name)
     path = STATIC_DIR / name
     if match is None or not path.is_file():
         raise HTTPException(404, "No such file.")
     return FileResponse(
         path,
-        media_type=_ASSET_TYPES[match.group(1)],
+        media_type=_ASSET_TYPES[match.group(1) or match.group(2)],
         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
     )
 
@@ -371,6 +385,7 @@ async def config() -> dict[str, Any]:
     answer = {
         "platforms": [
             {
+                "code": language,
                 "language": LANGUAGE_NAMES[language],
                 "platform": policy.PLATFORM_NAMES[PLATFORM_FOR_LANGUAGE[language]],
                 "how": "api"
@@ -703,7 +718,10 @@ async def answer_approval(job_id: str, request: ApprovalRequest) -> dict[str, bo
 
 
 @web.get("/api/jobs/{job_id}/files/{name}")
-async def view_file(job_id: str, name: str, raw: int = 0) -> Any:
+async def view_file(job_id: str, name: str, raw: int = 0, lang: str = "en") -> Any:
+    """A file of the article, shown. ``lang`` is the language of the page the
+    link was on: the words around the file are shown in it (WEB-13); the file
+    is shown as it is."""
     job = _job(job_id)
     summary = await job.pipeline.overview()
     path = project_file(summary["project_id"], name)
@@ -722,12 +740,19 @@ async def view_file(job_id: str, name: str, raw: int = 0) -> Any:
     )
     # A file a person may change gets a link to the full-page editor.
     edit = (
-        f'<a href="/edit?job={job.id}&amp;file={html.escape(name)}">edit</a> &middot; '
+        f'<a href="/edit?job={job.id}&amp;file={html.escape(name)}">'
+        f"{html.escape(page_text(lang, 'previewEdit'))}</a> &middot; "
         if name in summary["editable"]
         else ""
     )
     return HTMLResponse(
-        _PAGE.format(title=html.escape(name), edit=edit, body=body),
+        _PAGE.format(
+            lang=lang if lang in LANGUAGES else "en",
+            title=html.escape(name),
+            edit=edit,
+            raw=html.escape(page_text(lang, "previewRaw")),
+            body=body,
+        ),
         headers=_VIEW_HEADERS,
     )
 

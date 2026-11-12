@@ -161,7 +161,7 @@ stage at a time and waits.
 
 | | Requirement |
 | :--- | :--- |
-| WEB-1 | One page. Heading "Trilingual Blog Agent"; under it "Automatically transform an article in one language into blog posts and presentation slides across three languages." |
+| WEB-1 | One page. Heading "Trilingual Blog Agent"; under it "Automatically transform an article into blog posts and presentation slides across three languages.", shown, like every text of the page, in the interface language (WEB-13) |
 | WEB-2 | Form: "Source document" with the hint "Share a post URL, a .md file, or your document."; attach or drop a file; "Slide options" with "Choose the slide length to create Google Slides in your configured Google Drive."; Length, Languages (checkboxes, all ticked), Audience (SLD-1); one Run button |
 | WEB-3 | Progress card: the article title, then the status line (elapsed time and latest activity while working; when finished, a link to `manifest.md`), then two 5-step progress bars. Bar 1 (generation): "Source document", "Transform", "Prepare posts", "Prepare slides" (when slides were asked for), "Summarize". Bar 2 (review and publishing after Summarize): "Review & edit", "Finalize posts", "Approve & draft", "Publish posts", "Verify & complete". Each step is computed from what the server holds, the same before and after a reload |
 | WEB-4 | Results table, the source language first, columns in the order of the work: Language (name, status badge under it), Title, Files, Slides, Next step. Nothing is listed under the table |
@@ -172,7 +172,8 @@ stage at a time and waits.
 | WEB-9 | "Ask the agent for a change": one line to the agent; the agent's reply is shown on the page when the turn ends. When the agent asks for an approval, the request is shown with Approve and Decline; an answer goes to that request only (INV-1), and other requests pending at that moment are declined and said to be. Requests left unanswered when a new line is sent are gone, and a notice says so. A request for slides typed to the agent is shown as an approval request, like a post, before anything is made (INV-6) |
 | WEB-10 | Settings shows the fixed language-to-platform mapping, per credential whether it is configured, and the Google account that decks go to, as reported by the server at that moment. No names or values of secrets |
 | WEB-11 | While a lane works, nothing else can be started in that lane; one sentence says so and names the lane. The other lane stays usable (RUN-1). A lost connection is shown. When an action ends without doing what was asked, a notice says what did not happen (INV-12) |
-| WEB-12 | Texts for people are written for people: platform names not ids, no Python lists, no exception class names |
+| WEB-12 | Texts for people are written for people: platform names not ids, no Python lists, no exception class names. A sentence is written whole in the catalog (WEB-13), not put together from pieces. Each of the three languages is named in its own writing: English, 한국어, 日本語 |
+| WEB-13 | The page, the editor and the previews are shown in English, Korean or Japanese, chosen in Settings and remembered in the browser. Every text the page itself shows comes from one catalog per language with the same keys; a text that is missing falls back to English. What the author wrote or typed, what the agent answered and what a platform returned are shown as they are |
 | WEB-15 | A localization made from an earlier text of the source is marked as older than the source, and re-translating is offered |
 
 ### 5.7 Persistence
@@ -442,7 +443,8 @@ what the models then did was read in real runs, recorded in `README.md`.
 | WEB-9 | `test_the_agents_reply_to_a_request_in_words_is_shown`, `test_an_approval_answers_one_request_and_never_another`, `test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone`, `test_an_approved_slide_request_runs_in_the_slides_lane`, `test_on_the_page_the_brief_tool_points_to_the_request_tool` |
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
 | WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
-| WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs` |
+| WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs`, `test_no_sentence_for_people_is_written_in_the_scripts` |
+| WEB-13 | `test_every_language_has_the_same_texts`, `test_every_text_the_page_asks_for_exists`, `test_no_sentence_for_people_is_written_in_the_scripts`, `test_a_preview_is_shown_in_the_language_of_the_page` |
 | WEB-15 | `test_a_localization_older_than_the_source_is_marked` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |
 | PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart` |

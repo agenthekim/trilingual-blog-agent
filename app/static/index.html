@@ -33,7 +33,7 @@
       </div>
       <button type="button" class="primary hidden" id="clearRun" data-i18n="clearBtn" style="font-size:12px; padding:0 12px; height:28px; white-space:nowrap">Clear / New article</button>
     </div>
-    <textarea id="source" required placeholder="https://qiita.com/you/items/…   or   # My draft …"></textarea>
+    <textarea id="source" required data-i18n-placeholder="sourcePlaceholder" placeholder="https://qiita.com/you/items/…   or   # My draft …"></textarea>
     <div class="under">
       <button type="button" id="attach" data-i18n="attachBtn">Attach .md file</button>
       <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" class="hidden">
@@ -46,40 +46,40 @@
       <div class="grid3">
         <label class="field"><span data-i18n="lengthLabel">Length</span>
           <select id="minutes">
-            <option value="0">No slides</option><option value="3">3 min · 3 slides</option><option value="5">5 min · 5 slides</option>
-            <option value="10">10 min · 10 slides</option><option value="15">15 min · 15 slides</option><option value="20">20 min · 20 slides</option>
-            <option value="30">30 min · 30 slides</option><option value="45">45 min · 45 slides</option><option value="60">60 min · 60 slides</option>
+            <option value="0" data-i18n="minutesNone">No slides</option><option value="3" data-i18n="minutesOption" data-i18n-params='{"n":3}'>3 min · 3 slides</option><option value="5" data-i18n="minutesOption" data-i18n-params='{"n":5}'>5 min · 5 slides</option>
+            <option value="10" data-i18n="minutesOption" data-i18n-params='{"n":10}'>10 min · 10 slides</option><option value="15" data-i18n="minutesOption" data-i18n-params='{"n":15}'>15 min · 15 slides</option><option value="20" data-i18n="minutesOption" data-i18n-params='{"n":20}'>20 min · 20 slides</option>
+            <option value="30" data-i18n="minutesOption" data-i18n-params='{"n":30}'>30 min · 30 slides</option><option value="45" data-i18n="minutesOption" data-i18n-params='{"n":45}'>45 min · 45 slides</option><option value="60" data-i18n="minutesOption" data-i18n-params='{"n":60}'>60 min · 60 slides</option>
           </select>
         </label>
-        <div class="field" role="group" aria-label="Slide languages" style="display:grid; gap:4px; font-weight:600; font-size:13px">
+        <div class="field" role="group" data-i18n-aria-label="slideLanguagesAria" aria-label="Slide languages" style="display:grid; gap:4px; font-weight:600; font-size:13px">
           <span data-i18n="languagesLabel">Languages</span>
           <div class="lang-checks">
-            <label class="check-inline"><input type="checkbox" id="slideLangEn" value="en" checked><span>English</span></label>
-            <label class="check-inline"><input type="checkbox" id="slideLangKo" value="ko" checked><span>Korean</span></label>
-            <label class="check-inline"><input type="checkbox" id="slideLangJa" value="ja" checked><span>Japanese</span></label>
+            <label class="check-inline"><input type="checkbox" id="slideLangEn" value="en" checked><span data-i18n="lang.en">English</span></label>
+            <label class="check-inline"><input type="checkbox" id="slideLangKo" value="ko" checked><span data-i18n="lang.ko"></span></label>
+            <label class="check-inline"><input type="checkbox" id="slideLangJa" value="ja" checked><span data-i18n="lang.ja"></span></label>
           </div>
         </div>
         <label class="field"><span data-i18n="audienceLabel">Audience</span>
           <select id="audience">
-            <option value="software engineers" selected>Developers</option>
-            <option value="technical experts and specialists">Experts</option>
-            <option value="students and beginners">Students</option>
-            <option value="executives and leadership">Executives</option>
-            <option value="general and non-technical audience">Non-technical</option>
+            <option value="software engineers" selected data-i18n="audience.developers">Developers</option>
+            <option value="technical experts and specialists" data-i18n="audience.experts">Experts</option>
+            <option value="students and beginners" data-i18n="audience.students">Students</option>
+            <option value="executives and leadership" data-i18n="audience.executives">Executives</option>
+            <option value="general and non-technical audience" data-i18n="audience.nontechnical">Non-technical</option>
           </select>
         </label>
       </div>
     </fieldset>
 
     <div class="formfoot">
-      <span class="muted small" data-i18n="formFoot">Takes a few minutes. You review everything before anything is posted.</span>
+      <span class="muted small" data-i18n="formFoot">The posts take a few minutes. Slides take longer the longer the talk, and you can review the posts meanwhile. Nothing is posted before you approve it.</span>
       <button class="primary" id="run" type="submit" data-i18n="runBtn">Run</button>
     </div>
   </form>
 
   <section class="card hidden" id="progress" aria-live="polite">
     <div class="runhead">
-      <h2 id="articleTitle">Starting…</h2>
+      <h2 id="articleTitle" data-i18n="starting">Starting…</h2>
       <span class="muted small" id="elapsed"></span>
     </div>
     <div class="live" id="live"></div>
@@ -92,7 +92,7 @@
   <section class="card hidden" id="langs">
     <div class="tablewrap">
       <table class="results">
-        <thead><tr><th>Language</th><th>Title</th><th>Files</th><th>Slides</th><th>Next step</th></tr></thead>
+        <thead><tr><th data-i18n="colLang">Language</th><th data-i18n="colTitle">Title</th><th data-i18n="colFiles">Files</th><th data-i18n="colSlides">Slides</th><th data-i18n="colNext">Next step</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
@@ -101,7 +101,7 @@
   <section class="card hidden" id="askCard">
     <label class="field" for="message"><span data-i18n="askTitle">Ask the agent for a change</span></label>
     <div class="askrow" style="margin-top:6px">
-      <input type="text" id="message" data-i18n="askPlaceholder" placeholder="Ask the agent for a change (e.g. replace examples, adjust tone)...">
+      <input type="text" id="message" data-i18n-placeholder="askPlaceholder" placeholder="Ask the agent for a change (e.g. replace examples, adjust tone)...">
       <button id="send" type="button" class="primary" data-i18n="sendBtn">Send</button>
     </div>
     <div id="promptChipsBar" class="prompt-chips-bar">
@@ -126,7 +126,7 @@
     <p class="muted small" id="confirmNote" style="margin:0"></p>
   </div>
   <div class="foot">
-    <button type="button" id="confirmCancel">Cancel</button>
+    <button type="button" id="confirmCancel" data-i18n="cancelBtn">Cancel</button>
     <button type="button" class="primary" id="confirmOk"></button>
   </div>
 </dialog>
@@ -172,9 +172,9 @@
       <label class="field" style="margin-bottom:4px; font-weight:600" for="uiLanguageSelect"><span data-i18n="langSettingLabel">Interface language</span></label>
       <p class="muted small" style="margin:0 0 8px" data-i18n="langSettingHint">Choose the display language for this web page.</p>
       <select id="uiLanguageSelect" style="width:100%; max-width:240px">
-        <option value="en">English (Default)</option>
-        <option value="ko">한국어 (Korean)</option>
-        <option value="ja">日本語 (Japanese)</option>
+        <option value="en" data-i18n="lang.en">English</option>
+        <option value="ko" data-i18n="lang.ko"></option>
+        <option value="ja" data-i18n="lang.ja"></option>
       </select>
     </div>
     <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px">
@@ -192,6 +192,7 @@
 
 <div id="toast" class="hidden" role="status"></div>
 
+<script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

@@ -4,6 +4,8 @@ const params = new URLSearchParams(location.search);
 const job = params.get("job") || "", name = params.get("file") || "";
 const valid = /^[0-9a-f]{32}$/.test(job) && /^(post|slides)\.(ko|en|ja)\.md$/.test(name);
 const fileUrl = `/api/jobs/${job}/files/${name}`;
+// The preview is shown in the language of the page: the server picks its words.
+const previewUrl = `${fileUrl}?lang=${currentUiLang}`;
 const language = name.split(".")[1];
 let savedText = "", savedTitle = "", hasTitle = false, hasDeck = false;
 
@@ -28,14 +30,14 @@ async function api(path, options) {
 }
 
 async function load() {
-  $("name").textContent = name || "No file";
-  document.title = `Edit ${name}`;
-  if (!valid) { say("This address does not name a file that can be edited.", true); return; }
-  $("view").href = fileUrl;
+  $("name").textContent = name || t("editor.noFile");
+  document.title = t("editor.pageTitle", {name});
+  if (!valid) { say(t("editor.badAddress"), true); return; }
+  $("view").href = previewUrl;
   try {
     const state = await (await api(`/api/jobs/${job}`)).json();
     if (!state.overview.editable.includes(name)) {
-      say(name.startsWith("post.") ? "This post can no longer be edited here: it is already public, or its file is left from an earlier text. Edit a public post on its site." : "This file cannot be edited here.", true);
+      say(name.startsWith("post.") ? t("editor.postLocked") : t("editor.fileLocked"), true);
       return;
     }
     const row = state.overview.rows.find((r) => `post.${r.language}.md` === name);
@@ -48,9 +50,7 @@ async function load() {
     const deck = name.startsWith("slides.") && (state.overview.decks || {})[language];
     hasDeck = Boolean(deck && deck.url);
     if (hasDeck) { $("deckLink").href = deck.url; $("deckTools").classList.remove("hidden"); }
-    say(hasTitle ? "Saving replaces the text the agent will post."
-      : hasDeck ? "Saving changes this file. You are then asked whether to update the Google Slides deck."
-      : "Saving changes this file. There is no Google Slides deck for this language yet.");
+    say(hasTitle ? t("editor.savingPost") : hasDeck ? t("editor.savingPlanWithDeck") : t("editor.savingPlanNoDeck"));
     // Start at the top: focusing alone would put the caret, and the view, at the end.
     $("text").focus(); $("text").setSelectionRange(0, 0); $("text").scrollTop = 0;
   } catch (error) { say(error.message, true); }
@@ -63,16 +63,16 @@ async function save() {
   // A post cannot be without a title: an emptied field goes back to the saved one.
   if (hasTitle && !$("title").value.trim()) $("title").value = savedTitle;
   if (hasTitle) body.title = $("title").value;
-  $("save").disabled = true; say("Saving…");
+  $("save").disabled = true; say(t("editor.saving"));
   let good = false;
   try {
     const data = await (await api(fileUrl, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})).json();
     savedText = $("text").value; savedTitle = $("title").value;
-    const notes = ["Saved."];
+    const notes = [t("editor.saved")];
     good = !data.check || data.check.passed;
-    if (hasTitle) notes.push((good ? "Structure matches the source." : "Differs from the source: " + data.check.errors.join(" ")) + " Finalize the post on the main page before posting it.");
-    else if (!good) notes.push("It no longer reads as a slide plan, so the deck cannot be updated from it: " + data.check.errors.join(" "));
-    if (data.secrets && data.secrets.length) notes.push("It has values that look like credentials; you will be asked about them when you finalize.");
+    if (hasTitle) notes.push(good ? t("editor.postMatches") : t("editor.postDiffers", {errors: data.check.errors.join(" ")}));
+    else if (!good) notes.push(t("editor.planBroken", {errors: data.check.errors.join(" ")}));
+    if (data.secrets && data.secrets.length) notes.push(t("editor.hasSecrets"));
     say(notes.join(" "), good ? "" : "warn");
     // The server keeps a slide plan in its regular form; show that form.
     if (good && !hasTitle) await reloadText();
@@ -106,15 +106,17 @@ function confirmAction({title, summary, note, okLabel}) {
   });
 }
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const slideNames = (numbers) => numbers.map((n) => (n === 0 ? "title slide" : n === 999 ? "thank-you slide" : String(n)));
+// Lists: the catalog has the mark that goes between two items, and each
+// counted item as a whole text for one and for more than one.
+const listed = (items) => items.join(t("listSeparator"));
+const slideNames = (numbers) => numbers.map((n) => (n === 0 ? t("slideName.title") : n === 999 ? t("slideName.thanks") : String(n)));
 function slideList(numbers) {
   const names = slideNames(numbers);
-  return `${names.slice(0, 12).join(", ")}${names.length > 12 ? ", …" : ""} (${plural(numbers.length, "slide")})`;
+  return t("slideList", {names: listed(names.length > 12 ? [...names.slice(0, 12), "…"] : names), count: tn("slideCount", numbers.length)});
 }
 function changeList(s) {
-  return [s.titles && plural(s.titles, "title"), s.bullets && `bullets on ${plural(s.bullets, "slide")}`,
-    s.notes && `speaker notes on ${plural(s.notes, "slide")}`].filter(Boolean).join(", ");
+  return listed([s.titles && tn("change.titles", s.titles), s.bullets && tn("change.bullets", s.bullets),
+    s.notes && tn("change.notes", s.notes)].filter(Boolean));
 }
 // One request to the deck at a time: the buttons wait while one is under way.
 // ``changeId`` names the changes the person was shown; the server writes only those.
@@ -130,47 +132,48 @@ async function syncDeck(direction, approved, changeId) {
 async function pushToDeck(quietIfSame) {
   try {
     const plan = await syncDeck("push", false);
-    if (!plan.slides.length) { if (!quietIfSame) say("The deck already has this text. Nothing to update."); return; }
+    if (!plan.slides.length) { if (!quietIfSame) say(t("editor.deckSame")); return; }
     const notes = [];
-    if (plan.conflicts.length) notes.push(`Also edited in the deck: ${slideNames(plan.conflicts).join(", ")}. Approving replaces that text with this file's; pull from the deck first to keep it.`);
-    if (!plan.baseline_known) notes.push("There is no record of what the deck last held, so every difference is taken from this file.");
-    if (plan.only_in_file.length) notes.push(`Not in the deck, so skipped: ${slideNames(plan.only_in_file).join(", ")}.`);
-    const ok = await confirmAction({title: "Update the Google Slides deck?",
-      summary: [["Slides that change", slideList(plan.slides)], ["What changes", changeList(plan)], ["Stays as it is", "pictures, sizes and positions"]],
-      note: notes.join(" "), okLabel: "Approve and update"});
-    if (!ok) { say("The deck was not changed."); return; }
-    say("Updating the deck…");
+    if (plan.conflicts.length) notes.push(t("editor.pushConflicts", {slides: listed(slideNames(plan.conflicts))}));
+    if (!plan.baseline_known) notes.push(t("editor.noBaselinePush"));
+    if (plan.only_in_file.length) notes.push(t("editor.onlyInFile", {slides: listed(slideNames(plan.only_in_file))}));
+    const ok = await confirmAction({title: t("editor.pushTitle"),
+      summary: [[t("editor.slidesThatChange"), slideList(plan.slides)], [t("editor.whatChanges"), changeList(plan)], [t("editor.staysLabel"), t("editor.staysValue")]],
+      note: notes.join(" "), okLabel: t("editor.pushOk")});
+    if (!ok) { say(t("editor.deckUnchanged")); return; }
+    say(t("editor.updatingDeck"));
     const done = await syncDeck("push", true, plan.change_id);
-    if (done.changed_since_preview) { say("The deck or the file changed after you were asked. Nothing was written; try again.", "warn"); return; }
-    say(`Deck updated: ${plural(done.slides.length, "slide")}.`);
+    if (done.changed_since_preview) { say(t("editor.changedSincePreview"), "warn"); return; }
+    say(tn("editor.deckUpdated", done.slides.length));
   } catch (error) { say(error.message, true); }
 }
 
 // Deck to file. The file is replaced only after the person approves.
 async function pullFromDeck() {
-  if (dirty()) { say("Save or cancel your changes before pulling from the deck.", true); return; }
+  if (dirty()) { say(t("editor.saveBeforePull"), true); return; }
   try {
     const plan = await syncDeck("pull", false);
-    if (!plan.slides.length) { say("Nothing was edited in the deck. The file is unchanged."); return; }
+    if (!plan.slides.length) { say(t("editor.pullNothing")); return; }
     const notes = [];
-    if (plan.conflicts.length) notes.push(`Also edited in this file: ${slideNames(plan.conflicts).join(", ")}. Approving replaces that text with the deck's.`);
-    if (!plan.baseline_known) notes.push("There is no record of what the deck last held, so every difference is taken from the deck.");
-    const ok = await confirmAction({title: "Bring the deck's text into this file?",
-      summary: [["Slides that change", slideList(plan.slides)], ["What changes", changeList(plan)], ["The deck", "is only read"]],
-      note: notes.join(" "), okLabel: "Approve and replace"});
+    if (plan.conflicts.length) notes.push(t("editor.pullConflicts", {slides: listed(slideNames(plan.conflicts))}));
+    if (!plan.baseline_known) notes.push(t("editor.noBaselinePull"));
+    const ok = await confirmAction({title: t("editor.pullTitle"),
+      summary: [[t("editor.slidesThatChange"), slideList(plan.slides)], [t("editor.whatChanges"), changeList(plan)], [t("editor.theDeckLabel"), t("editor.deckOnlyRead")]],
+      note: notes.join(" "), okLabel: t("editor.pullOk")});
     if (!ok) return;
     const done = await syncDeck("pull", true, plan.change_id);
-    if (done.changed_since_preview) { say("The deck or the file changed after you were asked. Nothing was written; try again.", "warn"); return; }
+    if (done.changed_since_preview) { say(t("editor.changedSincePreview"), "warn"); return; }
     await reloadText();
-    say(`File updated from the deck: ${plural(done.slides.length, "slide")}.`);
+    say(tn("editor.fileUpdated", done.slides.length));
   } catch (error) { say(error.message, true); }
 }
 
 $("save").addEventListener("click", async () => { if (await save() && hasDeck) await pushToDeck(true); });
 $("push").addEventListener("click", async () => { if (!dirty() || await save()) await pushToDeck(false); });
 $("pull").addEventListener("click", pullFromDeck);
-$("cancel").addEventListener("click", () => { location.href = valid ? fileUrl : "/"; });
+$("cancel").addEventListener("click", () => { location.href = valid ? previewUrl : "/"; });
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); $("save").click(); } });
 // Leaving with unsaved changes asks first.
 window.addEventListener("beforeunload", (e) => { if (dirty()) e.preventDefault(); });
-load();
+// The editor starts once the texts are read.
+loadCatalogs().then(() => { applyStaticTexts(); load(); });

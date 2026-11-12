@@ -618,8 +618,8 @@ def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
 ) -> None:
     import re
 
-    # The texts are in the page and in the script it loads.
-    page = client.get("/").text + client.get("/static/app.js").text
+    # The texts are in the page and in the English catalog it loads.
+    page = client.get("/").text + client.get("/static/i18n/en.json").text
     for text in (
         "<h1>Trilingual Blog Agent</h1>",
         "Automatically transform an article into blog posts and "
@@ -634,7 +634,8 @@ def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
     ):
         assert text in page
     audiences = re.findall(
-        r'<option value="[^"]+"(?: selected)?>([A-Za-z-]+)</option>', page
+        r'<option value="[^"]+"(?: selected)? data-i18n="audience\.\w+">([A-Za-z-]+)</option>',
+        page,
     )
     assert audiences == [
         "Developers",
@@ -643,10 +644,10 @@ def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
         "Executives",
         "Non-technical",
     ]
-    lengths = re.findall(r'<option value="(\d+)">', page)
+    lengths = re.findall(r'<option value="(\d+)" data-i18n="minutes', page)
     assert lengths == ["0", "3", "5", "10", "15", "20", "30", "45", "60"]
     # Columns follow the order of the work, with the next step last.
-    columns = re.findall(r"<th>([^<]+)</th>", page)
+    columns = re.findall(r'<th data-i18n="col\w+">([^<]+)</th>', page)
     assert columns == ["Language", "Title", "Files", "Slides", "Next step"]
     # Inside the progress card: title -> status bar (#live) -> bar 1 (#steps) -> bar 2 (#nextSteps).
     assert (
@@ -691,8 +692,11 @@ def test_settings_names_the_account_that_decks_go_to(client, monkeypatch) -> Non
     assert config["google_slides"] is True
     assert config["slides_account"] == "owner@example.com"
     monkeypatch.setattr(web_ui, "_config_cache", None)
-    page = client.get("/static/app.js").text
-    assert "a new file in the Google Drive of ${account}" in page
+    # The dialog that asks for the approval takes the account into its text.
+    script = client.get("/static/app.js").text
+    assert 't("driveOf", {account})' in script
+    texts = client.get("/static/i18n/en.json").json()
+    assert texts["driveOf"] == "a new file in the Google Drive of {account}"
 
 
 def test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone(client) -> None:
@@ -876,15 +880,16 @@ def test_the_page_runs_no_inline_script(client) -> None:
         assert rules["default-src"] == "'self'"
         assert rules["base-uri"] == "'none'"
         assert page.headers["cache-control"] == "no-store"
-        # The page itself agrees with its header: one script element, loaded
-        # from a file, and no handler written on an element.
+        # The page itself agrees with its header: script elements loaded
+        # from files (the texts, then the page's own), none with script
+        # written in it, and no handler written on an element.
         scripts = re.findall(r"<script\b([^>]*)>(.*?)</script>", page.text, re.S)
-        assert scripts == [(f' src="{script}"', "")]
+        assert scripts == [(' src="/static/i18n.js"', ""), (f' src="{script}"', "")]
         assert not re.search(r"<[^>]*\son[a-z]+\s*=", page.text)
         assert "javascript:" not in page.text and "<style" not in page.text
         assert client.get(script).status_code == 200
     # Nothing the scripts do needs evaluating text as code.
-    for script in ("app.js", "edit.js"):
+    for script in ("i18n.js", "app.js", "edit.js"):
         text = (web_ui.STATIC_DIR / script).read_text(encoding="utf-8")
         assert not re.search(
             r"\beval\(|new Function\(|\.innerHTML\b|document\.write", text
@@ -895,12 +900,17 @@ def test_the_files_of_the_page_are_served_fresh_and_by_name_only(client) -> None
     for name, kind in (
         ("app.css", "text/css"),
         ("edit.css", "text/css"),
+        ("i18n.js", "text/javascript"),
         ("app.js", "text/javascript"),
         ("edit.js", "text/javascript"),
+        ("i18n/en.json", "application/json"),
+        ("i18n/ko.json", "application/json"),
+        ("i18n/ja.json", "application/json"),
     ):
         answer = client.get(f"/static/{name}")
         assert answer.status_code == 200, name
-        assert answer.headers["content-type"] == f"{kind}; charset=utf-8"
+        charset = "" if kind == "application/json" else "; charset=utf-8"
+        assert answer.headers["content-type"] == kind + charset
         assert answer.headers["cache-control"] == "no-store"
         assert answer.headers["x-content-type-options"] == "nosniff"
         assert answer.text == (web_ui.STATIC_DIR / name).read_text(encoding="utf-8")
@@ -911,6 +921,39 @@ def test_the_files_of_the_page_are_served_fresh_and_by_name_only(client) -> None
             assert client.get(asked).status_code == 200, asked
     # The pages are served at their own addresses, with the policy; nothing
     # else in the folder, and nothing outside it, is served from here.
-    for name in ("index.html", "edit.html", "nothing.js", "..%2Fweb_ui.py", "APP.JS"):
+    for name in (
+        "index.html",
+        "edit.html",
+        "nothing.js",
+        "..%2Fweb_ui.py",
+        "APP.JS",
+        "i18n/xx.json",
+        "i18n/app.js",
+        "i18n%2F..%2Fapp.js",
+        "en.json",
+    ):
         assert client.get(f"/static/{name}").status_code == 404, name
     assert client.get("/static/%2e%2e/web_ui.py").status_code in (400, 404)
+
+
+def test_a_preview_is_shown_in_the_language_of_the_page(client) -> None:
+    """WEB-13: the words around a file come from the catalogs of the page."""
+    import json
+
+    address = f"/api/jobs/{JOB_ID}/files/post.ko.md"
+    for lang in ("en", "ko", "ja"):
+        texts = json.loads(
+            (web_ui.STATIC_DIR / "i18n" / f"{lang}.json").read_text(encoding="utf-8")
+        )
+        page = client.get(address, params={"lang": lang}).text
+        assert f'<html lang="{lang}">' in page
+        assert f'&amp;file=post.ko.md">{texts["previewEdit"]}</a>' in page
+        assert f'<a href="?raw=1">{texts["previewRaw"]}</a>' in page
+    assert ">편집</a>" in client.get(address, params={"lang": "ko"}).text
+    # Without a language, or with one the page does not have, English.
+    for answer in (client.get(address), client.get(address, params={"lang": "../en"})):
+        assert '<html lang="en">' in answer.text
+        assert ">edit</a>" in answer.text and ">raw text</a>" in answer.text
+    # The file itself is shown as it is, whatever the language of the page.
+    raw = client.get(address, params={"raw": 1, "lang": "ja"}).text
+    assert raw == client.get(address, params={"raw": 1}).text

@@ -159,7 +159,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| WEB-1 | 페이지는 하나이다. 헤딩은 "Trilingual Blog Agent"이고, 그 아래에 "Automatically transform an article in one language into blog posts and presentation slides across three languages."가 온다 |
+| WEB-1 | 페이지는 하나이다. 헤딩은 "Trilingual Blog Agent"이고, 그 아래에 "Automatically transform an article into blog posts and presentation slides across three languages."가 온다. 이 문장은 페이지의 다른 문구와 마찬가지로 화면 언어로 보여 준다 (WEB-13) |
 | WEB-2 | 폼: 힌트 "Share a post URL, a .md file, or your document."가 붙은 "Source document", 파일 첨부 또는 끌어다 놓기, "Choose the slide length to create Google Slides in your configured Google Drive."가 붙은 "Slide options", Length, Languages(체크박스, 모두 선택됨), Audience(SLD-1), Run 버튼 하나 |
 | WEB-3 | 진행 상황 카드: 글 제목 아래에 상태 줄(작업 중일 때는 경과 시간과 최근 활동, 끝났을 때는 `manifest.md` 링크)이 오고, 그 아래에 5단계 진행 막대 두 줄이 온다. 첫 번째 막대(자동 생성): "Source document", "Transform", "Prepare posts", "Prepare slides"(슬라이드를 요청했을 때), "Summarize". 두 번째 막대(Summarize 이후 검토 및 게시): "Review & edit", "Finalize posts", "Approve & draft", "Publish posts", "Verify & complete". 각 단계의 완료 여부는 서버 상태로 계산하며 새로고침 전후가 같다 |
 | WEB-4 | 결과 표는 입력 글의 언어(원본 언어)를 맨 먼저 두고, 열은 작업 순서대로 Language(이름, 그 아래 상태 배지), Title, Files, Slides, Next step이다. 표 아래에는 아무것도 나열하지 않는다 |
@@ -170,7 +170,8 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | WEB-9 | "Ask the agent for a change": 에이전트에게 보내는 한 줄이다. 턴이 끝나면 에이전트의 답이 페이지에 표시된다. 에이전트가 승인을 요청하면 그 요청이 Approve, Decline과 함께 표시된다. 답은 그 요청에만 전달되고(INV-1), 그 시점에 대기 중이던 다른 요청은 거절되며 그 사실이 표시된다. 새 줄을 보낼 때 답하지 않은 채 남아 있던 요청은 사라지며, 알림이 그 사실을 알린다. 에이전트에게 입력한 슬라이드 요청은 무엇이든 만들어지기 전에 게시물과 마찬가지로 승인 요청으로 표시된다(INV-6) |
 | WEB-10 | Settings는 고정된 언어-플랫폼 대응, 자격 증명별 설정 여부, 그리고 덱이 들어가는 Google 계정을 그 시점에 서버가 보고한 대로 보여 준다. 시크릿의 이름이나 값은 표시하지 않는다 |
 | WEB-11 | 레인이 작업하는 동안에는 그 레인에서 다른 어떤 것도 시작할 수 없으며, 한 문장으로 그 사실을 알리고 어느 레인인지 말한다. 다른 레인은 계속 쓸 수 있다(RUN-1). 연결이 끊기면 이를 표시한다. 작업이 요청대로 수행되지 않은 채 끝나면 무엇이 이루어지지 않았는지 알림으로 알린다(INV-12) |
-| WEB-12 | 사람에게 보여 주는 문구는 사람이 읽도록 쓴다. ID가 아닌 플랫폼 이름을 쓰고, Python 리스트나 예외 클래스 이름은 쓰지 않는다 |
+| WEB-12 | 사람에게 보여 주는 문구는 사람이 읽도록 쓴다. ID가 아닌 플랫폼 이름을 쓰고, Python 리스트나 예외 클래스 이름은 쓰지 않는다. 문장은 조각을 이어 붙이지 않고 문구집(WEB-13)에 통째로 적는다. 세 언어의 이름은 각 언어의 자기 표기인 English, 한국어, 日本語로 적는다 |
+| WEB-13 | 페이지, 편집기, 미리보기는 영어, 한국어, 일본어 중 하나로 보여 준다. 언어는 Settings에서 고르고 브라우저에 기억한다. 페이지가 스스로 보여 주는 문구는 모두 언어별 문구집 하나에서 나오며 세 문구집의 키는 같다. 빠진 문구는 영어로 보여 준다. 작성자가 쓰거나 입력한 것, 에이전트의 답, 플랫폼이 돌려준 것은 그대로 보여 준다 |
 | WEB-15 | 원본의 이전 본문으로 만든 현지화본은 원본보다 오래된 것으로 표시하고, 다시 번역하기를 제안한다 |
 
 ### 5.7 영속성
@@ -436,7 +437,8 @@ flowchart TD
 | WEB-9 | `test_the_agents_reply_to_a_request_in_words_is_shown`, `test_an_approval_answers_one_request_and_never_another`, `test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone`, `test_an_approved_slide_request_runs_in_the_slides_lane`, `test_on_the_page_the_brief_tool_points_to_the_request_tool` |
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
 | WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
-| WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs` |
+| WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs`, `test_no_sentence_for_people_is_written_in_the_scripts` |
+| WEB-13 | `test_every_language_has_the_same_texts`, `test_every_text_the_page_asks_for_exists`, `test_no_sentence_for_people_is_written_in_the_scripts`, `test_a_preview_is_shown_in_the_language_of_the_page` |
 | WEB-15 | `test_a_localization_older_than_the_source_is_marked` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |
 | PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart` |

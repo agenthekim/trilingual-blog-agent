@@ -1,290 +1,10 @@
 const $ = (id) => document.getElementById(id);
-const UI_TRANSLATIONS = {
-  en: {
-    subtitle: "Automatically transform an article into blog posts and presentation slides across three languages.",
-    settings: "Settings",
-    sourceTitle: "Source document",
-    sourceHint: "Share a post URL, a .md file, or your document.",
-    clearBtn: "Clear / New article",
-    attachBtn: "Attach .md file",
-    dropHint: "or drop a file anywhere on this card",
-    slideLegend: "Slide options",
-    slideHint: "Choose the slide length to create Google Slides in your configured Google Drive.",
-    lengthLabel: "Length",
-    languagesLabel: "Languages",
-    audienceLabel: "Audience",
-    formFoot: "Takes a few minutes. You review everything before anything is posted.",
-    runBtn: "Run",
-    askTitle: "Ask the agent for a change",
-    askPlaceholder: "Ask the agent for a change (e.g. replace examples, adjust tone)...",
-    sendBtn: "Send",
-    logTitle: "Agent activity log",
-    settingsTitle: "Platforms & integrations",
-    settingsHint: "Blog platforms per language and Google Slides integration status.",
-    setupGuideLink: "Setup guide",
-    settingsNoteText: "Credentials stay on the server; this page never sees them.",
-    howApi: "Posted through the API",
-    howHtml: "Paste-ready HTML export",
-    statusReady: "✓ Ready",
-    statusConnected: "✓ Connected",
-    statusNoCred: "No credential · Setup",
-    statusSlidesOk: "✓ Access granted",
-    statusSlidesNo: "Not set up · Setup",
-    diagramsOn: "Diagrams drawn",
-    diagramsOff: "Diagrams off",
-    langSettingLabel: "Interface language",
-    langSettingHint: "Choose the display language for this web page.",
-    doneBtn: "Done",
-    colLang: "Language",
-    colTitle: "Title",
-    colFiles: "Files",
-    colSlides: "Slides",
-    colNext: "Next step",
-    createSlidesBtn: "Create slides…",
-    createDeckBtn: "Create deck…",
-    recreateDeckBtn: "Re-create slides…",
-    speakerNotes: "Speaker notes",
-    morePromptsBtn: "More prompts…",
-    promptsModalTitle: "Prompt library & history",
-    promptsModalHint: "Click a prompt to fill the box, edit if needed, and press Send.",
-    essentialPromptsLabel: "Essential actions",
-    historyPromptsLabel: "Your popular prompts",
-    clearHistoryBtn: "Clear history",
-    noHistoryText: "No custom prompts sent yet.",
-    recentSourcesBtn: "Recent sources…",
-    sourcesModalTitle: "Recent sources",
-    sourcesModalHint: "Click an item to fill the source box, or open its previous run.",
-    noSourceHistoryText: "No source documents recorded yet.",
-    openRunBtn: "Open run",
-    openOriginal: "Open original",
-    openPost: "Open post",
-    openDraft: "Open draft",
-    finalizeBtn: "Finalize",
-    postBtn: "Post…",
-    updatePostBtn: "Update post…",
-    registerUrlBtn: "Register URL",
-    finishedText: "Finished. Review the results below.",
-    stoppedText: "Stopped.",
-    summaryRunText: "· Summary of this run: ",
-    workingText: "Working",
-    elapsedText: "elapsed",
-    stepNames: {},
-    langNames: {Korean: "Korean", English: "English", Japanese: "Japanese"},
-    statusLabels: {
-      not_posted: "Not posted",
-      exported_for_manual_post: "Ready to paste",
-      draft: "Draft created",
-      published: "Published",
-      existing_source: "Original",
-    },
-  },
-  ko: {
-    subtitle: "글 하나를 3개 국어 블로그 포스트와 발표 슬라이드로 자동 변환합니다.",
-    settings: "설정",
-    sourceTitle: "원본 문서",
-    sourceHint: "블로그 글 URL, .md 파일 또는 본문 텍스트를 입력하세요.",
-    clearBtn: "초기화 / 새 글 작성",
-    attachBtn: ".md 파일 첨부",
-    dropHint: "또는 이 카드 위에 파일을 끌어다 놓으세요",
-    slideLegend: "슬라이드 옵션",
-    slideHint: "연결된 Google Drive에 생성할 발표 슬라이드 분량을 선택하세요.",
-    lengthLabel: "발표 분량",
-    languagesLabel: "생성 언어",
-    audienceLabel: "대상 청중",
-    formFoot: "약 1~2분 소요됩니다. 모든 결과물은 게시 전에 직접 검토하고 수정할 수 있습니다.",
-    runBtn: "실행",
-    askTitle: "에이전트에게 수정 요청",
-    askPlaceholder: "수정할 내용을 입력하세요 (예: 제목 축약, 문체 변경, 슬라이드 재생성)...",
-    sendBtn: "전송",
-    logTitle: "에이전트 실행 로그",
-    settingsTitle: "연동 플랫폼 및 서비스",
-    settingsHint: "언어별 블로그 플랫폼 및 Google Slides 연동 상태입니다.",
-    setupGuideLink: "설정 가이드",
-    settingsNoteText: "인증 정보는 서버에만 안전하게 보관되며 웹 페이지로 노출되지 않습니다.",
-    howApi: "REST API 자동 게시",
-    howHtml: "붙여넣기용 HTML 생성",
-    statusReady: "✓ 사용 가능",
-    statusConnected: "✓ 연결됨",
-    statusNoCred: "미설정 · 가이드",
-    statusSlidesOk: "✓ 연결됨",
-    statusSlidesNo: "미설정 · 가이드",
-    diagramsOn: "다이어그램 이미지 변환 켜짐",
-    diagramsOff: "다이어그램 이미지 변환 꺼짐",
-    langSettingLabel: "화면 표시 언어",
-    langSettingHint: "웹 페이지에 표시할 언어를 선택하세요.",
-    doneBtn: "완료",
-    colLang: "언어",
-    colTitle: "제목",
-    colFiles: "파일",
-    colSlides: "슬라이드",
-    colNext: "다음 단계",
-    createSlidesBtn: "슬라이드 생성…",
-    createDeckBtn: "덱 생성…",
-    recreateDeckBtn: "슬라이드 재생성…",
-    speakerNotes: "발표자 노트",
-    morePromptsBtn: "전체 프롬프트…",
-    promptsModalTitle: "프롬프트 라이브러리 및 히스토리",
-    promptsModalHint: "항목을 클릭해 입력창에 채운 뒤 필요시 수정하고 전송을 누르세요.",
-    essentialPromptsLabel: "필수 기능 프롬프트",
-    historyPromptsLabel: "자주 사용한 프롬프트 (인기순)",
-    clearHistoryBtn: "기록 비우기",
-    noHistoryText: "아직 직접 전송한 프롬프트 기록이 없습니다.",
-    recentSourcesBtn: "최근 원본 문서…",
-    sourcesModalTitle: "최근 원본 문서",
-    sourcesModalHint: "항목을 클릭해 입력창에 채우거나 이전 실행 결과를 바로 여세요.",
-    noSourceHistoryText: "아직 저장된 원본 문서 기록이 없습니다.",
-    openRunBtn: "결과 열기",
-    openOriginal: "원본 글 열기",
-    openPost: "게시된 글 열기",
-    openDraft: "초안 열기",
-    finalizeBtn: "검토 완료",
-    postBtn: "게시하기…",
-    updatePostBtn: "게시물 업데이트…",
-    registerUrlBtn: "URL 등록",
-    finishedText: "완료되었습니다. 아래에서 결과를 확인하세요.",
-    stoppedText: "중지됨.",
-    summaryRunText: "· 실행 요약 보고서: ",
-    workingText: "작업 진행 중",
-    elapsedText: "경과",
-    stepNames: {
-      "Source document": "원본 문서 확인",
-      "Transform": "번역 및 변환",
-      "Prepare posts": "블로그 글 준비",
-      "Prepare slides": "슬라이드 제작",
-      "Summarize": "결과 요약",
-      "Review & edit": "검토 및 편집",
-      "Finalize posts": "원고 확정",
-      "Approve & draft": "승인 및 초안 생성",
-      "Publish posts": "블로그 게시",
-      "Verify & complete": "게시 확인 및 완료",
-    },
-    langNames: {Korean: "한국어", English: "영어", Japanese: "일본어"},
-    statusLabels: {
-      not_posted: "미게시",
-      exported_for_manual_post: "붙여넣기 준비됨",
-      draft: "초안 생성됨",
-      published: "게시 완료",
-      existing_source: "원본",
-    },
-  },
-  ja: {
-    subtitle: "記事から3言語のブログ投稿と発表スライドを自動生成します。",
-    settings: "設定",
-    sourceTitle: "元記事（ソース）",
-    sourceHint: "記事のURL、.mdファイル、または本文テキストを入力してください。",
-    clearBtn: "クリア / 新規作成",
-    attachBtn: ".mdファイルを添付",
-    dropHint: "またはこのカードにファイルをドロップ",
-    slideLegend: "スライド作成オプション",
-    slideHint: "連携済みのGoogle Driveに作成する発表スライドの分量を指定します。",
-    lengthLabel: "発表時間・枚数",
-    languagesLabel: "作成する言語",
-    audienceLabel: "対象読者・聴衆",
-    formFoot: "1〜2分ほどかかります。公開前にすべての内容を確認・編集できます。",
-    runBtn: "実行",
-    askTitle: "エージェントに修正を依頼",
-    askPlaceholder: "修正したい内容を入力してください（例: タイトルの短縮、トーン調整、スライド再作成）...",
-    sendBtn: "送信",
-    logTitle: "エージェント実行ログ",
-    settingsTitle: "連携プラットフォーム・サービス",
-    settingsHint: "言語別のブログ投稿先とGoogle Slidesの連携ステータスです。",
-    setupGuideLink: "セットアップガイド",
-    settingsNoteText: "認証情報はサーバー側で安全に管理され、この画面には表示されません。",
-    howApi: "REST API 自動連携",
-    howHtml: "貼り付け用 HTML 出力",
-    statusReady: "✓ 利用可能",
-    statusConnected: "✓ 連携済み",
-    statusNoCred: "未設定 · ガイド",
-    statusSlidesOk: "✓ 連携済み",
-    statusSlidesNo: "未設定 · ガイド",
-    diagramsOn: "図表レンダリング有効",
-    diagramsOff: "図表レンダリング無効",
-    langSettingLabel: "画面の表示言語",
-    langSettingHint: "このページの表示言語を選択してください。",
-    doneBtn: "完了",
-    colLang: "言語",
-    colTitle: "タイトル",
-    colFiles: "ファイル",
-    colSlides: "スライド",
-    colNext: "次のステップ",
-    createSlidesBtn: "スライド作成…",
-    createDeckBtn: "デッキ作成…",
-    recreateDeckBtn: "スライド再作成…",
-    speakerNotes: "発表者ノート",
-    morePromptsBtn: "すべてのプロンプト…",
-    promptsModalTitle: "プロンプトライブラリ＆履歴",
-    promptsModalHint: "項目をクリックして入力欄に入れ、必要に応じて編集し送信します。",
-    essentialPromptsLabel: "定番プロンプト",
-    historyPromptsLabel: "よく使うプロンプト（人気順）",
-    clearHistoryBtn: "履歴をクリア",
-    noHistoryText: "まだ送信されたカスタムプロンプトはありません。",
-    recentSourcesBtn: "最近のソース…",
-    sourcesModalTitle: "最近のソース記事",
-    sourcesModalHint: "項目をクリックして入力欄に入れるか、前回の実行結果を開きます。",
-    noSourceHistoryText: "まだ記録されたソース記事はありません。",
-    openRunBtn: "結果を開く",
-    openOriginal: "元記事を開く",
-    openPost: "公開記事を開く",
-    openDraft: "下書きを開く",
-    finalizeBtn: "確定する",
-    postBtn: "投稿する…",
-    updatePostBtn: "投稿を更新…",
-    registerUrlBtn: "URLを登録",
-    finishedText: "完了しました。以下の結果をご確認ください。",
-    stoppedText: "停止しました。",
-    summaryRunText: "· 実行サマリー: ",
-    workingText: "処理中",
-    elapsedText: "経過",
-    stepNames: {
-      "Source document": "元記事の取得",
-      "Transform": "翻訳・変換",
-      "Prepare posts": "ブログ記事の作成",
-      "Prepare slides": "スライドの作成",
-      "Summarize": "サマリー作成",
-      "Review & edit": "確認・編集",
-      "Finalize posts": "記事の確定",
-      "Approve & draft": "承認・下書き作成",
-      "Publish posts": "記事の公開",
-      "Verify & complete": "公開確認・完了",
-    },
-    langNames: {Korean: "韓国語", English: "英語", Japanese: "日本語"},
-    statusLabels: {
-      not_posted: "未投稿",
-      exported_for_manual_post: "貼り付け準備完了",
-      draft: "下書き作成済み",
-      published: "公開済み",
-      existing_source: "原文",
-    },
-  }
-};
-const UI_LANG_KEY = "tba.ui_lang";
-let currentUiLang = localStorage.getItem(UI_LANG_KEY) || "en";
-
 function applyUiLanguage(lang) {
-  if (!UI_TRANSLATIONS[lang]) lang = "en";
+  if (!UI_LANGS.includes(lang)) lang = "en";
   currentUiLang = lang;
   localStorage.setItem(UI_LANG_KEY, lang);
-  document.documentElement.lang = lang;
   if ($("uiLanguageSelect")) $("uiLanguageSelect").value = lang;
-  const t = UI_TRANSLATIONS[lang];
-  for (const [key, text] of Object.entries(t)) {
-    const nodes = document.querySelectorAll(`[data-i18n="${key}"]`);
-    nodes.forEach((node) => {
-      if (node.tagName === "INPUT" || node.tagName === "TEXTAREA") {
-        node.placeholder = text;
-      } else {
-        node.textContent = text;
-      }
-    });
-  }
-  const ths = document.querySelectorAll("table.results thead th");
-  if (ths.length >= 5) {
-    ths[0].textContent = t.colLang;
-    ths[1].textContent = t.colTitle;
-    ths[2].textContent = t.colFiles;
-    ths[3].textContent = t.colSlides;
-    ths[4].textContent = t.colNext;
-  }
+  applyStaticTexts();
   if ($("setupGuideAnchor") && typeof setupUrlForLang === "function") {
     $("setupGuideAnchor").href = setupUrlForLang(lang);
   }
@@ -311,10 +31,8 @@ function applyUiLanguage(lang) {
   }
 }
 
-const STATUS = {
-  not_posted: ["Not posted", ""], exported_for_manual_post: ["Ready to paste", "warn"],
-  draft: ["Draft created", "ok"], published: ["Published", "ok"], existing_source: ["Original", "ok"],
-};
+// The colour of a status badge; its words are the texts status.<status>.
+const STATUS_TONE = {not_posted: "", exported_for_manual_post: "warn", draft: "ok", published: "ok", existing_source: "ok"};
 const SETTINGS_KEY = "tba.settings", LAST_RUN_KEY = "tba.lastRun";
 const RUN_ID = /^[0-9a-f]{32}$/;
 let jobId = null, timer = null, state = null, missed = 0, restoredJob = null;
@@ -338,7 +56,7 @@ function toast(text, ms = 4000) {
 }
 function clock(ms) {
   const s = Math.max(0, Math.round(ms / 1000));
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  return s < 60 ? t("clockSeconds", {s}) : t("clockMinutes", {m: Math.floor(s / 60), s: String(s % 60).padStart(2, "0")});
 }
 async function api(path, body, method) {
   const response = await fetch(path, body === undefined ? {} : {
@@ -353,7 +71,12 @@ async function api(path, body, method) {
   }
   return data;
 }
-const fileUrl = (name) => `/api/jobs/${jobId}/files/${encodeURIComponent(name)}`;
+// A preview is shown in the language of the page: the server picks its words.
+const fileUrl = (name) => `/api/jobs/${jobId}/files/${encodeURIComponent(name)}?lang=${currentUiLang}`;
+// The name of a language is written in that language, whatever the page's.
+const languageName = (row) => t("lang." + row.language, null, row.language_name);
+// The steps come from the server by their English names; step.<name> is their text.
+const stepText = (name) => t("step." + name.toLowerCase().replace(/[^a-z]+/g, "_"), null, name);
 
 // One dialog for every action that writes outside this machine.
 // Resolves to true or false; with ``choices`` to the chosen value, or null when cancelled.
@@ -395,12 +118,11 @@ function keep(key, attrs) {
 // slidesBusy and pBusy: whether the slides lane and the main lane are working.
 // A button is held back only while its own lane works.
 function languageRow(row, slidesBusy, pBusy) {
-  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   // "Ready to paste" would be untrue for a text nobody has finalized yet.
   const shown = row.status === "exported_for_manual_post" && row.next === "review" ? "not_posted" : row.status;
-  const [, tone] = STATUS[shown] || [shown, ""];
-  const label = (t.statusLabels && t.statusLabels[shown]) || (STATUS[shown] ? STATUS[shown][0] : shown);
-  const langName = (t.langNames && t.langNames[row.language_name]) || row.language_name;
+  const tone = STATUS_TONE[shown] || "";
+  const label = t("status." + shown, null, shown);
+  const langName = languageName(row);
 
   // Files: the posts. Editing starts from the preview a link opens.
   const files = el("td", {class: "files"}, ...row.files.map((name) => el("div", {},
@@ -412,13 +134,13 @@ function languageRow(row, slidesBusy, pBusy) {
     el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
   if (row.slides_file) {
     slideItems.push(el("div", {class: "muted small"},
-      el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, t.speakerNotes || "Speaker notes")));
+      el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, t("speakerNotes"))));
     if (!(row.deck && row.deck.url)) slideItems.push(el("div", {},
-      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => createDeck(row)}, t.createDeckBtn || "Create deck…")));
+      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => createDeck(row)}, t("createDeckBtn"))));
   } else {
     // No plan yet: slides are asked for here, with a person's approval (INV-6).
     slideItems.push(el("div", {},
-      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => requestSlides(row)}, t.createSlidesBtn || "Create slides…")));
+      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => requestSlides(row)}, t("createSlidesBtn"))));
   }
   const slidesCol = el("td", {class: "slides-col"}, ...slideItems);
 
@@ -426,44 +148,30 @@ function languageRow(row, slidesBusy, pBusy) {
   const next = el("div", {class: "next"});
   const link = (text) => el("a", {href: row.url, target: "_blank", rel: "noopener"}, text);
   const drafted = row.status === "draft";
-  if (row.next === "original") next.append(link(t.openOriginal || "Open original"));
-  else if (row.next === "public") next.append(link(t.openPost || "Open post"));
+  if (row.next === "original") next.append(link(t("openOriginal")));
+  else if (row.next === "public") next.append(link(t("openPost")));
   else {
-    if (row.url) next.append(link(drafted ? (t.openDraft || "Open draft") : (t.openPost || "Open post")));
+    if (row.url) next.append(link(drafted ? t("openDraft") : t("openPost")));
     if (row.next === "review") {
-      const reviewHint = currentUiLang === "ko"
-        ? (drafted ? "초안 생성 후 제목이나 본문이 수정되었습니다. 검토 완료를 눌러 반영하세요." : `post.${row.language}.md 파일을 검토하고 필요하면 수정한 뒤 검토 완료를 누르세요.`)
-        : currentUiLang === "ja"
-        ? (drafted ? "下書き作成後にタイトルまたは本文が変更されました。確定して更新してください。" : `post.${row.language}.md を確認・編集し、準備ができたら確定してください。`)
-        : (drafted ? "The title or text changed after the draft was made. Finalize it to update the post." : `Review post.${row.language}.md and edit it if needed. Finalize it when it is ready.`);
+      const reviewHint = drafted ? t("reviewHintDrafted") : t("reviewHint", {file: `post.${row.language}.md`});
       next.append(el("span", {class: "muted small"}, reviewHint),
-        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: pBusy, onclick: () => finalize(row)}, t.finalizeBtn || "Finalize")));
+        el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: pBusy, onclick: () => finalize(row)}, t("finalizeBtn"))));
     } else if (row.next === "post") {
-      const postHint = currentUiLang === "ko"
-        ? "원고가 확정되었습니다. 게시 승인 시 태그와 초안/공개 여부를 선택할 수 있습니다."
-        : currentUiLang === "ja"
-        ? "確定済みです。承認時にタグと下書き・公開を選択できます。"
-        : "Finalized. You choose tags and draft or public when you approve.";
       next.append(
-        el("span", {class: "muted small"}, postHint),
+        el("span", {class: "muted small"}, t("postHint")),
         el("div", {class: "inline"}, el("button", {class: "primary", type: "button", disabled: pBusy,
-          onclick: () => postDraft(row, drafted)}, drafted ? (t.updatePostBtn || "Update post…") : (t.postBtn || "Post…"))));
+          onclick: () => postDraft(row, drafted)}, drafted ? t("updatePostBtn") : t("postBtn"))));
     } else if (row.next === "paste") {
-      const pasteHint = currentUiLang === "ko"
-        ? "원고가 확정되었습니다. naver_blog.html 내용을 네이버 에디터에 붙여넣어 발행한 뒤 URL을 등록하세요."
-        : currentUiLang === "ja"
-        ? "確定済みです。naver_blog.html をNaverエディタに貼り付けて公開し、URLを登録してください。"
-        : "Finalized. Paste naver_blog.html into the Naver editor, post, then register the URL.";
-      const url = keep(`url:${row.platform}`, {placeholder: "URL after you post it", "aria-label": `URL on ${row.platform_name}`});
-      next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: pBusy, onclick: () => recordUrl(row, url.value)}, t.registerUrlBtn || "Register URL")),
-        el("span", {class: "muted small"}, pasteHint));
+      const url = keep(`url:${row.platform}`, {placeholder: t("urlPlaceholder"), "aria-label": t("urlAria", {platform: row.platform_name})});
+      next.append(el("div", {class: "inline"}, url, el("button", {type: "button", disabled: pBusy, onclick: () => recordUrl(row, url.value)}, t("registerUrlBtn"))),
+        el("span", {class: "muted small"}, t("pasteHint")));
     }
   }
   // A localization made from an earlier text of the source says so, and
   // offers to make it again: the request is put in the message box, unsent.
   const stale = row.older_than_source ? el("div", {class: "stale"},
-    el("span", {class: "badge warn", title: "The source article was edited after this post was translated from it."}, "Older than the source"),
-    el("button", {type: "button", class: "ghost small", onclick: offerRetranslation}, "Re-translate…")) : null;
+    el("span", {class: "badge warn", title: t("olderThanSourceTitle")}, t("olderThanSource")),
+    el("button", {type: "button", class: "ghost small", onclick: offerRetranslation}, t("retranslateBtn"))) : null;
   return el("tr", {},
     el("td", {class: "lang"}, el("div", {class: "who"}, langName), el("span", {class: "badge " + tone}, label), stale),
     el("td", {class: "title"}, row.title),
@@ -496,10 +204,7 @@ function render(data) {
       $("source").value = cleanSourceText(o.source_text);
     }
   }
-  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
-  const readingText = currentUiLang === "ko" ? "원본 문서를 읽는 중…" : currentUiLang === "ja" ? "元記事を読み込み中…" : "Reading the source document…";
-  const noArticleText = currentUiLang === "ko" ? "저장된 원고가 없습니다" : currentUiLang === "ja" ? "記事が保存されませんでした" : "No article was stored";
-  $("articleTitle").textContent = o.title || (busy ? readingText : noArticleText);
+  $("articleTitle").textContent = o.title || (busy ? t("readingSource") : t("noArticle"));
   // The server says which steps are done, judged against what this run was asked for.
   const firstOpen = data.progress.findIndex((step) => !step.done);
   const postSteps = data.post_progress || [];
@@ -510,8 +215,7 @@ function render(data) {
   const postsReady = !postsBusy && data.progress.length > 0;
   const firstPostOpen = postSteps.findIndex((step) => !step.done);
   const stepLi = (step, isNow) => {
-    const label = (t.stepNames && t.stepNames[step.name]) || step.name;
-    return el("li", {class: step.done ? "done" : (isNow ? "now" : "")}, (step.done ? "✓ " : "") + label);
+    return el("li", {class: step.done ? "done" : (isNow ? "now" : "")}, (step.done ? "✓ " : "") + stepText(step.name));
   };
   const spacerLi = () => el("li", {class: "spacer"}, "");
 
@@ -548,13 +252,13 @@ function render(data) {
   drawLive();
 
   const notices = [];
-  if (data.error) notices.push(el("div", {class: "notice err"}, el("span", {class: "grow"}, "Stopped with an error: " + data.error)));
+  if (data.error) notices.push(el("div", {class: "notice err"}, el("span", {class: "grow"}, t("stoppedWithError", {error: data.error}))));
   if (data.notice) notices.push(el("div", {class: "notice note"}, el("span", {class: "grow"}, data.notice)));
   if (!postsBusy) for (const approval of data.approvals) notices.push(el("div", {class: "notice ask"},
     el("span", {class: "grow"}, approval.hint, data.approvals.length > 1
-      ? el("div", {class: "muted small"}, "The agent takes one answer at a time: answering this one declines the others.") : null),
-    el("button", {type: "button", onclick: () => act("approval", {id: approval.id, confirmed: false})}, "Decline"),
-    el("button", {type: "button", class: "primary", onclick: () => act("approval", {id: approval.id, confirmed: true})}, "Approve")));
+      ? el("div", {class: "muted small"}, t("oneAnswerAtATime")) : null),
+    el("button", {type: "button", onclick: () => act("approval", {id: approval.id, confirmed: false})}, t("declineBtn")),
+    el("button", {type: "button", class: "primary", onclick: () => act("approval", {id: approval.id, confirmed: true})}, t("approveBtn"))));
   // Rebuilt only when something changed: a button replaced between a press
   // and its release would swallow the click.
   const noticesKey = JSON.stringify([data.error, data.notice, postsBusy ? [] : data.approvals]);
@@ -577,22 +281,21 @@ function render(data) {
   $("reply").textContent = data.reply || "";
   $("run").disabled = busy;
   $("send").disabled = postsBusy;
-  $("send").title = postsBusy ? "The agent is still working." : "";
+  $("send").title = postsBusy ? t("agentWorking") : "";
 }
 
 function drawLive() {
   if (!state || !jobId || !state.overview) return;
-  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   const lastLine = (state.log && state.log.length ? state.log[state.log.length - 1] : "").split("\n")[0];
   if (missed >= 2) {
     liveKey = null;
     $("elapsed").textContent = "";
-    $("live").replaceChildren(el("span", {class: "muted"}, "Lost contact with the server. Trying again…"));
+    $("live").replaceChildren(el("span", {class: "muted"}, t("lostContact")));
   } else if (state.busy) {
     liveKey = null;
-    $("elapsed").textContent = `${clock(Date.now() - (busySince || Date.now()))} ${t.elapsedText || "elapsed"}`;
-    $("live").replaceChildren(el("span", {class: "spinner"}), el("span", {}, t.workingText || "Working"),
-      el("span", {class: "last"}, `· ${lastLine || "starting"} · quiet for ${clock(Date.now() - lastLogAt)}`));
+    $("elapsed").textContent = t("elapsedText", {time: clock(Date.now() - (busySince || Date.now()))});
+    $("live").replaceChildren(el("span", {class: "spinner"}), el("span", {}, t("workingText")),
+      el("span", {class: "last"}, t("liveDetail", {last: lastLine || t("liveStarting"), time: clock(Date.now() - lastLogAt)})));
   } else {
     const manifest = state.overview.manifest;
     const stopped = Boolean(state.error || (!state.overview.title && state.notice));
@@ -600,8 +303,8 @@ function drawLive() {
     if (key === liveKey) return;   // keep the link in place; a rebuilt link can swallow a click
     liveKey = key;
     $("elapsed").textContent = "";
-    const done = [el("span", {class: "muted"}, stopped ? (t.stoppedText || "Stopped.") : (t.finishedText || "Finished. Review the results below."))];
-    if (manifest) done.push(el("span", {class: "muted"}, t.summaryRunText || "· Summary of this run: ", el("a", {href: fileUrl(manifest), target: "_blank", rel: "noopener"}, manifest)));
+    const done = [el("span", {class: "muted"}, stopped ? t("stoppedText") : t("finishedText"))];
+    if (manifest) done.push(el("span", {class: "muted"}, t("summaryRunText"), el("a", {href: fileUrl(manifest), target: "_blank", rel: "noopener"}, manifest)));
     $("live").replaceChildren(...done);
   }
 }
@@ -621,53 +324,48 @@ async function poll() {
   if (!jobId) return;
   try { render(await api(`/api/jobs/${jobId}`)); missed = 0; }
   catch (error) {
-    if (error.status === 404) forget(state && state.overview ? "That run is not on this server any more. Its files remain in the workspace folder." : "");
+    if (error.status === 404) forget(state && state.overview ? t("runGone") : "");
     else { missed += 1; if (missed === 2) $("run").disabled = false; drawLive(); }
   }
 }
 
-const TAG_RULES = {
-  qiita:
-    'Qiita takes one to five tags without spaces, separated by commas.',
-  devto:
-    'DEV Community takes up to four tags, lowercase letters and digits only, separated by commas.',
-};
+// The rule of each platform, in words, is the text tagRule.<platform>.
 function checkTags(platform, tags) {
   if (platform === "qiita") {
-    if (tags.length < 1 || tags.length > 5 || tags.some((t) => /\s/.test(t)))
-      return TAG_RULES.qiita;
+    if (tags.length < 1 || tags.length > 5 || tags.some((tag) => /\s/.test(tag)))
+      return t("tagRule.qiita");
   } else if (platform === "devto") {
-    if (tags.length > 4 || tags.some((t) => !/^[a-z0-9]{1,30}$/.test(t)))
-      return TAG_RULES.devto;
+    if (tags.length > 4 || tags.some((tag) => !/^[a-z0-9]{1,30}$/.test(tag)))
+      return t("tagRule.devto");
   }
   return null;
 }
 async function postDraft(row, update) {
   const isQiita = row.platform === "qiita";
-  const ruleText = TAG_RULES[row.platform] || "";
+  const ruleText = t("tagRule." + row.platform, null, "");
   const tagInput = keep(`tags:${row.platform}`, {
     id: "confirmTags",
     placeholder: isQiita ? "Python, Docker, GCP, AI, Architecture" : "python, docker, gcp, tutorial",
-    "aria-label": `Tags for ${row.platform_name}`,
+    "aria-label": t("tagsAria", {platform: row.platform_name}),
   });
   const tagError = el("span", {class: "small hidden", style: "color:var(--bad); font-weight:400"}, "");
   tagInput.addEventListener("input", () => tagError.classList.add("hidden"));
   let parsedTags = [];
   // The person approving decides the tags and how far the post goes; the agent cannot.
   const visibility = await confirmAction({
-    title: `${update ? "Update the post" : "Post"} on ${row.platform_name}?`,
-    summary: [["Title", row.title]],
-    extra: [el("label", {class: "field", for: "confirmTags"}, "Tags", tagInput, el("span", {class: "hint"}, ruleText), tagError)],
+    title: update ? t("updatePostTitle", {platform: row.platform_name}) : t("postTitle", {platform: row.platform_name}),
+    summary: [[t("titleLabel"), row.title]],
+    extra: [el("label", {class: "field", for: "confirmTags"}, t("tagsLabel"), tagInput, el("span", {class: "hint"}, ruleText), tagError)],
     validate: () => {
-      parsedTags = tagInput.value.split(",").map((t) => (isQiita ? t.trim() : t.trim().toLowerCase())).filter(Boolean);
+      parsedTags = tagInput.value.split(",").map((tag) => (isQiita ? tag.trim() : tag.trim().toLowerCase())).filter(Boolean);
       const err = checkTags(row.platform, parsedTags);
       if (err) { tagError.textContent = err; tagError.classList.remove("hidden"); tagInput.focus(); return false; }
       return true;
     },
     choices: [
-      {value: "draft", label: "Draft", hint: "Not public. You publish it yourself on the site."},
-      {value: "public", label: "Public", hint: "Visible to everyone as soon as you approve."}],
-    note: "This uses your account on that platform.", okLabel: "Approve and post"});
+      {value: "draft", label: t("visibility.draft"), hint: t("visibility.draftHint")},
+      {value: "public", label: t("visibility.public"), hint: t("visibility.publicHint")}],
+    note: t("postNote"), okLabel: t("approvePostBtn")});
   if (visibility) act("draft", {platform: row.platform, tags: parsedTags, approved: true, public: visibility === "public"});
 }
 async function finalize(row) {
@@ -676,24 +374,30 @@ async function finalize(row) {
     if (done.needs_acknowledgement) {
       // Shown as type and line only; the values never leave the server.
       const accepted = await confirmAction({
-        title: `The ${row.language_name} text has values that look like credentials`,
-        summary: done.findings.slice(0, 40).map((f) => [`Line ${f.line}`, f.type.replaceAll("_", " ").toLowerCase()]),
-        note: `${done.findings.length} in all${done.findings.length > 40 ? ", the first 40 shown" : ""}. Remove them in the editor if they are real. If they are examples, you can finalize anyway.`,
-        okLabel: "They are not real: finalize"});
+        title: t("credentialsTitle", {language: languageName(row)}),
+        summary: done.findings.slice(0, 40).map((f) => [t("lineN", {line: f.line}), f.type.replaceAll("_", " ").toLowerCase()]),
+        note: done.findings.length > 40 ? t("credentialsNoteMany", {count: done.findings.length}) : t("credentialsNote", {count: done.findings.length}),
+        okLabel: t("credentialsOk")});
       if (!accepted) return;
       done = await api(`/api/jobs/${jobId}/finalize`, {language: row.language, acknowledge_findings: true});
     }
-    if (done.check && !done.check.passed) toast(`Finalized. Note: its structure differs from the source: ${done.check.errors.join(" ")}`, 9000);
+    if (done.check && !done.check.passed) toast(t("finalizedDiffers", {errors: done.check.errors.join(" ")}), 9000);
     await poll();
   } catch (error) { toast(error.message, 6000); }
 }
 function recordUrl(row, url) {
-  if (!/^https:\/\/\S+$/.test(url.trim())) { toast("Enter the https URL of the post."); return; }
+  if (!/^https:\/\/\S+$/.test(url.trim())) { toast(t("enterUrl")); return; }
   act("url", {platform: row.platform, url: url.trim()});
 }
 async function loadConfig() {
   if (!config) config = await api("/api/config");
   return config;
+}
+// An audience is sent to the server in English; the form has its name in
+// the language of the page. One typed to the agent is shown as it was typed.
+function audienceText(value) {
+  const option = [...$("audience").options].find((o) => o.value === value);
+  return option ? option.textContent : value;
 }
 // Slides for a language: a plan and its deck. The dialog is the approval; it
 // names the language, the length, the audience and the account (INV-6), and
@@ -703,18 +407,18 @@ async function requestSlides(row) {
   try { account = (await loadConfig()).slides_account; } catch (e) {}
   const hasPlan = Boolean(row.slides_file), hasDeck = Boolean(row.deck && row.deck.url);
   const summary = [
-    ["Language", row.language_name],
-    ["Length", `${row.slides_minutes} minutes, one slide per minute`],
-    ["Audience", (state && state.overview && state.overview.slides_audience) || "software engineers"],
-    ["From", `the latest post.${row.language}.md`],
-    ["Where", account ? `a new file in the Google Drive of ${account}` : "a new file in your Google Drive"],
+    [t("slidesLanguageLabel"), languageName(row)],
+    [t("slidesLengthLabel"), t("slidesLengthValue", {minutes: row.slides_minutes})],
+    [t("slidesAudienceLabel"), audienceText((state && state.overview && state.overview.slides_audience) || "software engineers")],
+    [t("fromLabel"), t("slidesFromValue", {file: `post.${row.language}.md`})],
+    [t("whereLabel"), account ? t("driveOf", {account}) : t("driveYours")],
   ];
-  if (hasPlan) summary.push(["Plan", "there is a plan already; what was changed in its speaker notes is replaced by the new plan"]);
-  if (hasDeck) summary.push(["Deck", "there is a deck already; a new file is made and the earlier deck stays in Drive"]);
+  if (hasPlan) summary.push([t("planLabel"), t("slidesPlanReplaced")]);
+  if (hasDeck) summary.push([t("deckLabel"), t("slidesDeckKept")]);
   const ok = await confirmAction({
-    title: hasPlan ? `Make the ${row.language_name} slides and deck again?` : `Make ${row.language_name} slides and a Google Slides deck?`,
+    title: hasPlan ? t("slidesAgainTitle", {language: languageName(row)}) : t("slidesTitle", {language: languageName(row)}),
     summary: summary,
-    okLabel: hasPlan ? "Approve and make again" : "Approve and make"});
+    okLabel: hasPlan ? t("slidesAgainOk") : t("slidesOk")});
   if (ok) act("slides", {languages: [row.language], minutes: 0, audience: "", approved: true});
 }
 // A deck from the plan as it is; the plan is not touched.
@@ -722,36 +426,35 @@ async function createDeck(row) {
   // Name the account, so a deck never lands in a Drive nobody expected.
   let account = null;
   try { account = (await loadConfig()).slides_account; } catch (e) {}
-  const whereDesc = account ? `a new file in the Google Drive of ${account}` : "a new file in your Google Drive";
+  const whereDesc = account ? t("driveOf", {account}) : t("driveYours");
   const ok = await confirmAction({
-    title: `Create the ${row.language_name} Google Slides deck?`,
-    summary: [["From", row.slides_file || "speaker notes"], ["Where", whereDesc], ["Contains", "one slide per minute, script in the speaker notes"]],
-    okLabel: "Approve and create"});
+    title: t("deckTitle", {language: languageName(row)}),
+    summary: [[t("fromLabel"), row.slides_file || t("deckFromNotes")], [t("whereLabel"), whereDesc], [t("containsLabel"), t("deckContainsValue")]],
+    okLabel: t("deckOk")});
   if (ok) act("deck", {language: row.language, approved: true});
 }
 
 const MAX_FILE_BYTES = 80000;
 async function loadFile(file) {
   if (!file) return;
-  if (!/\.(md|markdown|txt)$/i.test(file.name)) { toast("Attach a Markdown (.md) or text file."); return; }
-  if (file.size > MAX_FILE_BYTES) { toast("The file is larger than 80 KB, the limit for one article."); return; }
+  if (!/\.(md|markdown|txt)$/i.test(file.name)) { toast(t("attachWrongType")); return; }
+  if (file.size > MAX_FILE_BYTES) { toast(t("attachTooLarge")); return; }
   if ($("source").value.trim() && !(await confirmAction({
-      title: "Replace what is in the box?", summary: [["With", file.name]], okLabel: "Replace"}))) return;
+      title: t("replaceBoxTitle"), summary: [[t("replaceWithLabel"), file.name]], okLabel: t("replaceBtn")}))) return;
   const reader = new FileReader();
-  reader.onload = () => { $("source").value = reader.result; $("fileInfo").textContent = `${file.name} loaded (${reader.result.length.toLocaleString()} characters). You can edit it above.`; };
-  reader.onerror = () => toast("The file could not be read.");
+  reader.onload = () => { $("source").value = reader.result; $("fileInfo").textContent = t("fileLoaded", {name: file.name, count: reader.result.length.toLocaleString()}); };
+  reader.onerror = () => toast(t("fileUnreadable"));
   reader.readAsText(file, "utf-8");
 }
 
 function setupUrlForLang(lang) {
-  const file = lang === "ko" ? "kr-SETUP.md" : lang === "ja" ? "ja-SETUP.md" : "SETUP.md";
+  const file = textIn(lang, "setupGuideFile", null, "SETUP.md");
   return `https://github.com/agenthekim/trilingual-blog-agent/blob/main/docs/${file}`;
 }
 
 function renderSettingsRows() {
   if ($("setupGuideAnchor")) $("setupGuideAnchor").href = setupUrlForLang(currentUiLang);
   if (!config) return;
-  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   const tag = (text, tone) => el("span", {class: "platform-tag " + (tone || "")}, text);
   const setupLink = (text, anchor) => el("a", {
     href: `${setupUrlForLang(currentUiLang)}#${anchor}`,
@@ -769,40 +472,40 @@ function renderSettingsRows() {
 
   $("settingsRows").replaceChildren(
     ...config.platforms.map((p) => {
-      const sub = p.how === "api" ? (t.howApi || "Posted through the API") : (t.howHtml || "Paste-ready HTML export");
+      const sub = p.how === "api" ? t("howApi") : t("howHtml");
       let badge;
       if (p.how !== "api") {
-        badge = tag(t.statusReady || "✓ Ready", "ok");
+        badge = tag(t("statusReady"), "ok");
       } else if (p.configured) {
-        badge = tag(t.statusConnected || "✓ Connected", "ok");
+        badge = tag(t("statusConnected"), "ok");
       } else {
         const anchor = p.platform.toLowerCase().includes("qiita") ? "3-qiita-access-token" : "2-dev-community-api-key";
-        badge = setupLink(t.statusNoCred || "No credential · Setup", anchor);
+        badge = setupLink(t("statusNoCred"), anchor);
       }
-      return row(p.language, p.platform, sub, badge);
+      return row(t("lang." + p.code, null, p.language), p.platform, sub, badge);
     }),
     row(
-      "Slides",
+      t("settingsSlidesRow"),
       "Google Slides",
-      `${config.slides_account ? config.slides_account + " · " : ""}${config.diagrams ? (t.diagramsOn || "Diagrams drawn") : (t.diagramsOff || "Diagrams off")}`,
+      `${config.slides_account ? config.slides_account + " · " : ""}${config.diagrams ? t("diagramsOn") : t("diagramsOff")}`,
       config.google_slides
-        ? tag(t.statusSlidesOk || "✓ Access granted", "ok")
-        : setupLink(t.statusSlidesNo || "Not set up · Setup", "4-google-slides-oauth")
+        ? tag(t("statusSlidesOk"), "ok")
+        : setupLink(t("statusSlidesNo"), "4-google-slides-oauth")
     )
   );
-  $("settingsNote").textContent = t.settingsNoteText || "Credentials stay on the server; this page never sees them.";
+  $("settingsNote").textContent = t("settingsNoteText");
 }
 
 // Settings: the fixed mapping, and what the server says is set up right now.
 async function openSettings() {
-  $("settingsRows").replaceChildren(el("span", {class: "muted small"}, "Checking…"));
+  $("settingsRows").replaceChildren(el("span", {class: "muted small"}, t("checking")));
   $("settingsNote").textContent = "";
   $("settingsModal").showModal();
   try {
     config = await api("/api/config");
     renderSettingsRows();
   } catch (error) {
-    $("settingsRows").replaceChildren(el("span", {class: "muted small"}, "The settings could not be read: " + error.message));
+    $("settingsRows").replaceChildren(el("span", {class: "muted small"}, t("settingsUnreadable", {error: error.message})));
   }
 }
 $("openSettings").addEventListener("click", openSettings);
@@ -812,8 +515,7 @@ if ($("uiLanguageSelect")) {
 }
 $("clearRun").addEventListener("click", () => {
   $("source").value = ""; $("file").value = "";
-  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
-  $("fileInfo").textContent = t.dropHint || "or drop a file anywhere on this card";
+  $("fileInfo").textContent = t("dropHint");
   forget();
 });
 $("attach").addEventListener("click", () => $("file").click());
@@ -824,34 +526,20 @@ zone.addEventListener("dragleave", () => zone.classList.remove("over"));
 zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); loadFile(e.dataTransfer.files[0]); });
 
 const PROMPT_HISTORY_KEY = "tba.prompt_history";
-const ESSENTIAL_PROMPTS_BY_LANG = {
-  en: [
-    "Re-create the English slides and Google Slides deck",
-    "Re-create the Korean slides and Google Slides deck",
-    "Re-create the Japanese slides and Google Slides deck",
-    "Re-translate the updated source article into the other two languages",
-    "Shorten the English title",
-    "Make the Korean intro less formal",
-  ],
-  ko: [
-    "영어 발표 슬라이드와 Google Slides 덱을 다시 만들어줘",
-    "한국어 발표 슬라이드와 Google Slides 덱을 다시 만들어줘",
-    "일본어 발표 슬라이드와 Google Slides 덱을 다시 만들어줘",
-    "수정된 원본 글을 바탕으로 다른 두 언어를 다시 번역해줘",
-    "영어 블로그 제목을 더 간결하게 줄여줘",
-    "한국어 도입부를 부드럽고 친근한 톤으로 다듬어줘",
-  ],
-  ja: [
-    "英語のスライドとGoogle Slidesデッキを再作成して",
-    "韓国語のスライドとGoogle Slidesデッキを再作成して",
-    "日本語のスライドとGoogle Slidesデッキを再作成して",
-    "更新された元記事から他の2言語を再翻訳して",
-    "英語記事のタイトルをもっと簡潔にして",
-    "韓国語記事の導入部をやわらかいトーンに整えて",
-  ],
-};
+// The suggestions are texts of the catalogs (prompt.0 to prompt.5), in the
+// same order in every language. They are filled in once the catalogs are read.
+const ESSENTIAL_PROMPT_COUNT = 6;
+const ESSENTIAL_PROMPTS_BY_LANG = {en: [], ko: [], ja: []};
+function readEssentialPrompts() {
+  for (const lang of UI_LANGS) {
+    ESSENTIAL_PROMPTS_BY_LANG[lang] = Array.from({length: ESSENTIAL_PROMPT_COUNT}, (_, i) => textIn(lang, "prompt." + i));
+  }
+}
 const DEFAULT_QUICK_INDICES = [4, 5, 0];
 
+// i18n:legacy-begin
+// Reading a request typed in words, and writing it again in another language,
+// is taken out by WP-13 together with the words of three languages it needs.
 function parseSlidePromptIntent(text) {
   const s = (text || "").trim();
   if (!s || s.length > 90) return null;
@@ -926,6 +614,7 @@ function localizePromptItem(item, targetLang) {
 function isConversationalReply(text) {
   return /^(yes|no|ok|okay|sure|네|예|응|아니)\b/i.test(text.trim());
 }
+// i18n:legacy-end
 
 function getPromptHistory() {
   try {
@@ -1057,7 +746,6 @@ function renderPromptChips() {
 
 function renderPromptsModal() {
   const lang = currentUiLang || "en";
-  const t = UI_TRANSLATIONS[lang] || UI_TRANSLATIONS.en;
   const essentials = ESSENTIAL_PROMPTS_BY_LANG[lang] || ESSENTIAL_PROMPTS_BY_LANG.en;
   const essentialBox = $("essentialPromptsList");
   if (essentialBox) {
@@ -1070,7 +758,7 @@ function renderPromptsModal() {
   if (historyBox) {
     const history = getPromptHistory();
     if (history.length === 0) {
-      historyBox.replaceChildren(el("span", {class: "muted small"}, t.noHistoryText || "No custom prompts sent yet."));
+      historyBox.replaceChildren(el("span", {class: "muted small"}, t("noHistoryText")));
     } else {
       historyBox.replaceChildren(...history.map((item) => {
         const shownText = localizePromptItem(item, lang);
@@ -1080,7 +768,7 @@ function renderPromptsModal() {
           el("button", {
             type: "button",
             class: "prompt-del",
-            title: "Remove from history",
+            title: t("removeFromHistory"),
             onclick: () => deletePromptHistoryItem(item.text),
           }, "×"));
       }));
@@ -1178,19 +866,18 @@ function fillSourceInput(text) {
 }
 
 function renderSourcesModal() {
-  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   const box = $("sourcesHistoryList");
   if (!box) return;
   const history = getSourceHistory();
   if (history.length === 0) {
-    box.replaceChildren(el("span", {class: "muted small"}, t.noSourceHistoryText || "No source documents recorded yet."));
+    box.replaceChildren(el("span", {class: "muted small"}, t("noSourceHistoryText")));
     return;
   }
   box.replaceChildren(...history.map((item) => {
     const isUrl = /^https?:\/\/\S+$/i.test(item.text);
     const firstLine = item.text.split("\n").find((l) => l.trim()) || item.text;
     const primaryTitle = item.title || (isUrl ? item.text : firstLine.replace(/^#+\s*/, "").slice(0, 80));
-    const subLabel = isUrl ? item.text : `${item.text.length.toLocaleString()} chars · Markdown draft`;
+    const subLabel = isUrl ? item.text : t("sourceDraftLabel", {count: item.text.length.toLocaleString()});
     return el("div", {class: "prompt-modal-item"},
       el("button", {
         type: "button",
@@ -1210,11 +897,11 @@ function renderSourcesModal() {
           if ($("sourcesModal") && $("sourcesModal").open) $("sourcesModal").close();
           watch(item.jobId);
         },
-      }, t.openRunBtn || "Open run") : null,
+      }, t("openRunBtn")) : null,
       el("button", {
         type: "button",
         class: "prompt-del",
-        title: "Remove from history",
+        title: t("removeFromHistory"),
         onclick: () => deleteSourceHistoryItem(item.text),
       }, "×")
     );
@@ -1248,7 +935,7 @@ if ($("clearSourceHistory")) {
 function submitMessage() {
   const text = $("message").value.trim();
   if (!text) return;
-  if (state && state.lanes && state.lanes.main.busy) { toast("The agent is still working. Try again when it has finished."); return; }
+  if (state && state.lanes && state.lanes.main.busy) { toast(t("agentWorkingRetry")); return; }
   recordPromptUsage(text);
   $("message").value = "";
   $("logBox").open = true;
@@ -1256,7 +943,6 @@ function submitMessage() {
 }
 $("send").addEventListener("click", submitMessage);
 $("message").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submitMessage(); } });
-renderPromptChips();
 
 function watch(id) {
   jobId = id; lastLogLength = 0; lastLogAt = Date.now(); busySince = null; missed = 0; liveKey = null;
@@ -1269,7 +955,7 @@ function watch(id) {
 zone.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("source").value;
-  if (text.trim().length < 10) { toast("Paste a URL or a draft first."); $("source").focus(); return; }
+  if (text.trim().length < 10) { toast(t("pasteFirst")); $("source").focus(); return; }
   const languages = ["En", "Ko", "Ja"].filter((code) => $("slideLang" + code).checked).map((code) => code.toLowerCase());
   const minutes = Number($("minutes").value);
   const settings = {
@@ -1292,16 +978,21 @@ zone.addEventListener("submit", async (e) => {
   } catch (error) { toast(error.message, 6000); $("run").disabled = false; }
 });
 
-applyUiLanguage(currentUiLang);
+// The page starts once the texts are read: the suggestions, the texts written
+// into the page, then the last settings and the run this browser had open.
+loadCatalogs().then(() => {
+  readEssentialPrompts();
+  applyUiLanguage(currentUiLang);
 
-// Restore the last settings, then the run in the address or the last run of this browser.
-try {
-  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-  $("minutes").value = String(saved.talk_minutes ?? 5);
-  const savedLangs = Array.isArray(saved.talk_languages) ? saved.talk_languages : ["en", "ko", "ja"];
-  for (const code of ["En", "Ko", "Ja"]) $("slideLang" + code).checked = savedLangs.includes(code.toLowerCase());
-  if (saved.audience) $("audience").value = saved.audience;
-} catch (e) { $("minutes").value = "5"; }
-const wanted = location.hash.slice(1) || localStorage.getItem(LAST_RUN_KEY) || "";
-if (RUN_ID.test(wanted)) { state = {log: []}; watch(wanted); }
-else if (location.hash.length > 1) history.replaceState(null, "", location.pathname);
+  // Restore the last settings, then the run in the address or the last run of this browser.
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    $("minutes").value = String(saved.talk_minutes ?? 5);
+    const savedLangs = Array.isArray(saved.talk_languages) ? saved.talk_languages : ["en", "ko", "ja"];
+    for (const code of ["En", "Ko", "Ja"]) $("slideLang" + code).checked = savedLangs.includes(code.toLowerCase());
+    if (saved.audience) $("audience").value = saved.audience;
+  } catch (e) { $("minutes").value = "5"; }
+  const wanted = location.hash.slice(1) || localStorage.getItem(LAST_RUN_KEY) || "";
+  if (RUN_ID.test(wanted)) { state = {log: []}; watch(wanted); }
+  else if (location.hash.length > 1) history.replaceState(null, "", location.pathname);
+});

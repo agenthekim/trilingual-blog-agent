@@ -8,19 +8,19 @@
 </head>
 <body>
 <main>
-  <div class="bar"><strong id="name"></strong> &middot; editing &middot; <a id="view">back to the preview</a></div>
-  <label class="field hidden" id="titleField">Title<input type="text" id="title" maxlength="120"></label>
-  <textarea id="text" spellcheck="false" aria-label="File text" disabled></textarea>
+  <div class="bar"><strong id="name"></strong> &middot; <span data-i18n="editor.editing">editing</span> &middot; <a id="view" data-i18n="editor.backToPreview">back to the preview</a></div>
+  <label class="field hidden" id="titleField"><span data-i18n="titleLabel">Title</span><input type="text" id="title" maxlength="120"></label>
+  <textarea id="text" spellcheck="false" data-i18n-aria-label="editor.textAria" aria-label="File text" disabled></textarea>
   <footer>
-    <span class="muted small" id="result" role="status">Loading…</span>
+    <span class="muted small" id="result" role="status" data-i18n="editor.loading">Loading…</span>
     <span class="hidden" id="deckTools" style="display:flex; align-items:center; gap:8px">
-      <a id="deckLink" target="_blank" rel="noopener" class="small">Open the deck</a>
-      <button type="button" id="pull">Pull from deck…</button>
-      <button type="button" id="push">Update deck…</button>
+      <a id="deckLink" target="_blank" rel="noopener" class="small" data-i18n="editor.openDeck">Open the deck</a>
+      <button type="button" id="pull" data-i18n="editor.pullBtn">Pull from deck…</button>
+      <button type="button" id="push" data-i18n="editor.pushBtn">Update deck…</button>
       <span class="sep"></span>
     </span>
-    <button type="button" id="cancel">Cancel</button>
-    <button type="button" class="primary" id="save" disabled>Save</button>
+    <button type="button" id="cancel" data-i18n="cancelBtn">Cancel</button>
+    <button type="button" class="primary" id="save" disabled data-i18n="editor.saveBtn">Save</button>
   </footer>
 </main>
 
@@ -32,11 +32,12 @@
     <p class="small" id="confirmNote" style="margin:0"></p>
   </div>
   <div class="foot">
-    <button type="button" id="confirmCancel">Cancel</button>
+    <button type="button" id="confirmCancel" data-i18n="cancelBtn">Cancel</button>
     <button type="button" class="primary" id="confirmOk"></button>
   </div>
 </dialog>
 
+<script src="/static/i18n.js"></script>
 <script src="/static/edit.js"></script>
 </body>
 </html>
