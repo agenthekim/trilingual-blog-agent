@@ -554,7 +554,16 @@ zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove
 // prompt.<name>, shown in the language of the page; how often each was sent
 // is counted under its name. What a person typed is kept as typed, under its
 // own heading, and is never translated.
-const SUGGESTIONS = ["shorten_title", "informal_intro", "retranslate"];
+// The last three ask the agent to make the slides and the deck of a language
+// again: the Slides column has no button for that (WEB-5). Like every
+// suggestion they only fill the message box; once sent, the agent asks for
+// the approval of the slide request (INV-6) before anything is made.
+const SUGGESTIONS = [
+  "shorten_title", "informal_intro", "retranslate",
+  "recreate_slides_en", "recreate_slides_ko", "recreate_slides_ja",
+];
+// How many suggestions are shown as chips; "More prompts…" lists them all.
+const SUGGESTION_CHIPS = 3;
 const SUGGESTION_USE_KEY = "tba.suggestion_use";
 const PROMPT_HISTORY_KEY = "tba.prompt_history";
 const suggestionText = (name) => t("prompt." + name);
@@ -636,11 +645,12 @@ function fillPromptInput(text) {
   input.setSelectionRange(input.value.length, input.value.length);
 }
 
-// The chips are suggestions only.
+// The chips are suggestions only: the first few in their order, so a
+// suggestion that was used moves into the row.
 function renderPromptChips() {
   const container = $("promptChipsList");
   if (!container) return;
-  container.replaceChildren(...orderedSuggestions().slice(0, 3).map((name) => {
+  container.replaceChildren(...orderedSuggestions().slice(0, SUGGESTION_CHIPS).map((name) => {
     const text = suggestionText(name);
     return el("button", {type: "button", class: "prompt-chip", title: text, onclick: () => fillPromptInput(text)}, text);
   }));

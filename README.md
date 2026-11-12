@@ -170,7 +170,8 @@ More of the page:
   slides…", "Speaker notes", "Create deck…", "Google Slides" and "Update
   deck…"; while the slides of a language are made, its cell says so. There
   is no button to make existing slides again: that is asked of the agent in
-  words, behind the same approval. Nothing exports a deck as PDF. Creating a
+  words, behind the same approval, and the suggestions under the request box
+  offer that request for each language. Nothing exports a deck as PDF. Creating a
   deck again makes a new file and keeps the address of the earlier one. `BLOG_AGENT_SLIDE_PARALLELISM` (3 unless set) is how many languages
   are planned at once.
 - "Ask the agent for a change" sends one line to the agent. The agent changes
@@ -178,8 +179,11 @@ More of the page:
   typed there creates nothing by itself: the agent calls
   `request_approval_to_create_slide_decks`, the page shows the request with
   Approve and Decline, and the slides lane makes the slides once approved.
-  The suggestions under the box come from the page's own texts; what you
-  typed is kept in the browser as typed.
+  The suggestions under the box come from the page's own texts: three are
+  shown, the most used first, and "More prompts…" lists all six, among them
+  "Re-create the English slides and Google Slides deck" and the same for
+  Korean and Japanese. A suggestion only fills the box. What you typed is
+  kept in the browser as typed.
 - The page, the editor and the previews are shown in English, Korean or
   Japanese (Settings). Every text of the page comes from one catalog per
   language (`app/static/i18n/`), and notices from the server carry a code so

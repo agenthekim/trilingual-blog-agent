@@ -1321,9 +1321,14 @@ def test_each_row_offers_the_slide_action_its_state_allows(real, monkeypatch) ->
     assert not {"pdf", "export_pdf", "recreate"} & set(SLIDE_ACTIONS)
     script = (web_ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
     assert sorted(re.findall(r'action === "(\w+)"', script)) == sorted(SLIDE_ACTIONS)
-    assert "exportPdf" not in script and "recreate" not in script
+    # "recreate" is in the script only in the names of the suggestions that
+    # ask the agent in words (WEB-9); no button says "Re-create…".
+    assert "exportPdf" not in script
+    assert set(re.findall(r"\w*recreate\w*", script, re.I)) == {
+        f"recreate_slides_{language}" for language in ("en", "ko", "ja")
+    }
     texts = (web_ui.STATIC_DIR / "i18n" / "en.json").read_text(encoding="utf-8")
-    assert "Export PDF" not in texts and "Re-create" not in texts
+    assert "Export PDF" not in texts and "Re-create…" not in texts
     # "Create slides…" asks behind the approval of every slide request,
     # "Update deck…" opens the notes' editor.
     assert re.search(r'"create_slides"\)[^\n]*requestSlides\(\[row\]\)', script)
@@ -1378,6 +1383,53 @@ def test_no_route_translates_what_a_person_typed(client) -> None:
     assert called == {"/api/config", "/api/jobs"}
 
 
+def test_the_suggestions_offer_to_make_each_languages_slides_again(client) -> None:
+    """WEB-9, WEB-5: with no button, the request is offered among the suggestions."""
+    import json
+
+    script = (web_ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    names = re.findall(
+        r'"(\w+)"', re.search(r"const SUGGESTIONS = \[([^\]]*)\];", script).group(1)
+    )
+    catalogs = {
+        code: json.loads(client.get(f"/static/i18n/{code}.json").text)
+        for code in ("en", "ko", "ja")
+    }
+    # How each catalog calls the three languages inside a sentence.
+    called = {
+        "en": {"en": "English", "ko": "Korean", "ja": "Japanese"},
+        "ko": {"en": "영어", "ko": "한국어", "ja": "일본어"},
+        "ja": {"en": "英語", "ko": "韓国語", "ja": "日本語"},
+    }
+    seen = set()
+    for language in ("en", "ko", "ja"):
+        name = f"recreate_slides_{language}"
+        # After the three that were there, so an unused row of chips is unchanged.
+        assert name in names[3:], name
+        for code, texts in catalogs.items():
+            text = texts[f"prompt.{name}"]
+            # It names its language and no other, and asks for slides and deck.
+            assert [key for key, word in called[code].items() if word in text] == [
+                language
+            ], (code, name)
+            assert "Google Slides" in text, (code, name)
+            seen.add(text)
+    assert len(seen) == 9
+    # The English ones are the sentence the instruction gives the agent as an
+    # example, which leads to the approval and to no deck by itself
+    # (test_a_message_to_the_agent_creates_no_deck).
+    from app.prompts import COORDINATOR_INSTRUCTION
+
+    instruction = " ".join(COORDINATOR_INSTRUCTION.split())
+    assert catalogs["en"]["prompt.recreate_slides_en"] in instruction
+    # A suggestion fills the message box and sends nothing.
+    fill = re.search(
+        r"\nfunction fillPromptInput\(text\) \{\n(.*?)\n\}\n", script, re.S
+    )
+    assert "input.value = text" in fill.group(1)
+    assert "send" not in fill.group(1).lower() and "fetch" not in fill.group(1)
+
+
 def test_suggestions_come_from_the_catalogs_and_typed_requests_stay_as_typed(
     client,
 ) -> None:
@@ -1398,12 +1450,6 @@ def test_suggestions_come_from_the_catalogs_and_typed_requests_stay_as_typed(
         assert sorted(key[7:] for key in texts if key.startswith("prompt.")) == sorted(
             names
         ), code
-    # Making slides again is a button of the Slides column (WEB-5), not a
-    # suggestion to type.
-    for name in names:
-        assert not re.search(r"slide|deck", catalogs["en"][f"prompt.{name}"], re.I), (
-            name
-        )
 
     def body(function: str) -> str:
         found = re.search(
@@ -1413,8 +1459,13 @@ def test_suggestions_come_from_the_catalogs_and_typed_requests_stay_as_typed(
         return found.group(1)
 
     # Chips: suggestions only, the most used first; nothing a person typed.
+    # The row holds three, so unused it shows the first three of the list.
     chips = body("renderPromptChips")
-    assert "orderedSuggestions()" in chips and "getPromptHistory" not in chips
+    assert "orderedSuggestions().slice(0, SUGGESTION_CHIPS)" in chips
+    assert "getPromptHistory" not in chips
+    assert re.search(r"\nconst SUGGESTION_CHIPS = 3;\n", script)
+    assert names[:3] == ["shorten_title", "informal_intro", "retranslate"]
+    assert "a.at - b.at" in body("orderedSuggestions")
     assert "count(b.name) - count(a.name)" in body("orderedSuggestions")
     # How often a suggestion was sent is counted under its name.
     record = body("recordPromptUsage")
