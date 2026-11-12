@@ -9,6 +9,7 @@ v1 설계를 시작하기 전에, 지금 저장소에 있는 것을 있는 그�
 | 요구사항 문서 | [SPEC.md](./SPEC.md). 본문은 커밋 `58c2dc1`까지만 반영되어 있고, 그 뒤 21개 커밋은 반영되지 않았습니다 (11절) |
 | 규모 | `app/` Python 약 10,060줄, 페이지 2개(`index.html` 1,625줄, `edit.html` 265줄), 단위 테스트 13개 파일 |
 | 확인 방법 | 코드 열람, 단위 테스트 전체 실행, 모델을 쓰지 않는 재현 스크립트 3건, 프롬프트 번역 경로 1회 호출, 실제 실행 1건의 활동 로그 |
+| 읽은 범위 | `58c2dc1` 이후 바뀐 코드는 차이 전체를 읽었습니다. `web_ui.py`, `pipeline.py`, `index.html`, `state.py`, `policy.py`, `agent.py`, `structurer.py`는 파일 전체를 읽었습니다. 그 밖의 모듈(`google_slides.py`, `deck_sync.py`, `tools/publish.py`, `markdown_checks.py`, `prompts.py`, `edit.html` 등)은 바뀐 부분과 이 문서에 인용한 부분만 읽었고, 나머지는 SPEC.md와 통과한 단위 테스트를 근거로 적었습니다. 통합 테스트와 평가는 돌리지 않았습니다 |
 
 각 항목의 근거는 아래 표기로 구분합니다.
 
