@@ -12,7 +12,8 @@ told otherwise.
 A run survives a restart of the server. Its session is in the session store
 (a SQLite file locally) and a small record of the run, with its activity log,
 is in ``<workspace>/.jobs``; opening the run's address again shows it as it
-was. A run that was working when the server stopped is shown as interrupted.
+was. A run that was working when the server stopped is shown as interrupted, and
+the page offers to make the slides it was asked for and lacks (RUN-4).
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from app.google_slides import SlidesError, granted_account, mermaid_preview_url
 from app.notices import join, notice, parts_of
 from app.observability import log_event, setup_tracing, traced_span
 from app.pipeline import (
+    missing_slides,
     overview,
     post_progress,
     progress,
@@ -454,7 +456,13 @@ async def list_recent_jobs() -> dict[str, Any]:
 async def start_job(request: StartRequest) -> dict[str, str]:
     wants_slides = request.talk_minutes > 0 and bool(request.talk_languages)
     languages = list(request.talk_languages) if wants_slides else []
-    job = _new_job(languages, wants_slides and request.create_deck, request.text)
+    job = _new_job(
+        languages,
+        wants_slides and request.create_deck,
+        request.text,
+        request.talk_minutes if wants_slides else 0,
+        request.audience,
+    )
     runs.start_run(job, request.text, request.talk_minutes, languages, request.audience)
     return {"job_id": job.id}
 
@@ -483,13 +491,15 @@ async def job_status(job_id: str) -> dict[str, Any]:
         view["source_text"] = job.source_text
     # Where each language slides were asked for stands; the rows of the
     # languages the slides lane works on right now say so too (WEB-3, WEB-5).
+    slides_busy = job.lanes[runs.SLIDES].busy
+    slides_to_come = job.lanes[runs.MAIN].action == "run_posts"
     slides = slides_progress(
         view,
         job.pipeline.slide_phases,
         job.talk_languages,
         job.wants_decks,
-        slides_busy=job.lanes[runs.SLIDES].busy,
-        slides_to_come=job.lanes[runs.MAIN].action == "run_posts",
+        slides_busy=slides_busy,
+        slides_to_come=slides_to_come,
     )
     return {
         # Whether anything runs at all; what may be started depends on the lane.
@@ -508,6 +518,17 @@ async def job_status(job_id: str) -> dict[str, Any]:
         ),
         "slides_progress": slides,
         "post_progress": post_progress(current, job.talk_languages),
+        # What the run was asked to make of slides, and the languages whose
+        # slides are not there. The page offers to make those with these
+        # options, behind the approval every slide request needs (RUN-4).
+        "options": job.options,
+        "missing_slides": missing_slides(
+            view,
+            job.talk_languages,
+            job.wants_decks,
+            slides_busy=slides_busy,
+            slides_to_come=slides_to_come,
+        ),
     }
 
 

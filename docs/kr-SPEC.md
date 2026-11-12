@@ -180,7 +180,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | | 요구사항 |
 | :--- | :--- |
 | PER-1 | 실행은 서버가 재시작되어도 유지된다. 실행의 세션(게시물, 제목, 확정, 계획, 덱 기록, 동기화 기준선, 게시 기록)과 활동 로그가 디스크에 있다. 실행의 주소를 다시 열면 이전 상태 그대로 보인다 |
-| PER-2 | 서버가 멈출 때 작업 중이던 실행은 알림과 함께 중단된 것으로 표시된다. 그때 대기 중이던 승인은 다시 요청해야 한다 |
+| PER-2 | 서버가 멈출 때 작업 중이던 실행은 알림과 함께 중단된 것으로 표시된다. 그때 대기 중이던 승인은 다시 요청해야 한다. RUN-4 참고 |
 | PER-3 | 생성된 파일은 `workspace/<project id>/`에 둔다. 모든 게시물의 모든 수정본과 모든 게시 기록은 글 저장소에도 보관한다(로컬에서는 SQLite, 설정된 경우 Firestore) |
 | PER-4 | 주소에 실행이 지정되지 않은 채 페이지를 열면 이 브라우저의 마지막 실행을 다시 열며, 상단 입력창에도 해당 실행의 원본 문서를 복원하고 새로 시작할 수 있는 "Clear / New article" 버튼을 제공한다 |
 
@@ -214,6 +214,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | RUN-1 | 실행에는 레인이 둘 있다. 글 레인(main)은 원본 문서, 현지화, 글, 에이전트에게 보내는 요청을 맡고, 슬라이드 레인(slides)은 계획, 덱, PDF, 덱 텍스트 동기화를 맡는다. 한 레인에서는 한 번에 액션 하나만 실행되고 두 레인은 동시에 실행된다. 슬라이드를 만드는 동안 글을 검토하고, 고치고, 확정하고, 게시할 수 있다 |
 | RUN-2 | 실행의 세션은 그 실행의 기록이며 한 번에 한 작성자만 쓴다. 작성자는 글 레인의 에이전트 턴이거나, 기록을 먼저 읽고 하는 코드의 짧은 쓰기다. 슬라이드 계획은 자기만의 세션에서 일하고 그 결과만 기록에 쓴다. 서로 다른 언어를 바꾸는 두 액션은 절대 상대의 변경을 잃게 하지 않는다 |
 | RUN-3 | 사람이 시작한 모든 액션은 페이지가 보여 주는 두 가지 중 하나로 끝난다. 완료이거나, 무엇이 이루어지지 않았는지 말하는 알림이다. 결과를 아무도 기다리지 않는 일은 시작하지 않는다 |
+| RUN-4 | 서버가 멈춰 중단된 실행은 어느 레인이 중단되었는지 말하고, 요청했지만 빠진 슬라이드를 그 실행의 옵션으로 만들 수 있게 제안한다 |
 
 ---
 
@@ -443,7 +444,7 @@ flowchart TD
 | WEB-14 | `test_listing_runs_reads_records_only`, `test_a_hidden_run_is_not_listed_and_its_files_remain` |
 | WEB-15 | `test_a_localization_older_than_the_source_is_marked` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |
-| PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart` |
+| PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart`, `test_an_interrupted_run_offers_the_slides_that_are_missing` |
 | PER-3 | `test_sqlite_store_survives_reopening`, `test_seed_revisions_are_numbered_and_persisted` |
 | PER-4 | No unit test: 브라우저 안에서 일어나는 페이지의 동작이다(마지막 실행은 로컬 스토리지에 보관된다). 헤드리스 브라우저에서 수동으로 확인한다 |
 | SEC-1 | `test_api_server_listens_on_localhost_by_default`, `test_the_server_answers_only_to_its_own_name` |
@@ -462,4 +463,5 @@ flowchart TD
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
+| RUN-4 | `test_an_interrupted_run_offers_the_slides_that_are_missing` |
 <!-- traceability:end -->

@@ -123,7 +123,7 @@ function exportTime(iso) {
 function slideAction(row, action, slidesBusy) {
   const link = (href, text, attrs) => el("a", {href, target: "_blank", rel: "noopener", ...attrs}, text);
   const button = (text, run) => el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: run}, text);
-  if (action === "create_slides") return el("div", {}, button(t("createSlidesBtn"), () => requestSlides(row)));
+  if (action === "create_slides") return el("div", {}, button(t("createSlidesBtn"), () => requestSlides([row])));
   if (action === "open_deck") return el("div", {}, link(row.deck.url, "Google Slides", {style: "font-weight:600"}));
   if (action === "notes") return el("div", {class: "muted small"}, link(fileUrl(row.slides_file), t("speakerNotes"), {title: row.slides_file}));
   if (action === "create_deck") return el("div", {}, button(t("createDeckBtn"), () => createDeck(row)));
@@ -131,7 +131,7 @@ function slideAction(row, action, slidesBusy) {
     el("span", {class: "muted"}, t("pdfExportedAt", {time: exportTime(row.pdf_exported_at)})));
   if (action === "export_pdf") return el("div", {}, button(t("exportPdfBtn"), () => exportPdf(row)));
   // A new plan and a new deck: the same approval as the first time (INV-6).
-  if (action === "recreate") return el("div", {}, button(t("recreateDeckBtn"), () => requestSlides(row)));
+  if (action === "recreate") return el("div", {}, button(t("recreateDeckBtn"), () => requestSlides([row])));
   // The speaker notes changed after the deck was made: the editor of the
   // notes opens and asks, listing the slides, before the deck is written.
   if (action === "update_deck") return el("div", {}, link(`/edit?job=${jobId}&file=${encodeURIComponent(row.slides_file)}&push=1`, t("updateDeckBtn")));
@@ -276,6 +276,13 @@ function render(data) {
     if (lane.error) notices.push(el("div", {class: "notice err"}, el("span", {class: "grow"}, t("stoppedWithError", {error: serverSentence(lane.errors) || lane.error}))));
     if (lane.notice) notices.push(el("div", {class: "notice note"}, el("span", {class: "grow"}, serverSentence(lane.notices) || lane.notice)));
   }
+  // Slides the run was asked for and has not got, after a server stop or a
+  // failure: one request for all of them is offered, with the options of the
+  // run. Nothing is made before the dialog is approved (RUN-4, INV-6).
+  const missing = (data.missing_slides || []).map((code) => o.rows.find((row) => row.language === code)).filter(Boolean);
+  if (missing.length) notices.push(el("div", {class: "notice ask"},
+    el("span", {class: "grow"}, t("missingSlides", {languages: missing.map(languageName).join(", ")})),
+    el("button", {type: "button", class: "primary", disabled: slidesBusy, onclick: () => requestSlides(missing, data.options)}, t("missingSlidesBtn"))));
   if (!postsBusy) for (const approval of data.approvals) notices.push(el("div", {class: "notice ask"},
     el("span", {class: "grow"}, approval.hint, data.approvals.length > 1
       ? el("div", {class: "muted small"}, t("oneAnswerAtATime")) : null),
@@ -283,7 +290,7 @@ function render(data) {
     el("button", {type: "button", class: "primary", onclick: () => act("approval", {id: approval.id, confirmed: true})}, t("approveBtn"))));
   // Rebuilt only when something changed: a button replaced between a press
   // and its release would swallow the click.
-  const noticesKey = JSON.stringify([data.error, data.notice, postsBusy ? [] : data.approvals]);
+  const noticesKey = JSON.stringify([data.error, data.notice, postsBusy ? [] : data.approvals, data.missing_slides, data.options, slidesBusy]);
   if (noticesKey !== shownNotices) { shownNotices = noticesKey; $("notices").replaceChildren(...notices); }
 
   const rows = o.rows.filter((r) => r.title)
@@ -421,27 +428,39 @@ function audienceText(value) {
   const option = [...$("audience").options].find((o) => o.value === value);
   return option ? option.textContent : value;
 }
-// Slides for a language: a plan and its deck. The dialog is the approval; it
-// names the language, the length, the audience and the account (INV-6), and
-// says what an approval replaces.
-async function requestSlides(row) {
+// Slides for one language or several: a plan and its deck each, as one
+// request (SLD-14). The dialog is the approval; it names the languages, the
+// length, the audience and the account (INV-6), and says what an approval
+// replaces. Without ``options`` each language keeps the length and the
+// audience it has; with the options of a run (RUN-4) the slides are made as
+// that run was asked to make them.
+async function requestSlides(rows, options) {
   let account = null;
   try { account = (await loadConfig()).slides_account; } catch (e) {}
-  const hasPlan = Boolean(row.slides_file), hasDeck = Boolean(row.deck && row.deck.url);
+  const names = (some) => some.map(languageName).join(", ");
+  const withPlan = rows.filter((row) => row.slides_file), withDeck = rows.filter((row) => row.deck && row.deck.url);
+  // Which languages a remark is about is said when there are several.
+  const about = (some, text) => (rows.length > 1 ? `${names(some)} · ${text}` : text);
+  const minutes = (options && options.minutes) || rows[0].slides_minutes;
+  const audience = (options && options.audience) || (state && state.overview && state.overview.slides_audience) || "software engineers";
   const summary = [
-    [t("slidesLanguageLabel"), languageName(row)],
-    [t("slidesLengthLabel"), t("slidesLengthValue", {minutes: row.slides_minutes})],
-    [t("slidesAudienceLabel"), audienceText((state && state.overview && state.overview.slides_audience) || "software engineers")],
-    [t("fromLabel"), t("slidesFromValue", {file: `post.${row.language}.md`})],
+    [t("slidesLanguageLabel"), names(rows)],
+    [t("slidesLengthLabel"), t("slidesLengthValue", {minutes})],
+    [t("slidesAudienceLabel"), audienceText(audience)],
+    [t("fromLabel"), t("slidesFromValue", {file: rows.map((row) => `post.${row.language}.md`).join(", ")})],
     [t("whereLabel"), account ? t("driveOf", {account}) : t("driveYours")],
   ];
-  if (hasPlan) summary.push([t("planLabel"), t("slidesPlanReplaced")]);
-  if (hasDeck) summary.push([t("deckLabel"), t("slidesDeckKept")]);
-  const ok = await confirmAction({
-    title: hasPlan ? t("slidesAgainTitle", {language: languageName(row)}) : t("slidesTitle", {language: languageName(row)}),
-    summary: summary,
-    okLabel: hasPlan ? t("slidesAgainOk") : t("slidesOk")});
-  if (ok) act("slides", {languages: [row.language], minutes: 0, audience: "", approved: true});
+  if (withPlan.length) summary.push([t("planLabel"), about(withPlan, t("slidesPlanReplaced"))]);
+  if (withDeck.length) summary.push([t("deckLabel"), about(withDeck, t("slidesDeckKept"))]);
+  const again = withPlan.length > 0;
+  const title = options ? t("missingSlidesTitle")
+    : again ? t("slidesAgainTitle", {language: names(rows)}) : t("slidesTitle", {language: names(rows)});
+  const ok = await confirmAction({title, summary, okLabel: again ? t("slidesAgainOk") : t("slidesOk")});
+  if (ok) act("slides", {
+    languages: rows.map((row) => row.language),
+    minutes: options ? minutes : 0,
+    audience: options ? audience : "",
+    approved: true});
 }
 // A deck from the plan as it is; the plan is not touched.
 async function createDeck(row) {

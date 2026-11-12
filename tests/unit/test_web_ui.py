@@ -587,6 +587,105 @@ def test_a_run_is_reopened_from_its_record_after_a_restart(real) -> None:
     assert client.get("/api/jobs/..%2F..%2Fetc").status_code == 404
 
 
+def test_an_interrupted_run_offers_the_slides_that_are_missing(
+    real, monkeypatch
+) -> None:
+    """RUN-4: the record keeps the options of the run; after a server stop the
+    run says which lane was interrupted, names the languages whose slides
+    are not there, and the page asks for all of them in one approved request
+    with those options. Nothing is made before a person approves (INV-6)."""
+    import asyncio
+
+    from app import google_slides, state
+    from tests.unit.test_pipeline import _plan
+
+    client, job = real
+    base = f"/api/jobs/{job.id}"
+    options = {
+        "minutes": 10,
+        "audience": "students",
+        "languages": ["en", "ko", "ja"],
+        "decks": True,
+    }
+    job.talk_languages, job.wants_decks = options["languages"], options["decks"]
+    job.talk_minutes, job.audience = options["minutes"], options["audience"]
+    # English was finished; Korean was being planned when the server stopped.
+    asyncio.run(
+        job.pipeline._update_state(
+            {
+                state.SLIDE_PLANS: {"en": _plan("en"), "ko": _plan("ko")},
+                state.GOOGLE_SLIDES_DECKS: {
+                    "en": {
+                        "presentation_id": "abc",
+                        "url": google_slides.deck_url("abc"),
+                    }
+                },
+            }
+        )
+    )
+    job.lanes["slides"].busy, job.lanes["slides"].action = True, "run_slides"
+    job.pipeline.slide_phases["ko"] = "planning"
+    job.save()
+    assert _record(job.id)["options"] == options
+    # While the lane works nothing is missing yet: the slides are being made.
+    assert client.get(base).json()["missing_slides"] == []
+
+    web_ui.JOBS.clear()  # a new process knows no runs
+    made: list[Any] = []
+    status = client.get(base).json()
+    reopened = web_ui.JOBS[job.id]
+
+    async def make_slides(languages, minutes, audience, create_deck):
+        made.append((languages, minutes, audience, create_deck))
+        return None
+
+    monkeypatch.setattr(reopened.pipeline, "make_slides", make_slides)
+    # The lane that was interrupted says so, and only that lane.
+    assert status["busy"] is False
+    assert [part["code"] for part in status["lanes"]["slides"]["notices"]] == [
+        "interrupted_slides"
+    ]
+    assert status["lanes"]["main"]["notice"] is None
+    # Korean has a plan and no deck, Japanese has nothing: decks were asked for.
+    assert status["options"] == options
+    assert status["missing_slides"] == ["ko", "ja"]
+    assert status["slides_progress"] == [
+        {"language": "en", "phase": "done"},
+        {"language": "ko", "phase": "failed"},
+        {"language": "ja", "phase": "failed"},
+    ]
+    # Reopening started nothing, and an unapproved request starts nothing.
+    asked = {
+        "languages": status["missing_slides"],
+        "minutes": 10,
+        "audience": "students",
+    }
+    assert client.post(f"{base}/slides", json=asked).status_code == 400
+    assert made == [] and not reopened.lanes["slides"].busy
+
+    # Approved, the missing languages are one request with the run's options.
+    answer = client.post(f"{base}/slides", json={**asked, "approved": True})
+    assert answer.status_code == 200
+    after = _wait(client, job.id)
+    assert made == [(["ko", "ja"], 10, "students", True)]
+    assert after["lanes"]["slides"]["notice"] is None  # said once, then gone
+
+    # Without decks asked for, a plan is enough; a language without a post
+    # has nothing slides could be made from.
+    reopened.wants_decks = False
+    assert client.get(base).json()["missing_slides"] == ["ja"]
+    asyncio.run(reopened.pipeline._update_state({state.localized_key("ja"): ""}))
+    assert client.get(base).json()["missing_slides"] == []
+
+    # The page offers it with the dialog every slide request uses: one
+    # dialog for a list of languages, one request for all of them.
+    script = (web_ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert "requestSlides(missing, data.options)" in script
+    assert script.count("async function requestSlides(rows, options)") == 1
+    assert script.count('act("slides", {') == 1
+    assert "languages: rows.map((row) => row.language)" in script
+
+
 def test_a_session_is_read_back_by_a_new_process(tmp_path, monkeypatch) -> None:
     """The local session store is a file: what one process wrote, the next reads."""
     import asyncio
@@ -1045,7 +1144,7 @@ def test_each_row_offers_the_slide_action_its_state_allows(real, monkeypatch) ->
     assert sorted(re.findall(r'action === "(\w+)"', script)) == sorted(SLIDE_ACTIONS)
     # "Re-create…" asks for slides behind the same approval as the first time,
     # "Export PDF" uses the PDF route, "Update deck…" opens the notes' editor.
-    assert re.search(r'"recreate"\)[^\n]*requestSlides\(row\)', script)
+    assert re.search(r'"recreate"\)[^\n]*requestSlides\(\[row\]\)', script)
     assert 'act("pdf", {language: row.language})' in script
     assert re.search(r'"update_deck"\)[^\n]*/edit\?job=[^\n]*&push=1', script)
 

@@ -391,6 +391,35 @@ def slides_progress(
     return entries
 
 
+def missing_slides(
+    view: dict[str, Any],
+    talk_languages: list[str],
+    wants_decks: bool,
+    *,
+    slides_busy: bool,
+    slides_to_come: bool,
+) -> list[str]:
+    """The languages whose slides the run options asked for and that have
+    none, in the order they were asked for (RUN-4).
+
+    "None" is judged against what was asked: a plan, and a deck when decks
+    were asked for. While the slides lane works, or the slides of the run are
+    still to be started, nothing is missing yet. Slides are made from a post,
+    so a language without one is not listed: nothing could be made for it.
+    """
+    if slides_busy or slides_to_come:
+        return []
+    wanted = "deck" if wants_decks else "plan"
+    rows = {row["language"]: row for row in view["rows"]}
+    return [
+        language
+        for language in talk_languages
+        if language in rows
+        and rows[language]["title"]
+        and rows[language]["slides_state"] not in ("deck", wanted)
+    ]
+
+
 def progress(
     session_state: dict[str, Any], talk_languages: list[str], wants_decks: bool
 ) -> list[dict[str, Any]]:

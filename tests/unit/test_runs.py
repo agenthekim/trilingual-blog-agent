@@ -178,6 +178,13 @@ def test_a_record_written_before_there_were_lanes_is_still_opened(
     (runs.jobs_dir() / f"{job_id}.json").write_text(json.dumps(old), "utf-8")
     job = runs.get_job(job_id)
     assert job.talk_languages == ["en"] and job.reply == "Done."
+    # Its options are what it kept of them: the languages and the decks.
+    assert job.options == {
+        "minutes": 0,
+        "audience": "",
+        "languages": ["en"],
+        "decks": True,
+    }
     assert not job.busy
     assert job.lanes[runs.MAIN].notice == (
         runs.INTERRUPTED[runs.MAIN] + " The Naver Blog file was not written."

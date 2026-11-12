@@ -128,6 +128,12 @@ class Job:
     source_text: str = ""
     talk_languages: list[str] = field(default_factory=list)
     wants_decks: bool = False
+    # The length and the audience of the talk, as the run options said them.
+    # With the two above they are the options of the run, kept in its record
+    # so that slides a server stop left unmade can be asked for again as they
+    # were asked for (RUN-4).
+    talk_minutes: int = 0
+    audience: str = ""
     log: list[str] = field(default_factory=list)
     lanes: dict[str, Lane] = field(default_factory=_lanes)
     reply: str | None = None  # the agent's answer to "Ask the agent for a change"
@@ -156,6 +162,17 @@ class Job:
     def notice(self) -> str | None:
         return join(*(lane.notice for lane in self.lanes.values()))
 
+    @property
+    def options(self) -> dict[str, Any]:
+        """What this run was asked to make of slides: for which languages,
+        how long, for whom, and whether with decks."""
+        return {
+            "minutes": self.talk_minutes,
+            "audience": self.audience,
+            "languages": list(self.talk_languages),
+            "decks": self.wants_decks,
+        }
+
     def add_log(self, line: str) -> None:
         line = redact_credentials(line)
         self.log.append(line)
@@ -182,8 +199,7 @@ class Job:
             "source_label": self.source_label,
             "source_chars": self.source_chars,
             "hidden": self.hidden,
-            "talk_languages": self.talk_languages,
-            "wants_decks": self.wants_decks,
+            "options": self.options,
             "busy": self.busy,
             "lanes": {name: _lane_record(lane) for name, lane in self.lanes.items()},
             "reply": self.reply,
@@ -197,13 +213,21 @@ class Job:
 JOBS: dict[str, Job] = {}
 
 
-def new_job(talk_languages: list[str], wants_decks: bool, source_text: str = "") -> Job:
+def new_job(
+    talk_languages: list[str],
+    wants_decks: bool,
+    source_text: str = "",
+    talk_minutes: int = 0,
+    audience: str = "",
+) -> Job:
     job = Job(
         id=uuid.uuid4().hex,
         pipeline=ArticlePipeline(),
         source_text=source_text,
         talk_languages=talk_languages,
         wants_decks=wants_decks,
+        talk_minutes=talk_minutes,
+        audience=audience,
     )
     job.source_kind, job.source_label, _ = describe_source(source_text)
     job.pipeline.log = job.add_log
@@ -229,20 +253,44 @@ def _recorded_lanes(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
+def _recorded_options(record: dict[str, Any]) -> dict[str, Any]:
+    """The options of a record. One written before they were kept together
+    has the languages and the decks only: its length and audience are not
+    known here (the session has them, see ``RUN_OPTIONS``)."""
+    kept = record.get("options")
+    if not isinstance(kept, dict):
+        kept = {
+            "languages": record.get("talk_languages"),
+            "decks": record.get("wants_decks"),
+        }
+    minutes = kept.get("minutes")
+    return {
+        "minutes": minutes if _chars(minutes) is not None and 0 <= minutes <= 60 else 0,
+        "audience": str(kept.get("audience") or "")[:200],
+        "languages": [
+            code
+            for code in dict.fromkeys(kept.get("languages") or [])
+            if code in LANGUAGES
+        ],
+        "decks": bool(kept.get("decks")),
+    }
+
+
 def reopen(job_id: str) -> Job | None:
     """Bring back a run this process does not hold, from its record on disk."""
     path = jobs_dir() / f"{job_id}.json"
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
+        options = _recorded_options(record)
         job = Job(
             id=job_id,
             pipeline=ArticlePipeline(session_id=record["session_id"]),
             created=float(record.get("created") or 0),
             source_text=str(record.get("source_text") or ""),
-            talk_languages=[
-                code for code in record.get("talk_languages") or [] if code in LANGUAGES
-            ],
-            wants_decks=bool(record.get("wants_decks")),
+            talk_languages=options["languages"],
+            wants_decks=options["decks"],
+            talk_minutes=options["minutes"],
+            audience=options["audience"],
             reply=record.get("reply"),
             # A record written before these fields were kept lacks them.
             title=str(record.get("title") or ""),
