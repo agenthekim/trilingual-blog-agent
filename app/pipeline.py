@@ -37,6 +37,7 @@ from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 
 from app import deck_sync, google_slides, platforms, policy, sources, state
+from app.notices import Notice, join, notice
 from app.observability import log_activity, log_event
 from app.policy import API_PLATFORMS, PLATFORM_NAMES
 from app.redaction import find_secrets, redact_credentials
@@ -563,25 +564,16 @@ class PersonContext:
         raise RuntimeError("A person's action must carry its own approval.")
 
 
-def _structuring_notice(structuring: Structuring, *, used: bool) -> str:
+def _structuring_notice(structuring: Structuring, *, used: bool) -> Notice:
     """Which of the two happened to a text sent for structuring (SRC-7)."""
     if used:
-        return (
-            "A model gave the text Markdown structure (headings, lists, tables, "
-            "code blocks). Code confirmed that the letters and digits are the "
-            f"same as in the text as supplied, which is kept as {ORIGINAL_FILE}."
-        )
-    reason = {
-        "letters_differ": "its letters and digits were not the same as in the "
-        "text as supplied",
-        "no_answer": "the model gave no answer",
-        "structured": "it could not be stored",
+        return notice("structuring_used", file=ORIGINAL_FILE)
+    code = {
+        "letters_differ": "structuring_letters_differ",
+        "no_answer": "structuring_no_answer",
+        "structured": "structuring_not_stored",
     }[structuring.outcome]
-    return (
-        "A model was asked to give the text Markdown structure, but its copy "
-        f"was not used because {reason}. The article is the text as supplied, "
-        f"also kept as {ORIGINAL_FILE}."
-    )
+    return notice(code, file=ORIGINAL_FILE)
 
 
 def _failure(result: dict[str, Any]) -> str | None:
@@ -835,7 +827,7 @@ class ArticlePipeline:
         if kind == "url":
             result = await self.act(fetch_published_article_markdown, text)
             if failure := _failure(result):
-                return f"The post could not be read. {failure}"
+                return notice("post_not_read", reason=failure)
             current = await self.session_state()
             original = current.get(state.SEED_MARKDOWN) or ""
             # The text as read is version 1 in the store; this is its file.
@@ -862,53 +854,49 @@ class ArticlePipeline:
                 if not used:
                     await self.act(finalize_seed_article)
                 notes.append(
-                    "The text was rebuilt from the Naver page, so "
-                    + ("" if used else "headings, lists, ")
-                    + "images and links may be missing. "
-                    + _structuring_notice(structuring, used=used)
-                    + " Check the Korean file before using the results."
+                    join(
+                        notice(
+                            "naver_rebuilt_structured"
+                            if used
+                            else "naver_rebuilt_plain"
+                        ),
+                        _structuring_notice(structuring, used=used),
+                        notice("check_korean_file"),
+                    )
                 )
             return None
         if kind == "request":
             await self.say(text)
             current = await self.session_state()
             if not current.get(state.SEED_MARKDOWN):
-                return (
-                    "No article was stored. See the agent's reply in the activity log."
-                )
+                return notice("no_article_stored")
             if not current.get(state.SEED_FINALIZED):
                 await self.act(finalize_seed_article)
             return None
         if kind == "elsewhere":
-            return (
-                f"That address cannot be read: {sources.readable_sources_sentence()}. "
-                "Hand in a supported URL, a .md or .txt file, or the Markdown "
-                "text itself."
+            return notice(
+                "address_unreadable", sources=sources.readable_sources_sentence()
             )
         if kind == "gdoc":
             try:
                 doc_id = platforms.parse_google_doc_id(text)
                 text = await platforms.google_doc_get_markdown(doc_id)
             except platforms.PlatformError as exc:
-                return f"The Google Docs document could not be read. {exc.message}"
+                return notice("gdoc_not_read", reason=exc.message)
         if kind == "medium":
             try:
                 text = await platforms.medium_get_markdown(text)
             except platforms.PlatformError as exc:
                 # The way out is part of the refusal: paste the text instead.
-                return (
-                    f"The Medium post could not be read. {exc.message} {exc.recovery}"
-                )
+                return notice("medium_not_read", reason=f"{exc.message} {exc.recovery}")
         # Said in plain words here, before a validator says it in its own.
         if len(text.strip()) < MIN_DRAFT_CHARS:
-            return (
-                "The draft could not be stored. It is shorter than "
-                f"{MIN_DRAFT_CHARS} characters; hand in the whole article."
-            )
+            return notice("draft_too_short", min=MIN_DRAFT_CHARS)
         if len(text) > MAX_ARTICLE_CHARS:
-            return (
-                f"The draft could not be stored. It has {len(text):,} characters; "
-                f"the limit for one article is {MAX_ARTICLE_CHARS:,}."
+            return notice(
+                "draft_too_long",
+                chars=f"{len(text):,}",
+                limit=f"{MAX_ARTICLE_CHARS:,}",
             )
         # A draft is stored as it was handed in: as the first version in the
         # store and as a file of its own, whatever happens to the seed after.
@@ -922,7 +910,7 @@ class ArticlePipeline:
             finalized=True,
         )
         if failure := _failure(result):
-            return f"The draft could not be stored. {failure}"
+            return notice("draft_not_stored", reason=failure)
         write_workspace_file(result["project_id"], ORIGINAL_FILE, text)
         seed_text = text
         if needs_markdown_structuring(text):
@@ -945,16 +933,14 @@ class ArticlePipeline:
             if used:
                 seed_text = structuring.markdown
             notes.append(
-                "The draft has no Markdown heading. "
-                + _structuring_notice(structuring, used=used)
-                + " Review the file before using the results."
+                join(
+                    notice("draft_no_heading"),
+                    _structuring_notice(structuring, used=used),
+                    notice("review_file"),
+                )
             )
         if not has_title_line(seed_text):
-            notes.append(
-                "The draft has no '# Title' line, so this was taken as the "
-                f"title: '{title_of_draft(seed_text)}'. If that is not the title, "
-                "add a '# Title' line at the top and run again."
-            )
+            notes.append(notice("draft_no_title_line", title=title_of_draft(seed_text)))
         return None
 
     async def run_stages(
@@ -975,14 +961,14 @@ class ArticlePipeline:
         the run options, to create one Google Slides file per selected
         language in their own Drive.
         """
-        ready, notice = await self.run_posts(source_text)
+        ready, said = await self.run_posts(source_text)
         if not ready:
-            return notice
+            return said
         wanted = list(dict.fromkeys(talk_languages or []))
         if talk_minutes <= 0 or not wanted:
-            return notice
+            return said
         slides = await self.run_slides(wanted, talk_minutes, audience, create_deck)
-        return " ".join(filter(None, [notice, slides])) or None
+        return join(said, slides)
 
     async def run_posts(self, source_text: str) -> tuple[bool, str | None]:
         """The posts part of a run: source document, localization, Naver file, manifest.
@@ -1004,36 +990,29 @@ class ArticlePipeline:
         current = await self.session_state()
         targets = current.get(state.TARGET_LANGUAGES) or []
         unwritten = [
-            LANGUAGE_NAMES[language]
+            language
             for language in targets
             if not current.get(state.localized_key(language))
         ]
         if unwritten:
-            return False, (
-                f"No {' or '.join(unwritten)} text was written, so nothing else "
-                "was done. See the agent's reply in the activity log."
-            )
+            return False, notice("no_text_written", languages=unwritten)
         report = current.get(state.FIDELITY_REPORT) or {}
         failed = [
-            LANGUAGE_NAMES[language]
+            language
             for language in targets
             if not (report.get(language) or {}).get("passed")
         ]
         if failed:
-            return False, (
-                f"The structure check failed for {' and '.join(failed)}, so nothing "
-                "was exported and no slides were made. Review the files; the "
-                "activity log lists what differs."
-            )
+            return False, notice("structure_check_failed", languages=failed)
 
         if policy.publication(current, "naver_blog").get("state") != "existing_source":
             if failure := _failure(await self.act(export_naver_blog_paste_ready_html)):
-                notes.append(f"The Naver Blog file was not written. {failure}")
+                notes.append(notice("naver_file_not_written", reason=failure))
 
         # The manifest is written as soon as the posts are there, so they can
         # be reviewed while the slides are still being made.
         await self.act(compile_artifact_manifest_markdown)
-        return True, " ".join(notes) or None
+        return True, join(*notes)
 
     async def run_slides(
         self,
@@ -1106,11 +1085,11 @@ class ArticlePipeline:
                 )
                 reason = redact_credentials(str(exc))[:300] or type(exc).__name__
                 self.log(f">>> {name} slides: failed. {reason}")
-                return [f"The {name} slides were not made. {reason}"]
+                return [notice("slides_not_made", language=language, reason=reason)]
 
         results = await asyncio.gather(*(one(language) for language in languages))
         await self.act(compile_artifact_manifest_markdown)
-        return " ".join(note for notes in results for note in notes) or None
+        return join(*(note for notes in results for note in notes))
 
     async def plan_slides(
         self, language: str, minutes: int, audience: str
@@ -1144,7 +1123,7 @@ class ArticlePipeline:
             language, audience, minutes, tool_context=context
         )
         if failure := _failure(brief):
-            return False, f"No {name} slide plan was made. {failure}"
+            return False, notice("no_slide_plan", language=language, reason=failure)
         working.update(context.state.delta)
         app_name = self._slide_app.name
         session = await self._sessions.create_session(
@@ -1168,10 +1147,7 @@ class ArticlePipeline:
         # Only a plan this run produced counts; an older plan of the same
         # language is still in the record, but it is not what was asked for.
         if not plan or not planned.get(state.SLIDE_DECK_PLAN):
-            return False, (
-                f"No {name} slide plan was made. See the activity log for what "
-                "the planner said."
-            )
+            return False, notice("no_slide_plan_see_log", language=language)
         # Only this language's entries differ from what was copied, so only
         # they are written over the record as it is now.
         await self._update_state(
@@ -1183,10 +1159,7 @@ class ArticlePipeline:
         )
         timing = (planned.get(state.SLIDE_TIMING) or {}).get(language) or {}
         if not timing.get("passed"):
-            return True, (
-                f"The {name} slide plan missed the one-slide-per-minute target "
-                "after two attempts; its speaker notes say how long each slide runs."
-            )
+            return True, notice("slide_plan_missed_target", language=language)
         return True, None
 
     async def _run_planning(self, session_id: str, language: str) -> None:
@@ -1265,7 +1238,9 @@ class ArticlePipeline:
             approval={"visibility": "public" if public else "draft"},
         )
         if failure := _failure(result):
-            return f"Nothing was posted on {PLATFORM_NAMES[platform]}. {failure}"
+            return notice(
+                "not_posted", platform=PLATFORM_NAMES[platform], reason=failure
+            )
         await self.summarize()
         return None
 
@@ -1283,10 +1258,7 @@ class ArticlePipeline:
         failure = _failure(result)
         self.slide_phases[language] = "failed" if failure else "done"
         if failure:
-            return (
-                f"The {LANGUAGE_NAMES.get(language, language)} Google Slides deck "
-                f"was not created. {failure}"
-            )
+            return notice("deck_not_created", language=language, reason=failure)
         if summarize:
             await self.summarize()
         return None
@@ -1295,10 +1267,7 @@ class ArticlePipeline:
         """Export one language's Google Slides deck as PDF (SLD-12)."""
         result = await self.act(export_google_slides_pdf, language)
         if failure := _failure(result):
-            return (
-                f"The {LANGUAGE_NAMES.get(language, language)} PDF was not "
-                f"exported. {failure}"
-            )
+            return notice("pdf_not_exported", language=language, reason=failure)
         self.log(
             f">>> exported {slide_pdf_file(language)} from the "
             f"{LANGUAGE_NAMES.get(language, language)} Google Slides deck"
@@ -1310,7 +1279,7 @@ class ArticlePipeline:
         """Record where a person posted by hand, then check that it answers."""
         result = await self.act(record_manually_posted_url, platform, url)
         if failure := _failure(result):
-            return f"The address was not recorded. {failure}"
+            return notice("address_not_recorded", reason=failure)
         checks = (await self.act(verify_published_article_urls)).get("checks") or []
         await self.summarize()
         problem = next(
@@ -1322,10 +1291,7 @@ class ArticlePipeline:
             None,
         )
         if problem:
-            return (
-                "The address was recorded, but it did not answer when checked "
-                f"({problem}). Open it to make sure it is right."
-            )
+            return notice("address_did_not_answer", problem=problem)
         return None
 
     async def finalize_post(
@@ -1456,11 +1422,11 @@ class ArticlePipeline:
         current = await self.session_state()
         deck = (current.get(state.GOOGLE_SLIDES_DECKS) or {}).get(language)
         if not deck or not deck.get("presentation_id"):
-            raise ValueError("There is no Google Slides deck for this language yet.")
+            raise ValueError(notice("no_deck_yet"))
         project_id = current.get(state.PROJECT_ID) or ""
         path = project_file(project_id, f"slides.{language}.md")
         if path is None:
-            raise ValueError("The slide plan file of this language is missing.")
+            raise ValueError(notice("slide_plan_file_missing"))
         plan = parse_slide_plan_markdown(path.read_text(encoding="utf-8"), language)
 
         baselines = dict(current.get(state.DECK_TEXT_BASELINE) or {})
@@ -1562,18 +1528,16 @@ class ArticlePipeline:
         project_id = current.get(state.PROJECT_ID) or ""
         match = _EDITABLE_FILE.match(name)
         if not match or project_file(project_id, name) is None:
-            raise ValueError("This file cannot be edited here.")
+            raise ValueError(notice("file_not_editable"))
         if match.group(1) == "post" and name not in overview(current)["editable"]:
             if policy.next_step(current, match.group(2)) == "original":
-                raise ValueError(
-                    "This post was read from its blog platform and cannot be edited here."
-                )
+                raise ValueError(notice("post_read_from_platform"))
             # A file left from an earlier text, or a post that is already
             # public: saving it would bring back or change what is settled.
-            raise ValueError("This post can no longer be edited here.")
+            raise ValueError(notice("post_no_longer_editable"))
         text = markdown.rstrip() + "\n"
         if not text.strip():
-            raise ValueError("The text is empty.")
+            raise ValueError(notice("text_empty"))
         kind, language = match.groups()
         path = workspace_dir() / project_id / name
         if kind == "slides":

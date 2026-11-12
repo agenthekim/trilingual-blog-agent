@@ -171,7 +171,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | WEB-10 | Settings는 고정된 언어-플랫폼 대응, 자격 증명별 설정 여부, 그리고 덱이 들어가는 Google 계정을 그 시점에 서버가 보고한 대로 보여 준다. 시크릿의 이름이나 값은 표시하지 않는다 |
 | WEB-11 | 레인이 작업하는 동안에는 그 레인에서 다른 어떤 것도 시작할 수 없으며, 한 문장으로 그 사실을 알리고 어느 레인인지 말한다. 다른 레인은 계속 쓸 수 있다(RUN-1). 연결이 끊기면 이를 표시한다. 작업이 요청대로 수행되지 않은 채 끝나면 무엇이 이루어지지 않았는지 알림으로 알린다(INV-12) |
 | WEB-12 | 사람에게 보여 주는 문구는 사람이 읽도록 쓴다. ID가 아닌 플랫폼 이름을 쓰고, Python 리스트나 예외 클래스 이름은 쓰지 않는다. 문장은 조각을 이어 붙이지 않고 문구집(WEB-13)에 통째로 적는다. 세 언어의 이름은 각 언어의 자기 표기인 English, 한국어, 日本語로 적는다 |
-| WEB-13 | 페이지, 편집기, 미리보기는 영어, 한국어, 일본어 중 하나로 보여 준다. 언어는 Settings에서 고르고 브라우저에 기억한다. 페이지가 스스로 보여 주는 문구는 모두 언어별 문구집 하나에서 나오며 세 문구집의 키는 같다. 빠진 문구는 영어로 보여 준다. 작성자가 쓰거나 입력한 것, 에이전트의 답, 플랫폼이 돌려준 것은 그대로 보여 준다 |
+| WEB-13 | 페이지, 편집기, 미리보기는 영어, 한국어, 일본어 중 하나로 보여 준다. 언어는 Settings에서 고르고 브라우저에 기억한다. 페이지가 스스로 보여 주는 문구는 모두 언어별 문구집 하나에서 나오며 세 문구집의 키는 같다. 빠진 문구는 영어로 보여 준다. 서버가 보내는 알림에는 코드가 붙어 있어 페이지가 그 언어로 보여 줄 수 있다. 작성자가 쓰거나 입력한 것, 에이전트의 답, 플랫폼이 돌려준 것은 그대로 보여 준다 |
 | WEB-14 | "Recent sources"는 이 서버의 실행을 최근 것부터 제목, 종류, 길이와 함께 보여 주며, 실행 기록만 읽어서 만든다. 항목을 고르면 그 실행을 열거나 원본 입력란을 채운다. 항목을 숨기면 목록에서만 빠지고 파일은 그대로 남는다 |
 | WEB-15 | 원본의 이전 본문으로 만든 현지화본은 원본보다 오래된 것으로 표시하고, 다시 번역하기를 제안한다 |
 
@@ -439,7 +439,7 @@ flowchart TD
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
 | WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
 | WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs`, `test_no_sentence_for_people_is_written_in_the_scripts` |
-| WEB-13 | `test_every_language_has_the_same_texts`, `test_every_text_the_page_asks_for_exists`, `test_no_sentence_for_people_is_written_in_the_scripts`, `test_a_preview_is_shown_in_the_language_of_the_page` |
+| WEB-13 | `test_every_language_has_the_same_texts`, `test_every_text_the_page_asks_for_exists`, `test_no_sentence_for_people_is_written_in_the_scripts`, `test_a_preview_is_shown_in_the_language_of_the_page`, `test_notices_carry_a_code_the_page_can_translate` |
 | WEB-14 | `test_listing_runs_reads_records_only`, `test_a_hidden_run_is_not_listed_and_its_files_remain` |
 | WEB-15 | `test_a_localization_older_than_the_source_is_marked` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |

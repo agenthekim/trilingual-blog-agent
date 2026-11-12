@@ -187,6 +187,8 @@ def test_a_record_written_before_there_were_lanes_is_still_opened(
         "action": None,
         "error": None,
         "notice": None,
+        "errors": [],
+        "notices": [],
     }
     runs.JOBS.clear()
 

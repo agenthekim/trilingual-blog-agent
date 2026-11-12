@@ -61,8 +61,7 @@ async function api(path, body, method) {
   let data = null;
   try { data = await response.json(); } catch (e) {}
   if (!response.ok) {
-    const detail = data && data.detail;
-    const error = new Error(typeof detail === "string" ? detail : detail ? detail.map((d) => d.msg).join("; ") : response.statusText);
+    const error = new Error(refusalText(data, response.statusText));
     error.status = response.status;
     throw error;
   }
@@ -272,8 +271,11 @@ function render(data) {
   drawLive();
 
   const notices = [];
-  if (data.error) notices.push(el("div", {class: "notice err"}, el("span", {class: "grow"}, t("stoppedWithError", {error: data.error}))));
-  if (data.notice) notices.push(el("div", {class: "notice note"}, el("span", {class: "grow"}, data.notice)));
+  // Each lane says how its last action ended, in the language of the page.
+  for (const lane of Object.values(data.lanes || {})) {
+    if (lane.error) notices.push(el("div", {class: "notice err"}, el("span", {class: "grow"}, t("stoppedWithError", {error: serverSentence(lane.errors) || lane.error}))));
+    if (lane.notice) notices.push(el("div", {class: "notice note"}, el("span", {class: "grow"}, serverSentence(lane.notices) || lane.notice)));
+  }
   if (!postsBusy) for (const approval of data.approvals) notices.push(el("div", {class: "notice ask"},
     el("span", {class: "grow"}, approval.hint, data.approvals.length > 1
       ? el("div", {class: "muted small"}, t("oneAnswerAtATime")) : null),

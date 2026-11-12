@@ -32,6 +32,7 @@ from typing import Any
 
 from opentelemetry.trace import StatusCode
 
+from app.notices import Notice, join, notice, parts_of, restore
 from app.observability import log_activity, log_event, root_span
 from app.pipeline import ArticlePipeline, describe_source
 from app.redaction import redact_credentials
@@ -46,26 +47,9 @@ MAX_LISTED_RUNS = 30
 _JOB_ID = re.compile(r"^[0-9a-f]{32}$")
 
 # One sentence per lane: it says that the lane works and which lane it is.
-BUSY = {
-    MAIN: (
-        "The main lane (posts and requests to the agent) is still working. "
-        "Try again when it has finished."
-    ),
-    SLIDES: (
-        "The slides lane (plans, decks and PDF) is still working. "
-        "Try again when it has finished."
-    ),
-}
-INTERRUPTED = {
-    MAIN: (
-        "The server stopped while this run was working. What was finished is "
-        "below; start a new run for the rest."
-    ),
-    SLIDES: (
-        "The server stopped while the slides of this run were being made. "
-        "What was finished is below; ask for the missing slides again."
-    ),
-}
+# Like every sentence for the page it carries its code (app/notices.py).
+BUSY = {lane: notice(f"lane_busy_{lane}") for lane in LANES}
+INTERRUPTED = {lane: notice(f"interrupted_{lane}") for lane in LANES}
 
 Work = Callable[[], Awaitable[str | None]]
 
@@ -76,13 +60,15 @@ class LaneBusy(Exception):
     def __init__(self, lane: str) -> None:
         super().__init__(BUSY[lane])
         self.lane = lane
+        self.notice = BUSY[lane]
 
 
 class UnknownRun(Exception):
     """No run of this id is held by this process or recorded on this server."""
 
     def __init__(self) -> None:
-        super().__init__("Unknown run. Its record is not on this server.")
+        self.notice = notice("unknown_run")
+        super().__init__(self.notice)
 
 
 def jobs_dir() -> Path:
@@ -107,7 +93,24 @@ class Lane:
             "action": self.action,
             "error": self.error,
             "notice": self.notice,
+            # The same sentences in parts, each with the code the page
+            # looks up to show it in the interface language (WEB-13).
+            "errors": parts_of(self.error),
+            "notices": parts_of(self.notice),
         }
+
+
+def _lane_record(lane: Lane) -> dict[str, Any]:
+    """What the run record keeps of a lane. The parts of a notice that has
+    codes are kept with it, so it is still translated after a restart."""
+    kept: dict[str, Any] = {
+        "busy": lane.busy,
+        "error": lane.error,
+        "notice": lane.notice,
+    }
+    if isinstance(lane.notice, Notice):
+        kept["notice_parts"] = parts_of(lane.notice)
+    return kept
 
 
 def _lanes() -> dict[str, Lane]:
@@ -151,9 +154,7 @@ class Job:
 
     @property
     def notice(self) -> str | None:
-        return (
-            " ".join(lane.notice for lane in self.lanes.values() if lane.notice) or None
-        )
+        return join(*(lane.notice for lane in self.lanes.values()))
 
     def add_log(self, line: str) -> None:
         line = redact_credentials(line)
@@ -184,10 +185,7 @@ class Job:
             "talk_languages": self.talk_languages,
             "wants_decks": self.wants_decks,
             "busy": self.busy,
-            "lanes": {
-                name: {"busy": lane.busy, "error": lane.error, "notice": lane.notice}
-                for name, lane in self.lanes.items()
-            },
+            "lanes": {name: _lane_record(lane) for name, lane in self.lanes.items()},
             "reply": self.reply,
         }
         path = jobs_dir() / f"{self.id}.json"
@@ -268,11 +266,12 @@ def reopen(job_id: str) -> Job | None:
     interrupted = False
     for name, lane in job.lanes.items():
         was = recorded[name]
-        lane.error, lane.notice = was.get("error"), was.get("notice")
+        lane.error = was.get("error")
+        lane.notice = restore(was.get("notice"), was.get("notice_parts"))
         if was.get("busy"):
             # Whatever was running died with the old process, and an approval
             # the agent was waiting for is gone with it.
-            lane.notice = " ".join(filter(None, [INTERRUPTED[name], lane.notice]))
+            lane.notice = join(INTERRUPTED[name], lane.notice)
             interrupted = True
     if interrupted:
         job.save()  # said once, not on every reopening
@@ -420,7 +419,7 @@ def start_run(
 
     async def posts() -> str | None:
         await job.pipeline.mark_surface(talk_minutes, audience)
-        ready, notice = await job.pipeline.run_posts(source_text)
+        ready, said = await job.pipeline.run_posts(source_text)
         if ready and talk_minutes > 0 and talk_languages:
             try:
                 start(
@@ -432,10 +431,8 @@ def start_run(
                     "run_slides",
                 )
             except LaneBusy as busy:
-                notice = " ".join(
-                    filter(None, [notice, f"No slides were started. {busy}"])
-                )
-        return notice
+                said = join(said, notice("slides_not_started"), busy.notice)
+        return said
 
     start(job, MAIN, posts, "run_posts")
 
@@ -479,8 +476,9 @@ async def start_requested_slides(job: Job) -> str | None:
             "slides_request",
         )
     except LaneBusy as busy:
-        return (
-            "The slides that were approved were not started. "
-            f"{busy} Then ask for them again."
+        return join(
+            notice("approved_slides_not_started"),
+            busy.notice,
+            notice("ask_for_slides_again"),
         )
     return None

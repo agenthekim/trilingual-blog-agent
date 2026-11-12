@@ -29,6 +29,30 @@ function textIn(lang, key, params, otherwise) {
 function t(key, params, otherwise) {
   return textIn(currentUiLang, key, params, otherwise);
 }
+// A sentence of the server in the language of the page. A notice or a refusal
+// comes in parts, each the English sentence with a code and the values it was
+// filled with; server.<code> is its text. A part without a code, or with a
+// code no catalog has, is shown as the server wrote it. A value that is a
+// language code, or a list of them, is written as the page names languages;
+// every other value (what a platform answered, a title) is shown as it is.
+function serverText(part) {
+  if (!part || !part.code) return part ? part.text : "";
+  const params = {};
+  for (const [name, value] of Object.entries(part.params || {})) {
+    const named = (code) => t("lang." + code, null, code);
+    params[name] = Array.isArray(value) ? value.map(named).join(", ") : name === "language" ? named(value) : value;
+  }
+  return t("server." + part.code, params, part.text);
+}
+const serverSentence = (parts) => (parts || []).map(serverText).join(" ");
+// Why the server refused a request, from its answer: in the language of the
+// page when the answer carries codes, else the sentence it wrote.
+function refusalText(data, otherwise) {
+  if (data && Array.isArray(data.notices) && data.notices.length) return serverSentence(data.notices);
+  const detail = data && data.detail;
+  if (typeof detail === "string") return detail;
+  return Array.isArray(detail) ? detail.map((d) => d.msg).join("; ") : otherwise;
+}
 // A text that counts: ``key.one`` for exactly one, ``key.other`` otherwise.
 function tn(key, n, params) {
   return t(`${key}.${n === 1 ? "one" : "other"}`, {n, ...params});

@@ -20,13 +20,9 @@ function say(text, tone) {
 async function api(path, options) {
   const response = await fetch(path, options);
   if (response.ok) return response;
-  let detail = response.statusText;
-  try {
-    const data = await response.json();
-    if (typeof data.detail === "string") detail = data.detail;
-    else if (Array.isArray(data.detail)) detail = data.detail.map((d) => d.msg).join("; ");
-  } catch (e) {}
-  throw new Error(detail);
+  let data = null;
+  try { data = await response.json(); } catch (e) {}
+  throw new Error(refusalText(data, response.statusText));
 }
 
 async function load() {

@@ -173,7 +173,7 @@ stage at a time and waits.
 | WEB-10 | Settings shows the fixed language-to-platform mapping, per credential whether it is configured, and the Google account that decks go to, as reported by the server at that moment. No names or values of secrets |
 | WEB-11 | While a lane works, nothing else can be started in that lane; one sentence says so and names the lane. The other lane stays usable (RUN-1). A lost connection is shown. When an action ends without doing what was asked, a notice says what did not happen (INV-12) |
 | WEB-12 | Texts for people are written for people: platform names not ids, no Python lists, no exception class names. A sentence is written whole in the catalog (WEB-13), not put together from pieces. Each of the three languages is named in its own writing: English, 한국어, 日本語 |
-| WEB-13 | The page, the editor and the previews are shown in English, Korean or Japanese, chosen in Settings and remembered in the browser. Every text the page itself shows comes from one catalog per language with the same keys; a text that is missing falls back to English. What the author wrote or typed, what the agent answered and what a platform returned are shown as they are |
+| WEB-13 | The page, the editor and the previews are shown in English, Korean or Japanese, chosen in Settings and remembered in the browser. Every text the page itself shows comes from one catalog per language with the same keys; a text that is missing falls back to English. Notices from the server carry a code so the page can show them in that language. What the author wrote or typed, what the agent answered and what a platform returned are shown as they are |
 | WEB-14 | "Recent sources" lists the runs on this server, newest first, with title, kind and length, from the run records alone. An entry opens its run or fills the source box; hiding an entry removes it from the list and leaves its files |
 | WEB-15 | A localization made from an earlier text of the source is marked as older than the source, and re-translating is offered |
 
@@ -445,7 +445,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
 | WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
 | WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs`, `test_no_sentence_for_people_is_written_in_the_scripts` |
-| WEB-13 | `test_every_language_has_the_same_texts`, `test_every_text_the_page_asks_for_exists`, `test_no_sentence_for_people_is_written_in_the_scripts`, `test_a_preview_is_shown_in_the_language_of_the_page` |
+| WEB-13 | `test_every_language_has_the_same_texts`, `test_every_text_the_page_asks_for_exists`, `test_no_sentence_for_people_is_written_in_the_scripts`, `test_a_preview_is_shown_in_the_language_of_the_page`, `test_notices_carry_a_code_the_page_can_translate` |
 | WEB-14 | `test_listing_runs_reads_records_only`, `test_a_hidden_run_is_not_listed_and_its_files_remain` |
 | WEB-15 | `test_a_localization_older_than_the_source_is_marked` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |

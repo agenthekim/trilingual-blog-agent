@@ -13,7 +13,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-from app import policy, web_ui
+from app import notices, policy, web_ui
 from app.pipeline import SLIDE_PHASES
 from app.settings import LANGUAGES
 
@@ -199,6 +199,8 @@ def test_every_text_the_page_asks_for_exists() -> None:
         # The kinds of source the page names itself; a kind of address goes
         # by the name people know it by, which the server sends (WEB-14).
         "sourceKind.": {"draft", "request", "elsewhere"},
+        # The sentences the server says: one text per code it can send.
+        "server.": set(notices.TEMPLATES),
     }
     assert families == set(expected)
     for family, values in expected.items():
@@ -248,3 +250,136 @@ def test_no_sentence_for_people_is_written_in_the_scripts() -> None:
                 assert text in _NAMES_IN_PAGES, (
                     f"{page}: {text!r} is not in the catalog"
                 )
+
+
+def test_notices_carry_a_code_the_page_can_translate(isolated_workspace) -> None:
+    """WEB-13: what the server says has a code, and every code has its text."""
+    from fastapi.testclient import TestClient
+
+    from app import runs
+    from app.notices import TEMPLATES, Notice, join, notice, parts_of
+
+    # 1. One list of codes, and the catalogs follow it: the English text is
+    # the sentence the server writes, and every language takes the same values.
+    english = _catalog("en")
+    assert len(TEMPLATES) > 40
+    for code, sentence in TEMPLATES.items():
+        assert re.fullmatch(r"[a-z][a-z0-9_]*", code), code
+        assert english[f"server.{code}"] == sentence, code
+    assert {key for key in english if key.startswith("server.")} == {
+        f"server.{code}" for code in TEMPLATES
+    }
+
+    # 2. Every code is one the server sends, and it sends no other: the
+    # sentences of the pipeline, the lanes and the web layer are made by
+    # notice(), never written where they are said.
+    app_dir = Path(web_ui.__file__).parent
+    sent: set[str] = set()
+    for name in ("runs.py", "pipeline.py", "web_ui.py"):
+        source = (app_dir / name).read_text(encoding="utf-8")
+        sent.update(re.findall(r'"([a-z][a-z0-9_]*)"', source))
+    sent.update(
+        f"{kind}_{lane}" for kind in ("lane_busy", "interrupted") for lane in runs.LANES
+    )
+    assert not sorted(set(TEMPLATES) - sent), "codes the server never sends"
+    for name in ("runs.py", "pipeline.py", "web_ui.py"):
+        source = (app_dir / name).read_text(encoding="utf-8")
+        for code in re.findall(r'\bnotice\(\s*"(\w+)"', source):
+            assert code in TEMPLATES, (name, code)
+
+    # 3. A notice is its English sentence, with the code and the values. A
+    # language is sent as its code, what a platform said as it is.
+    said = notice("deck_not_created", language="ja", reason="Drive answered 403.")
+    assert (
+        said == "The Japanese Google Slides deck was not created. Drive answered 403."
+    )
+    assert parts_of(said) == [
+        {
+            "code": "deck_not_created",
+            "params": {"language": "ja", "reason": "Drive answered 403."},
+            "text": str(said),
+        }
+    ]
+    failed = notice("structure_check_failed", languages=["en", "ja"])
+    assert failed.startswith("The structure check failed for English and Japanese,")
+    assert failed.parts[0]["params"] == {"languages": ["en", "ja"]}
+    assert notice("no_text_written", languages=["en", "ja"]).startswith(
+        "No English or Japanese text was written"
+    )
+    # Several sentences stay several parts; one without a code is passed on.
+    both = join(said, None, "The platform said no.", runs.BUSY[runs.SLIDES])
+    assert isinstance(both, Notice)
+    assert both == f"{said} The platform said no. {runs.BUSY[runs.SLIDES]}"
+    assert [part["code"] for part in both.parts] == [
+        "deck_not_created",
+        None,
+        "lane_busy_slides",
+    ]
+    assert join(None, "") is None and parts_of(None) == []
+
+    # 4. The lanes say it in the status, next to the sentences that were
+    # always there, and a refusal says it in its answer.
+    class Pipeline:
+        session_id = "session-of-the-fake"
+
+        def __init__(self) -> None:
+            self.approvals: list[dict] = []
+            self.slide_phases: dict[str, str] = {}
+
+        async def session_state(self) -> dict:
+            return {}
+
+    job = runs.Job(id="e" * 32, pipeline=Pipeline())
+    runs.JOBS[job.id] = job
+    try:
+        client = TestClient(web_ui.web, base_url="http://127.0.0.1:8502")
+        job.lanes[runs.MAIN].notice = failed
+        job.lanes[runs.SLIDES].error = "the connection was reset"
+        job.lanes[runs.SLIDES].busy = True
+        job.save()
+        status = client.get(f"/api/jobs/{job.id}").json()
+        assert status["notice"] == str(failed)  # a string, as before
+        assert status["lanes"]["main"]["notices"] == parts_of(failed)
+        assert status["lanes"]["slides"]["errors"] == [
+            {"code": None, "params": {}, "text": "the connection was reset"}
+        ]
+
+        refused = client.post(f"/api/jobs/{job.id}/pdf", json={"language": "en"})
+        assert refused.status_code == 409
+        assert refused.json() == {
+            "detail": runs.BUSY[runs.SLIDES],
+            "code": "lane_busy_slides",
+            "params": {},
+            "notices": parts_of(runs.BUSY[runs.SLIDES]),
+        }
+        tags = client.post(
+            f"/api/jobs/{job.id}/draft",
+            json={"platform": "devto", "tags": ["Not Valid"], "approved": True},
+        )
+        assert tags.status_code == 400 and tags.json()["code"] == "tag_rule_devto"
+        assert tags.json()["detail"] == TEMPLATES["tag_rule_devto"]
+        unknown = client.get(f"/api/jobs/{'0' * 32}")
+        assert unknown.status_code == 404 and unknown.json()["code"] == "unknown_run"
+
+        # After a restart the notice is still coded, and "interrupted" is too.
+        runs.JOBS.clear()
+        again = client.get(f"/api/jobs/{job.id}").json()["lanes"]
+        assert [part["code"] for part in again["main"]["notices"]] == [
+            "structure_check_failed"
+        ]
+        assert [part["code"] for part in again["slides"]["notices"]] == [
+            "interrupted_slides"
+        ]
+        runs.JOBS.clear()
+        once_more = client.get(f"/api/jobs/{job.id}").json()["lanes"]
+        assert once_more["slides"]["notices"] == again["slides"]["notices"]
+    finally:
+        runs.JOBS.clear()
+
+    # 5. The page looks the code up and falls back to the server's sentence;
+    # the main page and the editor read refusals the same way.
+    shared = _script("i18n.js")
+    assert 't("server." + part.code, params, part.text)' in shared
+    for name in ("app.js", "edit.js"):
+        assert "refusalText(data, response.statusText)" in _script(name), name
+    assert "serverSentence(lane.notices)" in _script("app.js")

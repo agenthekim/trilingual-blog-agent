@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app import policy, runs, secrets
 from app.google_slides import SlidesError, granted_account, mermaid_preview_url
+from app.notices import join, notice, parts_of
 from app.observability import log_event, setup_tracing, traced_span
 from app.pipeline import (
     overview,
@@ -120,15 +121,52 @@ _start = runs.start
 _claim = runs.claim
 
 
+class Refused(Exception):
+    """A request this layer turns away, with the sentence that says why."""
+
+    def __init__(self, status: int, why: str) -> None:
+        super().__init__(why)
+        self.status, self.why = status, why
+
+
+def _refusal(status: int, why: str) -> JSONResponse:
+    """A refusal as the page reads it: ``detail`` is the English sentence, as
+    it always was; ``notices`` are its parts, each with the code the page
+    looks up to say it in the interface language (WEB-13), and ``code`` and
+    ``params`` are those of a refusal that is one coded sentence."""
+    parts = parts_of(why)
+    one = parts[0] if len(parts) == 1 else {}
+    return JSONResponse(
+        {
+            "detail": str(why),
+            "code": one.get("code"),
+            "params": one.get("params") or {},
+            "notices": parts,
+        },
+        status_code=status,
+    )
+
+
+def _said(exc: Exception) -> str:
+    """The sentence an exception was raised with, with its code if it has one."""
+    first = exc.args[0] if exc.args else ""
+    return first if isinstance(first, str) else str(exc)
+
+
+@web.exception_handler(Refused)
+async def refused(request: Request, exc: Refused) -> JSONResponse:
+    return _refusal(exc.status, exc.why)
+
+
 @web.exception_handler(runs.LaneBusy)
 async def lane_is_busy(request: Request, exc: runs.LaneBusy) -> JSONResponse:
     """A lane that works refuses its own new actions, in one sentence (WEB-11)."""
-    return JSONResponse({"detail": str(exc)}, status_code=409)
+    return _refusal(409, exc.notice)
 
 
 @web.exception_handler(runs.UnknownRun)
 async def unknown_run(request: Request, exc: runs.UnknownRun) -> JSONResponse:
-    return JSONResponse({"detail": str(exc)}, status_code=404)
+    return _refusal(404, exc.notice)
 
 
 class StartRequest(BaseModel):
@@ -474,18 +512,8 @@ async def job_status(job_id: str) -> dict[str, Any]:
 
 
 _TAG_RULES = {
-    "qiita": (
-        QiitaDraftInput,
-        "Qiita takes one to five tags without spaces, separated by commas "
-        '(Good: "GoogleCloud, Lustre, HPC, Storage, GCP" · '
-        'Bad: "GoogleCloud Lustre HPC Storage GCP").',
-    ),
-    "devto": (
-        DevtoDraftInput,
-        "DEV Community takes up to four tags, lowercase letters and digits only, "
-        'separated by commas (Good: "googlecloud, lustre, hpc, storage" · '
-        'Bad: "GoogleCloud, google-cloud" or "gcp lustre hpc").',
-    ),
+    "qiita": (QiitaDraftInput, notice("tag_rule_qiita")),
+    "devto": (DevtoDraftInput, notice("tag_rule_devto")),
 }
 
 
@@ -495,18 +523,18 @@ async def post_draft(job_id: str, request: DraftRequest) -> dict[str, bool]:
     the button for this platform, with the draft-or-public choice they made."""
     job = _job(job_id)
     if not request.approved:
-        raise HTTPException(400, "A post is sent only with a person's approval.")
+        raise Refused(400, notice("post_needs_approval"))
     model, rule = _TAG_RULES[request.platform]
     try:
         model(title="title", tags=request.tags)
     except ValidationError as exc:
-        raise HTTPException(400, rule) from exc
+        raise Refused(400, rule) from exc
     if job.lanes[runs.MAIN].busy:
         raise runs.LaneBusy(runs.MAIN)
     current = await job.pipeline.session_state()
     # Said at once rather than after a round trip: finalize first, and so on.
     if refusal := policy.posting_refusal(current, request.platform):
-        raise HTTPException(409, refusal.message)
+        raise Refused(409, refusal.message)
     _start(
         job,
         runs.MAIN,
@@ -522,7 +550,7 @@ async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
     approved by a person. The plan is left as it is."""
     job = _job(job_id)
     if not request.approved:
-        raise HTTPException(400, "A deck is created only with a person's approval.")
+        raise Refused(400, notice("deck_needs_approval"))
     _start(
         job,
         runs.SLIDES,
@@ -542,7 +570,7 @@ async def request_slides(job_id: str, request: SlidesRequest) -> dict[str, bool]
     """
     job = _job(job_id)
     if not request.approved:
-        raise HTTPException(400, "Slides are made only with a person's approval.")
+        raise Refused(400, notice("slides_need_approval"))
     log_event(
         "slide request approved in the web ui",
         event_phase="HUMAN_APPROVAL",
@@ -575,7 +603,7 @@ async def finalize_post(job_id: str, request: FinalizeRequest) -> dict[str, Any]
                 request.language, request.acknowledge_findings
             )
         except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+            raise Refused(400, _said(exc)) from exc
 
 
 @web.post("/api/jobs/{job_id}/deck/sync")
@@ -597,16 +625,16 @@ async def sync_deck(job_id: str, request: DeckSyncRequest) -> dict[str, Any]:
                 change_id=request.change_id,
             )
         except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+            raise Refused(400, _said(exc)) from exc
         except SlidesError as exc:
-            raise HTTPException(502, exc.message) from exc
+            raise Refused(502, exc.message) from exc
 
     if not request.approved:
         if job.lanes[runs.SLIDES].busy:
             raise runs.LaneBusy(runs.SLIDES)
         return await run()
     if not request.change_id:
-        raise HTTPException(400, "Ask what would change before approving it.")
+        raise Refused(400, notice("ask_before_approving"))
     log_event(
         "deck text sync approved in the web ui",
         event_phase="HUMAN_APPROVAL",
@@ -643,15 +671,12 @@ async def send_message(job_id: str, request: MessageRequest) -> dict[str, bool]:
         )
         notes = []
         if dropped:
-            notes.append(
-                f"{dropped} request(s) the agent was waiting on were left "
-                "unanswered by this message and are gone. Ask again for those."
-            )
+            notes.append(notice("requests_left_unanswered", count=dropped))
         # A slide request can only have been approved in an approval turn,
         # but one left from an earlier turn is not left lying either.
         if not_started := await runs.start_requested_slides(job):
             notes.append(not_started)
-        return " ".join(notes) or None
+        return join(*notes)
 
     _start(job, runs.MAIN, work, "message")
     return {"accepted": True}
@@ -662,7 +687,7 @@ async def answer_approval(job_id: str, request: ApprovalRequest) -> dict[str, bo
     """Answer one request the agent is waiting on, and only that one."""
     job = _job(job_id)
     if not any(approval["id"] == request.id for approval in job.pipeline.approvals):
-        raise HTTPException(409, "That approval request is no longer waiting.")
+        raise Refused(409, notice("approval_not_waiting"))
 
     async def work() -> str | None:
         declined = await job.pipeline.answer_approval(request.id, request.confirmed)
@@ -671,14 +696,11 @@ async def answer_approval(job_id: str, request: ApprovalRequest) -> dict[str, bo
             await job.pipeline.summarize()  # something may have been posted
         notes = []
         if declined:
-            notes.append(
-                f"{declined} other request(s) the agent was waiting on were "
-                "declined: one answer goes to one request. Ask again for those."
-            )
+            notes.append(notice("other_requests_declined", count=declined))
         # An approved slide request is run by code, in the slides lane.
         if not_started := await runs.start_requested_slides(job):
             notes.append(not_started)
-        return " ".join(notes) or None
+        return join(*notes)
 
     _start(job, runs.MAIN, work, "approval")
     return {"accepted": True}
@@ -770,7 +792,7 @@ async def save_file(job_id: str, name: str, request: EditRequest) -> dict[str, A
         try:
             return await job.pipeline.save_edit(name, request.markdown, request.title)
         except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+            raise Refused(400, _said(exc)) from exc
 
 
 def main() -> None:

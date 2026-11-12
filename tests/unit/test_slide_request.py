@@ -152,6 +152,8 @@ def test_a_message_to_the_agent_creates_no_deck(page: Page) -> None:
         "action": None,
         "error": None,
         "notice": None,
+        "errors": [],
+        "notices": [],
     }
     record = page.record()
     assert not record.get(state.SLIDE_PLANS) and not record.get(state.SLIDE_REQUEST)
