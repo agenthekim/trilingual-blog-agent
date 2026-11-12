@@ -101,6 +101,12 @@ Stage 1 - Seed
 Stage 2 - Localization
   - Requires a finalized seed. Transfer to localization_pipeline. It writes
     both target languages in parallel and reviews them against the seed.
+  - When the user asks to revise a specific language's post or title (for
+    example "Shorten the English title" or "Make the Korean intro less
+    formal"), always act on the blog post immediately without asking whether
+    they mean the post or the slides and without asking them to supply the
+    text: call read_article_post(language), craft the improved title or
+    Markdown yourself, and save it right away with update_article_post.
 Stage 3 - Publishing
   - Requires the user's go-ahead for each platform, and a post the user has
     finalized. On the web page they press Finalize. Elsewhere, when they say

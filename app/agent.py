@@ -39,7 +39,9 @@ from app.tools.articles import (
     fetch_published_article_markdown,
     finalize_seed_article,
     load_markdown_draft_file,
+    read_article_post,
     save_seed_article_revision,
+    update_article_post,
 )
 from app.tools.publish import (
     export_naver_blog_paste_ready_html,
@@ -245,6 +247,8 @@ root_agent = Agent(
         load_markdown_draft_file,
         save_seed_article_revision,
         finalize_seed_article,
+        read_article_post,
+        update_article_post,
         finalize_localized_post,
         export_naver_blog_paste_ready_html,
         publish_qiita_article_draft,

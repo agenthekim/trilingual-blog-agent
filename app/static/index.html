@@ -60,9 +60,11 @@
   .runhead { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
   .runhead h2 { font-size:17px; }
   ol.steps { list-style:none; display:flex; gap:6px; padding:0; margin:14px 0 0; flex-wrap:wrap; }
+  ol.steps.subrow { margin-top:8px; }
   ol.steps li { flex:1 1 120px; border-top:3px solid var(--line); padding-top:6px; font-size:12.5px; color:var(--muted); }
   ol.steps li.done { border-color:var(--ok); color:var(--text); }
   ol.steps li.now { border-color:var(--accent); color:var(--text); font-weight:600; }
+  ol.steps li.spacer { border-top-color:transparent; visibility:hidden; pointer-events:none; }
   .live { display:flex; gap:8px; align-items:center; margin-top:12px; min-height:22px; }
   .live .last { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; }
   .spinner { width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%;
@@ -165,7 +167,7 @@
       <label class="field" for="source" style="margin-bottom:0"><span data-i18n="sourceTitle">Source document</span>
         <span class="hint" data-i18n="sourceHint">Share a post URL, a .md file, or your document.</span>
       </label>
-      <button type="button" class="hidden" id="clearRun" data-i18n="clearBtn" style="font-size:12px; padding:0 12px; height:28px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; font-weight:500; white-space:nowrap">Clear / New article</button>
+      <button type="button" class="primary hidden" id="clearRun" data-i18n="clearBtn" style="font-size:12px; padding:0 12px; height:28px; white-space:nowrap">Clear / New article</button>
     </div>
     <textarea id="source" required placeholder="https://qiita.com/you/items/…   or   # My draft …"></textarea>
     <div class="under">
@@ -218,6 +220,7 @@
     </div>
     <div class="live" id="live"></div>
     <ol class="steps" id="steps"></ol>
+    <ol class="steps subrow" id="slideSteps"></ol>
     <ol class="steps" id="nextSteps"></ol>
     <div id="notices"></div>
   </section>
@@ -630,13 +633,42 @@ function render(data) {
   $("articleTitle").textContent = o.title || (busy ? "Reading the source document…" : "No article was stored");
   // The server says which steps are done, judged against what this run was asked for.
   const firstOpen = data.progress.findIndex((step) => !step.done);
-  $("steps").replaceChildren(...data.progress.map((step, i) =>
-    el("li", {class: step.done ? "done" : (busy && i === firstOpen ? "now" : "")}, (step.done ? "✓ " : "") + step.name)));
   const postSteps = data.post_progress || [];
   const stage1Done = firstOpen === -1 && data.progress.length > 0;
   const firstPostOpen = postSteps.findIndex((step) => !step.done);
-  $("nextSteps").replaceChildren(...postSteps.map((step, i) =>
-    el("li", {class: step.done ? "done" : (stage1Done && i === firstPostOpen ? "now" : "")}, (step.done ? "✓ " : "") + step.name)));
+  const stepLi = (step, isNow) => el("li", {class: step.done ? "done" : (isNow ? "now" : "")}, (step.done ? "✓ " : "") + step.name);
+  const spacerLi = () => el("li", {class: "spacer"}, "");
+
+  if (data.progress.length >= 5 && postSteps.length >= 5) {
+    // Row 1: Source document | Transform | Prepare posts | Summarize | Review & edit
+    $("steps").replaceChildren(
+      stepLi(data.progress[0], busy && firstOpen === 0),
+      stepLi(data.progress[1], busy && firstOpen === 1),
+      stepLi(data.progress[2], busy && firstOpen === 2),
+      stepLi(data.progress[4], busy && firstOpen === 4),
+      stepLi(postSteps[0], stage1Done && firstPostOpen === 0)
+    );
+    // Row 2: Prepare slides directly beneath Prepare posts (column 3)
+    $("slideSteps").replaceChildren(
+      spacerLi(),
+      spacerLi(),
+      stepLi(data.progress[3], busy && firstOpen === 3),
+      spacerLi(),
+      spacerLi()
+    );
+    // Row 3: Finalize posts | Approve & draft | Publish posts | Verify & complete
+    $("nextSteps").replaceChildren(
+      stepLi(postSteps[1], stage1Done && firstPostOpen === 1),
+      stepLi(postSteps[2], stage1Done && firstPostOpen === 2),
+      stepLi(postSteps[3], stage1Done && firstPostOpen === 3),
+      stepLi(postSteps[4], stage1Done && firstPostOpen === 4),
+      spacerLi()
+    );
+  } else {
+    $("steps").replaceChildren(...data.progress.map((step, i) => stepLi(step, busy && i === firstOpen)));
+    $("slideSteps").replaceChildren();
+    $("nextSteps").replaceChildren(...postSteps.map((step, i) => stepLi(step, stage1Done && i === firstPostOpen)));
+  }
   drawLive();
 
   const notices = [];

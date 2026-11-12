@@ -446,3 +446,87 @@ def finalize_seed_article(tool_context: ToolContext) -> dict[str, Any]:
         + " and ".join(targets)
         + " by transferring to localization_pipeline.",
     }
+
+
+def read_article_post(language: str, tool_context: ToolContext) -> dict[str, Any]:
+    """Read the current title and Markdown of one language's blog post ('ko', 'en' or 'ja')."""
+    if language not in LANGUAGES:
+        return tool_error(
+            "UNKNOWN_LANGUAGE",
+            f"'{language}' is not one of the three languages.",
+            "Use 'ko', 'en' or 'ja'.",
+        )
+    text = state.article_markdown(tool_context.state, language)
+    if not text:
+        return tool_error(
+            "NO_POST_FOR_LANGUAGE",
+            f"There is no {language} post in this session yet.",
+            "Localize the seed article first.",
+        )
+    return {
+        "status": "success",
+        "language": language,
+        "title": state.article_title(tool_context.state, language),
+        "markdown": text,
+    }
+
+
+def update_article_post(
+    language: str,
+    title: str,
+    markdown: str,
+    tool_context: ToolContext,
+) -> dict[str, Any]:
+    """Update the title and/or Markdown body of one language's blog post ('ko', 'en' or 'ja').
+
+    Pass a non-empty `title` to update the post title, and/or pass the full
+    updated `markdown` body (or leave `markdown` as an empty string '' if only
+    changing the title). Changes are saved to both session state and post.<lang>.md.
+    """
+    from app.markdown_checks import check_fidelity
+    from app.settings import MAX_TITLE_CHARS
+
+    if language not in LANGUAGES:
+        return tool_error(
+            "UNKNOWN_LANGUAGE",
+            f"'{language}' is not one of the three languages.",
+            "Use 'ko', 'en' or 'ja'.",
+        )
+    project_id = tool_context.state.get(state.PROJECT_ID) or ""
+    old_text = state.article_markdown(tool_context.state, language) or ""
+    if not project_id or not old_text:
+        return tool_error(
+            "NO_POST_FOR_LANGUAGE",
+            f"There is no {language} post in this session yet.",
+            "Localize the seed article first.",
+        )
+    old_title = state.article_title(tool_context.state, language)
+    new_title = title.strip()[:MAX_TITLE_CHARS] if title and title.strip() else old_title
+    new_text = (markdown.rstrip() + "\n") if markdown and markdown.strip() else old_text
+    if new_title != old_title and not (markdown and markdown.strip()):
+        new_text = re.sub(r"\A(\s*#\s+)[^\n]+", rf"\g<1>{new_title}", new_text, count=1)
+
+    titles = dict(tool_context.state.get(state.LOCALIZED_TITLES) or {})
+    titles[language] = new_title
+    tool_context.state[state.LOCALIZED_TITLES] = titles
+
+    if language == tool_context.state.get(state.SOURCE_LANGUAGE):
+        tool_context.state[state.SEED_TITLE] = new_title
+        tool_context.state[state.SEED_MARKDOWN] = new_text
+        get_article_store().save_project(project_id, {"title": new_title})
+    else:
+        tool_context.state[state.localized_key(language)] = new_text
+        check = check_fidelity(tool_context.state.get(state.SEED_MARKDOWN) or "", new_text)
+        reports = dict(tool_context.state.get(state.FIDELITY_REPORT) or {})
+        reports[language] = check
+        tool_context.state[state.FIDELITY_REPORT] = reports
+
+    get_article_store().add_version(project_id, language, "edited", new_text)
+    file = write_workspace_file(project_id, f"post.{language}.md", new_text)
+    return {
+        "status": "success",
+        "language": language,
+        "title": new_title,
+        "file": file,
+        "markdown_chars": len(new_text),
+    }
