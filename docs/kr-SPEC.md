@@ -189,7 +189,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | SEC-1 | 웹 서버에는 로그인이 없다. localhost에서 수신하며 localhost 앞으로 온 요청에만 응답한다. 다른 `--host`로 시작한 경우에는 예외로, 서버에 닿을 수 있는 누구에게나 어떤 이름으로든 응답한다. 에이전트의 API 서버는 수동으로 시작하면 localhost에서 수신한다 |
 | SEC-2 | 라우트는 생성된 이름과 일치하는 파일 이름만 받으며 절대 프로젝트 폴더를 벗어나지 않는다 |
 | SEC-3 | 인증된 HTTP 클라이언트는 리디렉션을 따라가지 않는다. 인증 없는 요청은 리디렉션을 최대 세 번까지 따라가며 매번 호스트를 다시 검사한다(INV-8) |
-| SEC-4 | 로그와 저장되는 메모리는 마스킹을 거친다(이메일, 전화번호, 자격 증명 패턴. 활성화된 경우 Cloud DLP). 메모리에는 작성자와 코디네이터가 한 말을 담으며 각 메시지는 1,000자로 자른다. 작성 에이전트가 만들어 낸 것과 도구가 반환한 것은 저장하지 않는다 |
+| SEC-4 | 로그와 저장되는 메모리는 마스킹을 거친다(이메일, 전화번호, 자격 증명 패턴. 활성화된 경우 Cloud DLP). 메모리에는 작성자와 코디네이터가 한 말을 담으며 각 메시지는 1,000자로 자른다. 작성 에이전트가 만들어 낸 것과 도구가 반환한 것은 저장하지 않는다. 식별자(함수 호출 id, 호출 id, 실행 id, 추적 id)는 마스킹하지 않으며, 식별자 안의 숫자열은 카드 번호로 보지 않는다 |
 | SEC-5 | 다이어그램 소스는 슬라이드용이든 미리보기용이든 `BLOG_AGENT_RENDER_MERMAID`가 켜져 있을 때에만 mermaid.ink로 보낸다. README는 두 경우를 모두 밝힌다 |
 | SEC-6 | Slides 권한 부여는 개인 계정이나 전용 Google 계정의 것이어야 하며, 회사나 학교 계정이어서는 절대 안 된다. 덱 하나를 승인해 달라는 요청은 채팅에서든 페이지에서든 그 계정을 명시한다. Settings도 계정을 명시하며, 실행 양식의 "your configured Google Drive"가 어느 계정인지는 여기서 확인한다 |
 
@@ -197,7 +197,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| OPS-1 | 모든 도구 호출은 의도와 결과로 나누어, 마스킹을 적용한 구조화된 JSON으로 로그에 남긴다. 플랫폼 호출은 트레이싱 스팬 안에서 실행한다 |
+| OPS-1 | 모든 도구 호출은 의도와 결과로 나누어, 마스킹을 적용한 구조화된 JSON으로 로그에 남기며, 모델을 직접 부르는 호출도 그렇게 남긴다. 사람이 페이지나 스크립트로 시작한 액션은 모두 추적 하나 안에서 실행된다. 액션의 루트 스팬이 있고, 그 아래에 에이전트와 도구의 스팬이 이어지며, 밖으로 나가는 호출(플랫폼, Google Slides, 다이어그램 서비스, 모델)마다 자식 스팬이 있다. 로그 기록은 추적 id와 스팬 id를 싣는다. `BLOG_AGENT_TRACE_EXPORT=cloud`이면 스팬을 Cloud Trace로 내보낸다 |
 | OPS-2 | `uv run pytest tests/unit`은 모델, 네트워크, 자격 증명 없이 실행되며, 부록 B가 단위 테스트에 배정한 모든 요구사항을 다룬다. 이것은 픽스처가 보장한다. 픽스처는 네트워크 연결과 모델 관문을 거부하고, `.env`는 읽지 않는다 |
 | OPS-3 | 모델 이름은 설정값(`FAST_MODEL_NAME`, `REASONING_MODEL_NAME`)이며 코드 수정으로 바꾸지 않는다 |
 | OPS-4 | 모델을 부르는 곳은 둘이다. `app/agent.py`의 에이전트와 `app/llm.py`의 관문이다. 웹 계층은 모델도 플랫폼도 부르지 않고 파이프라인의 액션을 시작한다 |
@@ -444,10 +444,10 @@ flowchart TD
 | SEC-1 | `test_api_server_listens_on_localhost_by_default`, `test_the_server_answers_only_to_its_own_name` |
 | SEC-2 | `test_project_file_stays_inside_the_project_folder`, `test_source_and_unknown_files_cannot_be_edited` |
 | SEC-3 | `test_authenticated_clients_do_not_follow_redirects`, `test_unauthenticated_fetch_stops_after_three_redirects`, `test_unauthenticated_fetch_rechecks_the_host_on_every_redirect` |
-| SEC-4 | `test_pii_and_credentials_are_redacted_for_logs`, `test_memories_keep_only_what_author_and_coordinator_said`, `test_a_draft_pasted_into_the_chat_is_cut_before_it_is_remembered` |
+| SEC-4 | `test_pii_and_credentials_are_redacted_for_logs`, `test_memories_keep_only_what_author_and_coordinator_said`, `test_a_draft_pasted_into_the_chat_is_cut_before_it_is_remembered`, `test_identifiers_are_not_taken_for_card_numbers`, `test_a_card_number_in_a_message_is_still_redacted`, `test_cloud_dlp_is_called_only_when_enabled_and_a_failure_keeps_the_regex_result` |
 | SEC-5 | `test_mermaid_rendering_is_off_unless_enabled`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
 | SEC-6 | `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_settings_names_the_account_that_decks_go_to` |
-| OPS-1 | `test_log_records_are_scrubbed_before_emission` |
+| OPS-1 | `test_log_records_are_scrubbed_before_emission`, `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: 코드를 수정하는 사람을 위한 규칙이다. 기본값은 `app/models.py`에 있으며 환경 변수에서 읽는다 |
 | OPS-4 | `test_models_are_called_from_the_agents_and_the_gateway_only` |

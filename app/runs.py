@@ -30,7 +30,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.observability import log_event
+from opentelemetry.trace import StatusCode
+
+from app.observability import log_event, root_span
 from app.pipeline import ArticlePipeline
 from app.redaction import redact_credentials
 from app.settings import LANGUAGES, workspace_dir
@@ -261,13 +263,15 @@ def claim(job: Job, lane: str, what: str) -> Iterator[None]:
 
     One thing at a time per lane: claim it, or say that the lane is working.
     A request that is turned away does not clear a flag it did not set.
+    The action runs inside a trace of its own (OPS-1).
     """
     state = job.lanes[lane]
     if state.busy:
         raise LaneBusy(lane)
     state.busy, state.action = True, what
     try:
-        yield
+        with root_span(f"run.{lane}.{what}", run_id=job.id, lane=lane):
+            yield
     finally:
         state.busy, state.action = False, None
 
@@ -278,7 +282,8 @@ def start(job: Job, lane: str, work: Work, what: str) -> None:
     ``work`` returns None when it did what was asked, or a sentence for the
     page saying what did not happen. Whatever it does, the lane ends free
     and with one of three outcomes the page shows: done, a notice, or an
-    error (RUN-3).
+    error (RUN-3). The action is one trace: its root span is opened here, and
+    what runs under it, and what it logs, belongs to that trace (OPS-1).
     """
     state = job.lanes[lane]
     if state.busy:
@@ -289,22 +294,25 @@ def start(job: Job, lane: str, work: Work, what: str) -> None:
     job.save()
 
     async def runner() -> None:
-        try:
-            state.notice = await work()
-        except Exception as exc:  # shown to the user; details go to the log
-            state.error = (
-                redact_credentials(str(exc))[:500] or "It failed unexpectedly."
-            )
-            log_event(
-                "web ui action failed",
-                event_phase="WEB_UI",
-                action=what,
-                lane=lane,
-                error_type=type(exc).__name__,
-            )
-        finally:
-            state.busy, state.action = False, None
-            job.save()
+        with root_span(f"run.{lane}.{what}", run_id=job.id, lane=lane) as span:
+            try:
+                state.notice = await work()
+            except Exception as exc:  # shown to the user; details go to the log
+                state.error = (
+                    redact_credentials(str(exc))[:500] or "It failed unexpectedly."
+                )
+                span.set_status(StatusCode.ERROR, type(exc).__name__)
+                log_event(
+                    "web ui action failed",
+                    event_phase="WEB_UI",
+                    action=what,
+                    lane=lane,
+                    run_id=job.id,
+                    error_type=type(exc).__name__,
+                )
+            finally:
+                state.busy, state.action = False, None
+                job.save()
 
     state.task = asyncio.create_task(runner())
 

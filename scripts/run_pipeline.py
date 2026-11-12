@@ -30,6 +30,7 @@ try:
 except ImportError:  # the environment is then expected to be set already
     pass
 
+from app.observability import root_span, setup_tracing  # noqa: E402
 from app.pipeline import API_PLATFORMS, PLATFORM_NAMES, ArticlePipeline  # noqa: E402
 from app.settings import LANGUAGE_FOR_PLATFORM  # noqa: E402
 
@@ -121,28 +122,34 @@ async def publish(pipeline: ArticlePipeline, platform: str, tags: list[str]) -> 
 
 async def main() -> int:
     args = parse_args()
+    setup_tracing()
     pipeline = ArticlePipeline(log=lambda line: print(line + "\n"))
     source_text = args.url or args.draft.read_text(encoding="utf-8")
+    run_id = pipeline.session_id  # the script has no run record; the session is the run
 
-    # The two parts of a run, in turn: the posts, then the slides.
-    ready, notes = await pipeline.run_posts(source_text)
+    # The two parts of a run, in turn: the posts, then the slides. Each is an
+    # action with a trace of its own, named as the page names it (OPS-1).
+    with root_span("run.main.run_posts", run_id=run_id, lane="main"):
+        ready, notes = await pipeline.run_posts(source_text)
     if notes:
         print(notes, file=sys.stderr)
     if not ready:
         return 1  # the run stopped before the posts were there
     if args.talk_minutes > 0:
-        notes = await pipeline.run_slides(
-            args.talk_language or ["en", "ko", "ja"],
-            args.talk_minutes,
-            args.audience,
-            args.create_deck,
-        )
+        with root_span("run.slides.run_slides", run_id=run_id, lane="slides"):
+            notes = await pipeline.run_slides(
+                args.talk_language or ["en", "ko", "ja"],
+                args.talk_minutes,
+                args.audience,
+                args.create_deck,
+            )
         if notes:
             print(notes, file=sys.stderr)
 
     tags = [t.strip() for t in args.tags.split(",") if t.strip()]
     for platform in args.publish:
-        await publish(pipeline, platform, tags)
+        with root_span("run.main.publish", run_id=run_id, lane="main"):
+            await publish(pipeline, platform, tags)
     return 0
 
 

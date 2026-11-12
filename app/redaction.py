@@ -80,7 +80,29 @@ _PII_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ),
 ]
 
-_CARD_PATTERN = re.compile(r"(?<!\d)(?:\d[ \-]?){13,19}(?!\d)")
+# A card number stands by itself. Digits attached to an ASCII letter or an
+# underscore, directly or through one hyphen, are part of an identifier
+# (``call_4539148803436467``, a UUID) and are left alone (SEC-4).
+_CARD_PATTERN = re.compile(
+    r"(?<![0-9A-Za-z_])(?<![0-9A-Za-z_]-)"
+    r"(?:\d[ \-]?){13,19}"
+    r"(?![0-9A-Za-z_])(?!-[0-9A-Za-z_])"
+)
+
+# Fields of a log record that hold an identifier. The log filter writes them
+# as they are: records are joined by them (intent to outcome, record to trace).
+IDENTIFIER_FIELDS = frozenset(
+    {
+        "function_call_id",
+        "invocation_id",
+        "call_id",
+        "run_id",
+        "job_id",
+        "session_id",
+        "trace_id",
+        "span_id",
+    }
+)
 
 
 def find_secrets(text: str) -> list[dict[str, Any]]:
@@ -168,9 +190,9 @@ def _redact_with_cloud_dlp(text: str) -> str:
     if not project:
         return text
     try:
-        from google.cloud import dlp_v2
-
         if _dlp_client is None:
+            from google.cloud import dlp_v2
+
             _dlp_client = dlp_v2.DlpServiceClient()
         response = _dlp_client.deidentify_content(
             request={

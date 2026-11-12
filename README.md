@@ -264,7 +264,7 @@ as written.
 | Human in the loop | `_approval` and `finalize_localized_post` in `app/tools/publish.py`, the deck tool in `app/tools/slides.py` (`request_confirmation`), `ResumabilityConfig` in `app/agent.py`; one answer for one request: `ArticlePipeline.answer_approval` in `app/pipeline.py`; changing an existing deck: `sync_deck` in `app/web_ui.py`, `app/deck_sync.py` |
 | Structured logging | `get_logger`, `log_event` in `app/observability.py` (JSON, redaction filter) |
 | Intent and outcome logging | `ObservabilityPlugin` in `app/observability.py` |
-| Tracing | `traced_span` in `app/observability.py`; OpenTelemetry export set up in `app/fast_api_app.py` |
+| Tracing | `setup_tracing`, `root_span` and `traced_span` in `app/observability.py`: one trace per action started on the page or with the script (`app/runs.py`), exported to Cloud Trace when `BLOG_AGENT_TRACE_EXPORT=cloud`; the agent API server's export is set up in `app/fast_api_app.py` |
 | PII and credential redaction | `app/redaction.py` (regex always; Cloud DLP when `BLOG_AGENT_ENABLE_DLP=true`) |
 | Automated evaluation | `tests/eval/`, `tests/unit/` |
 | Specification and traceability | `docs/SPEC.md`, `tests/unit/test_spec.py` |
@@ -288,7 +288,8 @@ What has been run for real, and what has not:
 | Firestore article store | Read/write/cleanup exercised against a real database |
 | Deployment to Agent Runtime, Memory Bank in the cloud | Not deployed. Memory wiring is in place; it has only run locally where the default memory service is in-memory |
 | Terraform | Written, never applied or validated with `terraform validate` |
-| Cloud DLP path | Implemented behind a flag, not exercised |
+| Cloud DLP path | Implemented behind a flag. Unit-tested with a stand-in client (called only when enabled; a failure keeps the regex result); not run against Cloud DLP |
+| One trace per action, with the trace id in every log record | Unit-tested with spans collected in memory: the action's root span, ADK's agent and tool spans and the outbound-call spans share one trace. Export to Cloud Trace (`BLOG_AGENT_TRACE_EXPORT=cloud`) has not been run |
 | Refinement branch of the localization loop | Covered by unit tests of the gates. It ran in one real run (two review rounds, both languages refined); most runs pass on the first round |
 | Translated Mermaid diagrams | The structure check confirms node ids and edges are unchanged; the diagrams have not been rendered to confirm they still draw |
 | Google Slides deck with speaker notes | Decks were created through the real Slides API and checked by reading them back and by rendering slide thumbnails: cover slide, titles sized to fit, bullets (Korean and Japanese included), an article image placed beside the bullets, speaker notes. With `BLOG_AGENT_RENDER_MERMAID` on, Mermaid diagrams are rendered by mermaid.ink and placed as images; this ran in real decks. PDF export is not implemented |

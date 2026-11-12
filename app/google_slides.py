@@ -29,6 +29,7 @@ from typing import Any
 
 import httpx
 
+from app.observability import traced_span
 from app.schemas import SlideDeckPlan
 from app.secrets import MissingSecretError, get_secret
 from app.settings import HTTP_TIMEOUT_SECONDS
@@ -936,38 +937,40 @@ async def create_deck(
     """
     images = slide_images(plan, allowed_images or {})
     tables = slide_tables(plan, allowed_tables or {}, set(images))
-    async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
-        headers = {"Authorization": f"Bearer {await _access_token(client)}"}
-        # Reading the diagrams first also has them rendered before Google
-        # fetches them. The token is not sent with these requests.
-        aspects = await image_aspects(client, images)
-        layouts = slide_layouts(plan, images, aspects, tables)
-        created = _checked(
-            await client.post(
-                SLIDES_API, headers=headers, json={"title": plan.deck_title}
-            ),
-            "creating the presentation",
-        )
-        presentation_id = created["presentationId"]
-        try:
-            return await _fill_deck(
-                client, headers, plan, created, images, aspects, layouts, tables
+    with traced_span("slides.create_deck", slides=len(plan.slides), images=len(images)):
+        async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
+            headers = {"Authorization": f"Bearer {await _access_token(client)}"}
+            # Reading the diagrams first also has them rendered before Google
+            # fetches them. The token is not sent with these requests.
+            with traced_span("diagram.read_sizes", images=len(images)):
+                aspects = await image_aspects(client, images)
+            layouts = slide_layouts(plan, images, aspects, tables)
+            created = _checked(
+                await client.post(
+                    SLIDES_API, headers=headers, json={"title": plan.deck_title}
+                ),
+                "creating the presentation",
             )
-        except (SlidesError, httpx.HTTPError) as exc:
-            # The file exists from here on. Say where it is, so a failure
-            # does not leave a deck in Drive that nobody knows about.
-            detail = (
-                exc.message
-                if isinstance(exc, SlidesError)
-                else (f"Google Slides could not be reached ({type(exc).__name__}).")
-            )
-            raise SlidesError(
-                getattr(exc, "code", "SLIDES_API_ERROR"),
-                f"{detail} The file was created before this failed and is in "
-                f"the Drive: {deck_url(presentation_id)}",
-                "Give the user that address so they can delete the unfinished "
-                "file. Do not retry more than once.",
-            ) from exc
+            presentation_id = created["presentationId"]
+            try:
+                return await _fill_deck(
+                    client, headers, plan, created, images, aspects, layouts, tables
+                )
+            except (SlidesError, httpx.HTTPError) as exc:
+                # The file exists from here on. Say where it is, so a failure
+                # does not leave a deck in Drive that nobody knows about.
+                detail = (
+                    exc.message
+                    if isinstance(exc, SlidesError)
+                    else (f"Google Slides could not be reached ({type(exc).__name__}).")
+                )
+                raise SlidesError(
+                    getattr(exc, "code", "SLIDES_API_ERROR"),
+                    f"{detail} The file was created before this failed and is in "
+                    f"the Drive: {deck_url(presentation_id)}",
+                    "Give the user that address so they can delete the unfinished "
+                    "file. Do not retry more than once.",
+                ) from exc
 
 
 async def _fill_deck(
@@ -1055,50 +1058,57 @@ async def _fill_deck(
 
 async def read_presentation(presentation_id: str) -> dict[str, Any]:
     """The deck as Google has it now, including speaker notes. Changes nothing."""
-    async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
-        headers = {"Authorization": f"Bearer {await _access_token(client)}"}
-        return _checked(
-            await client.get(f"{SLIDES_API}/{presentation_id}", headers=headers),
-            "reading the deck",
-        )
+    with traced_span("slides.read_presentation", presentation_id=presentation_id):
+        async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
+            headers = {"Authorization": f"Bearer {await _access_token(client)}"}
+            return _checked(
+                await client.get(f"{SLIDES_API}/{presentation_id}", headers=headers),
+                "reading the deck",
+            )
 
 
 async def update_presentation(presentation_id: str, requests: list[dict]) -> None:
     """Apply ``requests`` to an existing deck. All of them take effect, or none."""
-    async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
-        headers = {"Authorization": f"Bearer {await _access_token(client)}"}
-        _checked(
-            await client.post(
-                f"{SLIDES_API}/{presentation_id}:batchUpdate",
-                headers=headers,
-                json={"requests": requests},
-            ),
-            "updating the deck",
-        )
+    with traced_span(
+        "slides.update_presentation",
+        presentation_id=presentation_id,
+        requests=len(requests),
+    ):
+        async with httpx.AsyncClient(timeout=max(HTTP_TIMEOUT_SECONDS, 60)) as client:
+            headers = {"Authorization": f"Bearer {await _access_token(client)}"}
+            _checked(
+                await client.post(
+                    f"{SLIDES_API}/{presentation_id}:batchUpdate",
+                    headers=headers,
+                    json={"requests": requests},
+                ),
+                "updating the deck",
+            )
 
 
 async def export_deck_pdf(presentation_id: str) -> bytes:
     """Export an existing Google Slides presentation as PDF bytes (SLD-12)."""
-    async with httpx.AsyncClient(
-        timeout=max(HTTP_TIMEOUT_SECONDS, 60), follow_redirects=False
-    ) as client:
-        headers = {"Authorization": f"Bearer {await _access_token(client)}"}
-        try:
-            response = await client.get(
-                f"{DRIVE_FILES_API}/{presentation_id}/export",
-                params={"mimeType": "application/pdf"},
-                headers=headers,
-            )
-        except httpx.HTTPError as exc:
-            raise SlidesError(
-                "SLIDES_PDF_EXPORT_FAILED",
-                f"Google Drive could not be reached while exporting the PDF ({type(exc).__name__}).",
-                "Try again in a moment.",
-            ) from exc
-        if response.status_code >= 400 or not response.content.startswith(b"%PDF-"):
-            raise SlidesError(
-                "SLIDES_PDF_EXPORT_FAILED",
-                f"Google Drive could not export the deck as PDF (HTTP {response.status_code}).",
-                "Check that the deck still exists in Google Drive and try again.",
-            )
-        return response.content
+    with traced_span("slides.export_pdf", presentation_id=presentation_id):
+        async with httpx.AsyncClient(
+            timeout=max(HTTP_TIMEOUT_SECONDS, 60), follow_redirects=False
+        ) as client:
+            headers = {"Authorization": f"Bearer {await _access_token(client)}"}
+            try:
+                response = await client.get(
+                    f"{DRIVE_FILES_API}/{presentation_id}/export",
+                    params={"mimeType": "application/pdf"},
+                    headers=headers,
+                )
+            except httpx.HTTPError as exc:
+                raise SlidesError(
+                    "SLIDES_PDF_EXPORT_FAILED",
+                    f"Google Drive could not be reached while exporting the PDF ({type(exc).__name__}).",
+                    "Try again in a moment.",
+                ) from exc
+            if response.status_code >= 400 or not response.content.startswith(b"%PDF-"):
+                raise SlidesError(
+                    "SLIDES_PDF_EXPORT_FAILED",
+                    f"Google Drive could not export the deck as PDF (HTTP {response.status_code}).",
+                    "Check that the deck still exists in Google Drive and try again.",
+                )
+            return response.content

@@ -659,10 +659,28 @@ class ArticlePipeline:
             else ToolConfirmation(confirmed=True, payload=approval),
         )
         name = tool.__name__
-        log_event("tool call for a person's action", event_phase="INTENT", tool=name)
-        result = tool(*args, tool_context=context, **kwargs)
-        if inspect.isawaitable(result):
-            result = await result
+        call_id = uuid.uuid4().hex[:12]  # joins the intent to its outcome
+        log_event(
+            "tool call for a person's action",
+            event_phase="INTENT",
+            tool=name,
+            call_id=call_id,
+        )
+        try:
+            result = tool(*args, tool_context=context, **kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            # An intent is never left without its outcome in the log.
+            log_event(
+                "tool call for a person's action",
+                event_phase="OUTCOME",
+                tool=name,
+                call_id=call_id,
+                status="exception",
+                error_code=type(exc).__name__,
+            )
+            raise
         if context.state.delta:
             await self._update_state(context.state.delta, base)
         failure = _failure(result)
@@ -670,6 +688,7 @@ class ArticlePipeline:
             "tool call for a person's action",
             event_phase="OUTCOME",
             tool=name,
+            call_id=call_id,
             status=result.get("status"),
             error_code=result.get("error_code"),
         )

@@ -75,6 +75,35 @@ def no_network_and_no_model(monkeypatch):
     assert not attempts, f"this test tried to reach {', '.join(attempts)}"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def collected_spans():
+    """The spans of the whole test session, collected in memory.
+
+    A process can be given its tracer provider once, so it is given here,
+    before any test runs, and never again: ``setup_tracing`` does nothing when
+    a provider is there, which is why code under test may call it freely.
+    Nothing is exported. A test that reads the spans clears the collection
+    first and looks only at the trace of its own action.
+    """
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    from app.observability import setup_tracing
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    assert trace.get_tracer_provider() is provider, "a provider was set before this"
+    assert setup_tracing() is False
+    assert trace.get_tracer_provider() is provider
+    return exporter
+
+
 class FakeToolContext:
     """The parts of ADK's ToolContext that the tools use."""
 

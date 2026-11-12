@@ -74,6 +74,123 @@ def test_log_records_are_scrubbed_before_emission() -> None:
     assert "a1a1a1" not in json.dumps(record.json_fields)
 
 
+CARD = "4111111111111111"  # passes the checksum of a card number
+
+
+def test_identifiers_are_not_taken_for_card_numbers() -> None:
+    # Digits attached to a letter or an underscore, directly or through one
+    # hyphen, are part of an identifier, wherever they are written.
+    for identifier in (
+        f"call_{CARD}",
+        f"adk-{CARD}",
+        f"fc{CARD}",
+        f"{CARD}_retry",
+        f"{CARD}-b",
+        "0b1c2d3e-4111-1111-1111-111141111111",
+        "12345678-4111-4111-8111-1111abcdef12",
+    ):
+        text = f"outcome of {identifier}: done"
+        assert redact_text(text) == text, identifier
+
+    # A field that holds an identifier is written as it is, whatever it
+    # looks like, so an intent can be joined to its outcome.
+    record = logging.LogRecord("t", logging.INFO, __file__, 1, "intent", None, None)
+    identifiers = {
+        "function_call_id": CARD,
+        "invocation_id": "e-010-1234-5678",
+        "call_id": "123-45-6789",
+        "run_id": "4111 1111 1111 1111",
+    }
+    record.json_fields = {
+        **identifiers,
+        "intended_arguments": {"call_id": f"card {CARD}", "note": f"card {CARD}"},
+        "trace_id": f"{CARD} " * 40,
+    }
+    _RedactionFilter().filter(record)
+    for key, value in identifiers.items():
+        assert record.json_fields[key] == value
+    # Only the fields of the record itself, and only a value short enough
+    # to be an identifier: everything else is text and is scrubbed.
+    assert CARD not in json.dumps(record.json_fields["intended_arguments"])
+    assert CARD not in record.json_fields["trace_id"]
+
+
+def test_a_card_number_in_a_message_is_still_redacted() -> None:
+    for written in (
+        CARD,
+        "4111 1111 1111 1111",
+        "4111-1111-1111-1111",
+    ):
+        for text in (
+            f"card {written}",
+            f"card:{written}.",
+            f"({written})",
+            f"카드 번호는 {written}입니다",
+            f"{written}로 결제했습니다",
+        ):
+            redacted = redact_text(text)
+            assert written not in redacted, text
+            assert "[REDACTED_CREDIT_CARD]" in redacted, text
+
+    record = logging.LogRecord(
+        "t", logging.INFO, __file__, 1, "paid with %s", (CARD,), None
+    )
+    record.json_fields = {"note": f"card {CARD}", "function_call_id": "call_1"}
+    _RedactionFilter().filter(record)
+    assert CARD not in record.getMessage()
+    assert CARD not in json.dumps(record.json_fields)
+    # A number that fails the checksum was never a card number.
+    assert redact_text("order 4111111111111112") == "order 4111111111111112"
+
+
+def test_cloud_dlp_is_called_only_when_enabled_and_a_failure_keeps_the_regex_result(
+    monkeypatch,
+) -> None:
+    from app import redaction
+
+    class StandInDlp:
+        def __init__(self, fails: bool = False) -> None:
+            self.fails, self.requests = fails, []
+
+        def deidentify_content(self, request: dict) -> SimpleNamespace:
+            self.requests.append(request)
+            if self.fails:
+                raise PermissionError("the API is not enabled")
+            value = request["item"]["value"].replace("Kim Minsu", "[PERSON_NAME]")
+            return SimpleNamespace(item=SimpleNamespace(value=value))
+
+    text = "Kim Minsu wrote from kim@example.com"
+    by_regex = "Kim Minsu wrote from [REDACTED_EMAIL_ADDRESS]"
+    client = StandInDlp()
+    monkeypatch.setattr(redaction, "_dlp_client", client)
+    monkeypatch.setenv("DLP_PROJECT_ID", "a-project")
+
+    # Not enabled: the regular expressions alone, and no call.
+    monkeypatch.delenv("BLOG_AGENT_ENABLE_DLP", raising=False)
+    assert redact_text(text) == by_regex
+    assert client.requests == []
+
+    # Enabled: called once, with what the regular expressions left.
+    monkeypatch.setenv("BLOG_AGENT_ENABLE_DLP", "true")
+    assert redact_text(text) == "[PERSON_NAME] wrote from [REDACTED_EMAIL_ADDRESS]"
+    (request,) = client.requests
+    assert request["parent"] == "projects/a-project/locations/global"
+    assert request["item"]["value"] == by_regex
+
+    # Enabled without a project: nothing to call.
+    monkeypatch.delenv("DLP_PROJECT_ID")
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    assert redact_text(text) == by_regex
+    assert len(client.requests) == 1
+
+    # A call that fails keeps the result of the regular expressions.
+    monkeypatch.setenv("DLP_PROJECT_ID", "a-project")
+    failing = StandInDlp(fails=True)
+    monkeypatch.setattr(redaction, "_dlp_client", failing)
+    assert redact_text(text) == by_regex
+    assert len(failing.requests) == 1
+
+
 def test_secret_from_environment_takes_precedence(monkeypatch) -> None:
     secrets.get_secret.cache_clear()
     monkeypatch.setenv("QIITA_ACCESS_TOKEN", "from-env")

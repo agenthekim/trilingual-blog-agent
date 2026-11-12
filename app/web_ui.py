@@ -48,7 +48,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app import policy, runs, secrets, state
 from app.google_slides import SlidesError, granted_account, mermaid_preview_url
-from app.observability import log_event
+from app.observability import log_event, setup_tracing, traced_span
 from app.pipeline import (
     overview,
     post_progress,
@@ -268,7 +268,8 @@ async def _draw_diagram(code: str) -> bytes | None:
     async with _DIAGRAM_LOCK, httpx.AsyncClient(timeout=30) as client:
         for attempt in range(1, 5):
             try:
-                response = await client.get(mermaid_preview_url(code))
+                with traced_span("diagram.draw", attempt=attempt, chars=len(code)):
+                    response = await client.get(mermaid_preview_url(code))
             except httpx.HTTPError:
                 return None
             if response.status_code == 200 and "svg" in response.headers.get(
@@ -762,6 +763,7 @@ def main() -> None:
         # this server cannot know, and anyone who reaches it can use it.
         global ALLOWED_HOSTS
         ALLOWED_HOSTS = None
+    setup_tracing()  # before the first action, so every action has a trace
     uvicorn.run(web, host=args.host, port=args.port, log_level="warning")
 
 
