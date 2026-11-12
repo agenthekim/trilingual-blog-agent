@@ -34,12 +34,14 @@ jobs:
     runs-on: ubuntu-latest
     env:
       UV_PYTHON: "3.13"
+      # uv.lock was written against a package index this runner cannot reach.
+      # With PyPI named as the index, uv sees that the index of the lock is
+      # missing and resolves again from PyPI, keeping the locked versions
+      # where they exist there; so no --locked or --frozen below.
+      UV_DEFAULT_INDEX: https://pypi.org/simple
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      # uv.lock was written against a package index this runner cannot reach.
-      # uv notices that and resolves again from PyPI, keeping the locked
-      # versions where they exist there; so no --locked or --frozen here.
       - name: Install
         run: uv sync --extra lint 2>&1 | tee "$LAST_OUTPUT"
       - name: Linter
