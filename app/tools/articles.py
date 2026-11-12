@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
-from app import platforms, policy, state
+from app import platforms, policy, sources, state
 from app.markdown_checks import check_fidelity
 from app.persistence import get_article_store
 from app.schemas import (
@@ -227,7 +227,7 @@ async def fetch_published_article_markdown(
     except ValidationError as exc:
         return validation_error(
             exc,
-            "Ask the user for an https URL on qiita.com, dev.to or blog.naver.com. "
+            f"Ask the user for an https URL on {sources.blog_hosts_sentence()}. "
             "Do not try other hosts.",
         )
 

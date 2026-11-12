@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Literal
 
+from app import sources
+
 Language = Literal["ko", "en", "ja"]
 Platform = Literal["naver_blog", "devto", "qiita"]
 
@@ -21,14 +23,12 @@ PLATFORM_FOR_LANGUAGE: dict[str, str] = {
 }
 LANGUAGE_FOR_PLATFORM: dict[str, str] = {v: k for k, v in PLATFORM_FOR_LANGUAGE.items()}
 
-# Hosts the agent is allowed to fetch articles from. Anything else is refused,
-# so a pasted URL cannot make the agent read arbitrary internal addresses.
-ALLOWED_ARTICLE_HOSTS: dict[str, str] = {
-    "qiita.com": "qiita",
-    "dev.to": "devto",
-    "blog.naver.com": "naver_blog",
-    "m.blog.naver.com": "naver_blog",
-}
+# Hosts the agent is allowed to fetch posts from, and the platform each one
+# belongs to. Anything else is refused, so a pasted URL cannot make the agent
+# read arbitrary internal addresses. The list is made from the table of source
+# kinds (app/sources.py); the hosts of the kinds that are drafts (Google Docs,
+# Medium) are in that table too and are checked where those are read.
+ALLOWED_ARTICLE_HOSTS: dict[str, str] = sources.blog_hosts()
 
 HTTP_TIMEOUT_SECONDS = float(os.environ.get("BLOG_AGENT_HTTP_TIMEOUT", "20"))
 MAX_ARTICLE_CHARS = int(os.environ.get("BLOG_AGENT_MAX_ARTICLE_CHARS", "60000"))

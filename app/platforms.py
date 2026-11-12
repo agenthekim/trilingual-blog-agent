@@ -36,7 +36,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from app import secrets
+from app import secrets, sources
 from app.observability import traced_span
 from app.settings import ALLOWED_ARTICLE_HOSTS, HTTP_TIMEOUT_SECONDS
 
@@ -45,10 +45,10 @@ DEVTO_API = "https://dev.to/api"
 _USER_AGENT = "trilingual-blog-agent/0.1"
 
 
+# Names of everything this module reads from, from the table of source kinds.
 _PLATFORM_NAMES = {
-    "qiita": "Qiita",
-    "devto": "DEV Community",
-    "naver_blog": "Naver Blog",
+    **{kind.name: kind.label for kind in sources.SOURCE_KINDS.values()},
+    "google_docs": sources.SOURCE_KINDS["gdoc"].label,
 }
 
 
@@ -141,12 +141,19 @@ def _url_not_allowed() -> PlatformError:
     )
 
 
-def _redirect_not_allowed(platform: str, location: str) -> PlatformError:
+def _redirect_target(location: str) -> str:
+    """Scheme and host a redirect names, for a message; never the whole address."""
     try:
         target = httpx.URL(location)
-        where = f"{target.scheme}://{target.host}"[:120]
     except (httpx.InvalidURL, TypeError):
-        where = "an address that could not be read"
+        return "an address that could not be read"
+    if not target.host:
+        return "another address on the same site"
+    return f"{target.scheme}://{target.host}"[:120]
+
+
+def _redirect_not_allowed(platform: str, location: str) -> PlatformError:
+    where = _redirect_target(location)
     return PlatformError(
         f"{platform.upper()}_REDIRECT_NOT_ALLOWED",
         f"{_name(platform)} redirected the request to {where}, which is not an https "
@@ -691,56 +698,21 @@ async def fetch_status_and_title(url: str) -> tuple[int, str | None]:
     return response.status_code, title
 
 
-_GDOCS_PATH = re.compile(r"^/document/(?:u/\d+/)?d/([A-Za-z0-9_-]{10,})(?:/.*)?$")
-
-
 def parse_google_doc_id(url: str) -> str:
     """Return the document id of an https Google Docs document URL, or raise PlatformError."""
-    try:
-        parsed = httpx.URL(url.strip())
-    except (httpx.InvalidURL, TypeError) as exc:
-        raise PlatformError(
-            "GDOCS_URL_FORMAT",
-            "Not a valid Google Docs URL.",
-            "Ask for an https://docs.google.com/document/d/<id>/... URL.",
-        ) from exc
-    host = parsed.host.lower()
-    match = _GDOCS_PATH.match(parsed.path)
-    if (
-        parsed.scheme != "https"
-        or host != "docs.google.com"
-        or parsed.port is not None
-        or parsed.userinfo
-        or not match
-    ):
+    doc_id = sources.google_doc_id(url)
+    if doc_id is None:
         raise PlatformError(
             "GDOCS_URL_FORMAT",
             "Not a Google Docs document URL.",
-            "Ask for an https://docs.google.com/document/d/<id>/... URL.",
+            f"Ask for an address like {sources.SOURCE_KINDS['gdoc'].example}.",
         )
-    return match.group(1)
-
-
-def is_google_doc_url(url: str) -> bool:
-    """Whether ``url`` is an https Google Docs document URL."""
-    try:
-        parse_google_doc_id(url)
-        return True
-    except PlatformError:
-        return False
+    return doc_id
 
 
 def _allowed_gdocs_export_url(url: str | httpx.URL) -> httpx.URL | None:
-    try:
-        parsed = httpx.URL(url)
-    except (httpx.InvalidURL, TypeError):
-        return None
-    host = parsed.host.lower()
-    if parsed.scheme != "https" or parsed.port is not None or parsed.userinfo:
-        return None
-    if host == "docs.google.com" or host.endswith(".googleusercontent.com"):
-        return parsed
-    return None
+    """``url`` parsed if reading a Google Docs document may contact it (INV-8)."""
+    return sources.SOURCE_KINDS["gdoc"].may_fetch(url)
 
 
 async def google_doc_get_markdown(doc_id: str) -> str:
@@ -793,43 +765,16 @@ async def google_doc_get_markdown(doc_id: str) -> str:
     return text
 
 
-_MEDIUM_PATH = re.compile(r"^/(@[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$")
-
-
 def parse_medium_post(url: str) -> tuple[str, str]:
     """Return (author_or_pub, slug) of an https Medium post URL, or raise PlatformError."""
-    try:
-        parsed = httpx.URL(url.strip())
-    except (httpx.InvalidURL, TypeError) as exc:
+    post = sources.medium_post(url)
+    if post is None:
         raise PlatformError(
             "MEDIUM_URL_FORMAT",
-            "Not a valid Medium URL.",
-            "Ask for an https://medium.com/@author/slug URL.",
-        ) from exc
-    host = parsed.host.lower().removeprefix("www.")
-    match = _MEDIUM_PATH.match(parsed.path.rstrip("/"))
-    if (
-        parsed.scheme != "https"
-        or host != "medium.com"
-        or parsed.port is not None
-        or parsed.userinfo
-        or not match
-    ):
-        raise PlatformError(
-            "MEDIUM_URL_FORMAT",
-            "Not a Medium article URL.",
-            "Ask for an https://medium.com/@author/slug URL.",
+            "Not a Medium post URL.",
+            f"Ask for an address like {sources.SOURCE_KINDS['medium'].example}.",
         )
-    return match.group(1), match.group(2)
-
-
-def is_medium_url(url: str) -> bool:
-    """Whether ``url`` is an https Medium post URL."""
-    try:
-        parse_medium_post(url)
-        return True
-    except PlatformError:
-        return False
+    return post
 
 
 class _MediumHtmlToMarkdown(HTMLParser):
@@ -886,32 +831,59 @@ class _MediumHtmlToMarkdown(HTMLParser):
             self.out.append(data)
 
 
+_PASTE_INSTEAD = (
+    "Copy the article text into the Source document box or attach a .md file."
+)
+
+
 async def medium_get_markdown(url: str) -> str:
-    """Fetch a Medium post from its RSS feed and convert it to Markdown."""
+    """Read a Medium post from its author's public RSS feed, as Markdown (SRC-8).
+
+    Medium has no API for reading a post, and the feed lists only an author's
+    latest posts, so an older post cannot be read. The feed is fetched without
+    a credential and a redirect is not followed. Nothing is ever sent to
+    Medium but this one GET.
+    """
     import xml.etree.ElementTree as ET
 
     author_or_pub, slug = parse_medium_post(url)
     post_id = slug.rsplit("-", 1)[-1] if "-" in slug else slug
-    feed_url = f"https://medium.com/feed/{author_or_pub}"
+    feed_url = sources.SOURCE_KINDS["medium"].may_fetch(
+        f"https://medium.com/feed/{author_or_pub}"
+    )
+    if feed_url is None:  # the table no longer lists the feed's host
+        raise _url_not_allowed()
     with traced_span("medium.fetch_rss", author=author_or_pub, post_id=post_id):
         try:
             async with _client() as client:
                 response = await client.get(feed_url)
         except Exception as exc:
             raise _transport_error("medium", exc) from exc
+    if 300 <= response.status_code < 400:
+        raise PlatformError(
+            "MEDIUM_FEED_REDIRECTED",
+            f"Medium did not return the feed of {author_or_pub}: it answered "
+            f"with a redirect (HTTP {response.status_code}) to "
+            f"{_redirect_target(response.headers.get('location') or '')}, which "
+            "is not followed, so the post was not read. Whether the post is in "
+            "the feed is not known.",
+            _PASTE_INSTEAD,
+        )
     if response.status_code >= 400:
         raise PlatformError(
             "MEDIUM_NOT_READABLE",
-            f"Medium feed returned HTTP {response.status_code}.",
-            "Ask the user to paste the article text or attach a .md file.",
+            f"Medium answered HTTP {response.status_code} for the feed of "
+            f"{author_or_pub}, so the post was not read.",
+            _PASTE_INSTEAD,
         )
     try:
         root = ET.fromstring(response.text)
     except ET.ParseError as exc:
         raise PlatformError(
             "MEDIUM_BAD_FEED",
-            "Could not parse the Medium RSS feed.",
-            "Ask the user to paste the article text or attach a .md file.",
+            f"What Medium returned for the feed of {author_or_pub} is not a "
+            "feed, so the post was not read.",
+            _PASTE_INSTEAD,
         ) from exc
     ns = {"content": "http://purl.org/rss/1.0/modules/content/"}
     for item in root.findall("./channel/item"):
@@ -925,10 +897,17 @@ async def medium_get_markdown(url: str) -> str:
             parser.feed(encoded)
             body = re.sub(r"\n{3,}", "\n\n", "".join(parser.out).strip())
             if not body:
-                break
+                raise PlatformError(
+                    "MEDIUM_POST_EMPTY",
+                    "The feed lists this Medium post without its text, so it "
+                    "was not read.",
+                    _PASTE_INSTEAD,
+                )
             return f"# {title}\n\n{body}\n"
     raise PlatformError(
         "MEDIUM_POST_NOT_IN_FEED",
-        "This Medium post was not found in the author's recent RSS feed.",
-        "Copy the article text into the Source document box or attach a .md file.",
+        f"This Medium post is not in the public feed of {author_or_pub} any "
+        "more. Medium has no other way to read a post, and the feed lists only "
+        "the latest posts, so an older post cannot be read from its address.",
+        _PASTE_INSTEAD,
     )

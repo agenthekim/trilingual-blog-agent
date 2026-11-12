@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from app import state
@@ -1033,3 +1034,137 @@ async def test_a_localization_older_than_the_source_is_marked(
     assert older(again) == {"ko": False, "en": False, "ja": False}
     # A different article in the session keeps no record of the old one.
     assert state.LOCALIZED_FROM in state.DERIVED_FROM_SEED
+
+
+MEDIUM_URL = "https://medium.com/@someone/a-post-about-agents-1a2b3c4d5e6f"
+_REAL_ASYNC_CLIENT = httpx.AsyncClient
+
+
+def _medium_feed(*links: str) -> str:
+    items = "".join(
+        "<item><title>에이전트를 다룬 글</title>"
+        f"<link>{link}?source=rss-0123------2</link>"
+        f'<guid isPermaLink="false">https://medium.com/p/{link.rsplit("-", 1)[-1]}</guid>'
+        "<content:encoded><![CDATA[<h3>왜 에이전트인가</h3>"
+        "<p>에이전트는 다음에 할 일을 정하고, 언제 해도 되는지는 <code>code</code>가 "
+        '정합니다. 자세한 내용은 <a href="https://example.com/a">안내서</a>에 있습니다.</p>'
+        "<pre>print(1)</pre><ul><li>첫째 요점</li><li>둘째 요점</li></ul>"
+        '<img src="https://medium.com/_/stat?event=post.clientViewed" width="1">'
+        "]]></content:encoded></item>"
+        for link in links
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" '
+        'xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>'
+        f"<title>Stories by Someone on Medium</title>{items}</channel></rss>"
+    )
+
+
+def _medium_answers(monkeypatch, answer: httpx.Response) -> list[httpx.Request]:
+    """Answer every request the platform module makes; return what it asked."""
+    asked: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request)
+        return answer
+
+    def client(**kwargs):
+        return _REAL_ASYNC_CLIENT(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    return asked
+
+
+@pytest.mark.asyncio
+async def test_a_medium_post_is_read_from_the_feed_and_is_a_draft(
+    isolated_workspace, monkeypatch
+) -> None:
+    """SRC-8, INV-4: read with one GET of the author's feed; no platform is closed."""
+    asked = _medium_answers(
+        monkeypatch,
+        httpx.Response(
+            200,
+            text=_medium_feed(
+                "https://medium.com/@someone/another-post-999999999999", MEDIUM_URL
+            ),
+        ),
+    )
+    assert classify_source(MEDIUM_URL) == ("medium", MEDIUM_URL)
+    pipeline = _new_pipeline()
+    _stand_in_agent(pipeline)
+    notes = await pipeline.run_stages(MEDIUM_URL, talk_minutes=0)
+    assert notes is None
+
+    # Medium is read, once, and never written to.
+    assert [(r.method, str(r.url)) for r in asked] == [
+        ("GET", "https://medium.com/feed/@someone")
+    ]
+    assert "authorization" not in asked[0].headers
+
+    current = await pipeline.session_state()
+    assert current[state.SEED_TITLE] == "에이전트를 다룬 글"
+    assert current[state.SOURCE_LANGUAGE] == "ko"
+    text = current[state.SEED_MARKDOWN]
+    assert text.startswith("# 에이전트를 다룬 글\n\n### 왜 에이전트인가\n\n")
+    assert "`code`" in text and "[안내서](https://example.com/a)" in text
+    assert "```\nprint(1)\n```" in text and "- 첫째 요점" in text
+    assert "_/stat" not in text  # the tracking pixel is not an image of the post
+    # The text as read is kept as the original (INV-11).
+    original = project_file(current[state.PROJECT_ID], "source.original.md")
+    assert original is not None and original.read_text(encoding="utf-8") == text
+    # A draft: no blog platform is the source, so none is closed to writing.
+    pubs = current.get(state.PUBLICATIONS) or {}
+    assert all(p.get("state") != "existing_source" for p in pubs.values())
+    rows = {row["language"]: row for row in (await pipeline.overview())["rows"]}
+    assert rows["ko"]["next"] == "review" and rows["ko"]["can_edit"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_medium_post_missing_from_the_feed_is_refused_in_plain_words(
+    isolated_workspace, monkeypatch
+) -> None:
+    """SRC-8: an older post and a redirect are two different refusals."""
+    from app import platforms
+
+    pipeline = _new_pipeline()
+    said = _stand_in_agent(pipeline)
+
+    # The feed answers, and the post is not among its latest.
+    asked = _medium_answers(
+        monkeypatch,
+        httpx.Response(
+            200, text=_medium_feed("https://medium.com/@someone/newer-999999999999")
+        ),
+    )
+    missing = await pipeline.run_stages(MEDIUM_URL, talk_minutes=0)
+    assert missing.startswith("The Medium post could not be read. ")
+    assert "is not in the public feed of @someone any more" in missing
+    assert "an older post cannot be read from its address" in missing
+    assert missing.endswith("Source document box or attach a .md file.")
+    with pytest.raises(platforms.PlatformError) as not_in_feed:
+        await platforms.medium_get_markdown(MEDIUM_URL)
+    assert not_in_feed.value.code == "MEDIUM_POST_NOT_IN_FEED"
+    assert "Source document box" in not_in_feed.value.recovery
+
+    # A redirect is not followed, and is not mistaken for a missing post.
+    asked = _medium_answers(
+        monkeypatch,
+        httpx.Response(
+            302, headers={"location": "https://someone.example.org/feed?x=secret"}
+        ),
+    )
+    moved = await pipeline.run_stages(MEDIUM_URL, talk_minutes=0)
+    assert moved.startswith("The Medium post could not be read. ")
+    assert "answered with a redirect (HTTP 302) to https://someone.example.org" in moved
+    assert "is not followed" in moved and "is not in the public feed" not in moved
+    assert "Whether the post is in the feed is not known." in moved
+    assert "secret" not in moved
+    assert [str(r.url) for r in asked] == ["https://medium.com/feed/@someone"]
+    with pytest.raises(platforms.PlatformError) as redirected:
+        await platforms.medium_get_markdown(MEDIUM_URL)
+    assert redirected.value.code == "MEDIUM_FEED_REDIRECTED"
+
+    for message in (missing, moved):
+        assert "Traceback" not in message and "PlatformError" not in message
+    # Nothing was stored and no model was asked.
+    assert said == [] and await pipeline.session_state() == {}

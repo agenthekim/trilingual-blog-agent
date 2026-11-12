@@ -36,7 +36,7 @@ from google.adk.sessions.base_session_service import (
 from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 
-from app import deck_sync, google_slides, platforms, policy, state
+from app import deck_sync, google_slides, platforms, policy, sources, state
 from app.observability import log_event
 from app.policy import API_PLATFORMS, PLATFORM_NAMES
 from app.redaction import find_secrets, redact_credentials
@@ -166,6 +166,8 @@ def classify_source(text: str) -> tuple[str, str]:
 
     'url': a bare address of a post on a supported blog site, read by code.
     'gdoc': a bare address of a Google Docs document, exported as Markdown.
+    'medium': a bare address of a Medium post, read from its author's feed.
+    Both are drafts: no blog platform is the source (INV-4, SRC-8).
     'request': a short message that contains a supported blog address but says
     more; it goes to the agent. 'elsewhere': a bare address that cannot be read
     (another site, or not https). 'draft': everything else, the article
@@ -174,12 +176,12 @@ def classify_source(text: str) -> tuple[str, str]:
     stripped = text.strip()
     urls = [u for u in _URL.findall(stripped) if _host(u) in ALLOWED_ARTICLE_HOSTS]
     if re.fullmatch(r"https?://\S+", stripped):
-        if stripped.startswith("https://") and platforms.is_google_doc_url(stripped):
-            return "gdoc", stripped
-        if stripped.startswith("https://") and platforms.is_medium_url(stripped):
-            return "medium", stripped
-        readable = bool(urls) and stripped.startswith("https://")
-        return ("url" if readable else "elsewhere"), stripped
+        # One table says what an address is (app/sources.py): a post on a blog
+        # platform is 'url', a kind that is a draft goes by its own name.
+        kind = sources.kind_of(stripped)
+        if kind is None:
+            return "elsewhere", stripped
+        return ("url" if kind.platform else kind.name), stripped
     if urls and len(stripped) <= _MAX_URL_REQUEST_CHARS:
         return "request", stripped
     return "draft", text
@@ -716,10 +718,9 @@ class ArticlePipeline:
             return None
         if kind == "elsewhere":
             return (
-                "That address cannot be read: posts are read from Qiita, DEV "
-                "Community and Naver Blog, and drafts from Google Docs "
-                "(https://docs.google.com/document/d/...), over https. Hand in "
-                "a supported URL, a .md or .txt file, or the Markdown text itself."
+                f"That address cannot be read: {sources.readable_sources_sentence()}. "
+                "Hand in a supported URL, a .md or .txt file, or the Markdown "
+                "text itself."
             )
         if kind == "gdoc":
             try:
@@ -731,7 +732,10 @@ class ArticlePipeline:
             try:
                 text = await platforms.medium_get_markdown(text)
             except platforms.PlatformError as exc:
-                return f"The Medium post could not be read. {exc.message}"
+                # The way out is part of the refusal: paste the text instead.
+                return (
+                    f"The Medium post could not be read. {exc.message} {exc.recovery}"
+                )
         # Said in plain words here, before a validator says it in its own.
         if len(text.strip()) < MIN_DRAFT_CHARS:
             return (

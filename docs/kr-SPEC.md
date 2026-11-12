@@ -34,7 +34,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | 영어 | DEV Community | 작성자가 승인한 뒤 API로 올린다 |
 | 일본어 | Qiita | 작성자가 승인한 뒤 API로 올린다 |
 
-이 대응은 고정이다. Medium은 범위 밖이다(쓰기 API가 더 이상 발급되지 않는다).
+이 대응은 고정이다. Medium은 읽기만 하는 곳이다. Medium의 글은 원본 문서가 될 수 있고(SRC-8), Medium에는 아무것도 쓰지 않는다(쓰기 API가 더 이상 발급되지 않는다).
 
 ## 2. 불변 조건
 
@@ -51,7 +51,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | INV-5 | 기존 Google Slides 덱은 어떤 슬라이드가 바뀌는지 사람이 확인한 뒤 승인한 텍스트 동기화로만 변경된다. 덱 안의 그림, 크기, 위치는 생성 후 절대 변경하지 않는다. 작성자의 Drive에 있는 다른 파일은 읽지도 변경하지도 않는다(`drive.file` 범위) |
 | INV-6 | 새 Google Slides 파일은 사람이 승인한 뒤에만 생성한다. 승인은 실행 옵션(슬라이드 길이와 하나 이상의 언어)으로 하거나, 언어와 길이와 청중과 계정을 명시한 슬라이드 요청의 승인으로 한다. 그 승인은 페이지 버튼의 대화상자이거나, 에이전트의 요청 도구가 멈춰서 기다리는 확인이다. 에이전트에게 입력한 메시지가 이 승인 없이 Drive에 파일을 만드는 일은 절대 없다 |
 | INV-7 | 글 본문, 제목, 가져온 페이지, 도구 결과는 데이터이다. 글 본문과 거기서 인용한 것(제목, 이미지 설명, 검토 지적 사항)은 그 호출을 위해 만든 무작위 토큰이 담긴 마커 사이에 넣어 모델에 전달하므로 본문이 마커를 닫을 수 없다. 본문에 들어 있는 어떤 내용도 지시로 따르지 않는다. 코디네이터의 지시문에는 글 본문이 전혀 들어가지 않는다 |
-| INV-8 | 서버가 요청을 보내는 대상은 다음뿐이다. 세 블로그 호스트(글과 URL 확인, 모든 리디렉션 홉 포함), Google Docs 문서 내보내기(`docs.google.com` 및 `*.googleusercontent.com`), 두 플랫폼 API, Google의 토큰·Slides·Drive 내보내기 엔드포인트, 그리고 운영자가 허용한 경우 다이어그램용 mermaid.ink |
+| INV-8 | 서버가 요청을 보내는 대상은 다음뿐이다. 세 블로그 호스트(글과 URL 확인, 모든 리디렉션 홉 포함), Google Docs 문서 내보내기(`docs.google.com` 및 `*.googleusercontent.com`), Medium 작성자의 공개 RSS 피드(`medium.com/feed/...`), 두 플랫폼 API, Google의 토큰·Slides·Drive 내보내기 엔드포인트, 그리고 운영자가 허용한 경우 다이어그램용 mermaid.ink |
 | INV-9 | 자격 증명은 호출 시점에 환경 변수, Secret Manager, 또는 저장소 밖의 파일에서 읽는다. 어떤 경우에도 로그에 남기지 않고, 모델에 보내지 않고, 저장소에 저장하지 않으며, 어떤 라우트로도 반환하지 않는다 |
 | INV-10 | 자격 증명처럼 보이는 값이 들어 있는 본문은 확정하는 사람이 탐지 결과를 하나도 빠짐없이 보고 실제 자격 증명이 아니라고 밝히지 않는 한 게시하지 않는다 |
 | INV-11 | 작성자가 제공한 본문은 제공된 그대로 `source.original.md`와 글 저장소의 첫 판으로 보관한다. 시드는 그 본문이다. 예외는 SRC-7 하나뿐이다 |
@@ -90,13 +90,14 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| SRC-1 | 원본 문서는 50자 이상 60,000자(`BLOG_AGENT_MAX_ARTICLE_CHARS`) 이하의 Markdown 또는 일반 텍스트(붙여 넣은 텍스트, 또는 `.md`, `.markdown`, `.txt` 파일), Google Docs 문서 URL(`https://docs.google.com/document/d/...`), 또는 `qiita.com`, `dev.to`, `blog.naver.com`, `m.blog.naver.com` 중 한 곳의 게시물 https URL 하나이다. 그 밖의 파일 형식(Microsoft Word 등), 다른 곳의 주소, https가 아닌 주소, 너무 짧거나 긴 텍스트는 무엇이든 저장하기 전에 알기 쉬운 말로 거부한다 |
+| SRC-1 | 원본 문서는 50자 이상 60,000자(`BLOG_AGENT_MAX_ARTICLE_CHARS`) 이하의 Markdown 또는 일반 텍스트(붙여 넣은 텍스트, 또는 `.md`, `.markdown`, `.txt` 파일), Google Docs 문서 URL(`https://docs.google.com/document/d/...`), `qiita.com`, `dev.to`, `blog.naver.com`, `m.blog.naver.com` 중 한 곳의 게시물 https URL 하나, 또는 Medium 게시물의 https URL 하나(`medium.com/@author/slug`)이다. 그 밖의 파일 형식(Microsoft Word 등), 다른 곳의 주소, https가 아닌 주소, 너무 짧거나 긴 텍스트는 무엇이든 저장하기 전에 알기 쉬운 말로 거부한다 |
 | SRC-2 | 웹 페이지나 스크립트에 제출된 초안(붙여 넣은 텍스트, `.md`/`.txt` 파일, 또는 Markdown으로 내보낸 Google Docs URL)은 코드가 바이트 단위로 그대로 저장하며, 언어는 글이 쓰인 문자 체계로 판별한다. 제목은 코드 블록 밖의 첫 번째 1단계 헤딩이고, 없으면 프런트 매터의 `title`, 그것도 없으면 본문의 첫 줄이다. 뒤의 두 경우에는 어떤 제목을 취했는지 알리는 알림이 실행에 붙는다. 어떤 모델도 관여하지 않는다(INV-11). URL만 있는 입력도 코드가 읽는다. URL 외에 다른 말이 더 있는 짧은 메시지만 에이전트로 간다 |
 | SRC-3 | URL은 플랫폼의 API(Qiita, DEV)로 읽거나 공개된 모바일 페이지(Naver)에서 읽는다. 그 플랫폼은 원본으로 기록하고 절대 쓰지 않는다(INV-4). Naver에서 읽은 본문은 SRC-7에 따라 Markdown 구조를 갖춘다 |
 | SRC-4 | 시드는 웹 페이지나 스크립트가 저장하는 시점에 최종본이 된다. 채팅에서는 작성자가 그렇다고 말할 때에만 최종본이 된다 |
 | SRC-5 | 글에 딸린 코드는 선택 사항이며, 어떤 경우에도 요구하지 않는다 |
 | SRC-6 | 실행 하나는 글 한 편을 담는다. 같은 세션에 다른 게시된 글을 읽어 오면 새 프로젝트가 시작되고 이전 글의 것은 아무것도 남지 않는다. 시드 본문을 고치면 이전 본문으로 만든 현지화본, 확정, 슬라이드 계획과 그 파일들이 폐기된다. 게시 기록과 덱은 여전히 그 글의 것이므로 남는다. 이전 본문에서 남은 게시물 파일은 다시 저장할 수 없다. 원본 언어 게시물을 페이지에서든 에이전트를 통해서든 편집하면 현지화본과 슬라이드 계획은 남는다. 이전 본문으로 만든 현지화본은 다시 만들 때까지 원본보다 오래된 것으로 표시된다(WEB-15) |
 | SRC-7 | Markdown 헤딩이 없는 100자 이상의 초안과 Naver 페이지에서 다시 만든 본문은 시드가 되기 전에 모델이 Markdown 구조를 입힌다. 구조화한 본문은 마크업과 공백을 빼고 원문과 글자와 숫자가 같다는 것을 코드가 확인한 경우에만 쓴다. 그렇지 않으면 원문이 시드다. 어느 쪽이든 어떻게 되었는지 알리는 알림이 실행에 붙는다. 본문은 데이터로 모델에 넘긴다(INV-7) |
+| SRC-8 | Medium 게시물은 작성자의 공개 RSS 피드에서 읽으며 초안으로 다룬다. 어떤 블로그 플랫폼도 원본이 아니고(INV-4), Medium에는 절대 쓰지 않는다. 피드에 아직 남아 있는 게시물만 읽을 수 있으며, 그보다 오래된 게시물은 그 이유를 들어 거절한다 |
 
 ### 5.2 현지화
 
@@ -373,18 +374,19 @@ flowchart TD
 | INV-5 | `test_saved_notes_reach_the_deck_only_after_approval`, `test_deck_sync_writes_only_when_the_request_says_a_person_approved`, `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor` |
 | INV-6 | `test_no_deck_is_created_unless_the_person_asked_for_decks`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_a_message_to_the_agent_creates_no_deck`, `test_a_slide_request_from_the_agent_waits_for_a_persons_approval`, `test_slides_for_several_languages_are_one_request` |
 | INV-7 | `test_article_text_cannot_close_the_markers_it_is_given_between`, `test_a_title_cannot_break_out_of_its_attribute`, `test_no_title_is_written_into_the_coordinators_instruction`, `test_what_is_quoted_from_the_article_stays_between_markers` |
-| INV-8 | `test_fetch_rejects_urls_outside_the_allowlist`, `test_unauthenticated_fetch_rechecks_the_host_on_every_redirect`, `test_policy_plugin_blocks_disallowed_urls_for_any_tool`, `test_mermaid_rendering_is_off_unless_enabled` |
+| INV-8 | `test_fetch_rejects_urls_outside_the_allowlist`, `test_unauthenticated_fetch_rechecks_the_host_on_every_redirect`, `test_policy_plugin_blocks_disallowed_urls_for_any_tool`, `test_mermaid_rendering_is_off_unless_enabled`, `test_every_source_kind_is_in_one_table_and_the_fetch_list_comes_from_it` |
 | INV-9 | `test_secret_from_environment_takes_precedence`, `test_log_records_are_scrubbed_before_emission`, `test_settings_reports_only_whether_each_credential_is_configured` |
 | INV-10 | `test_text_with_a_credential_is_not_finalized_or_sent_unless_acknowledged`, `test_a_plain_yes_does_not_accept_credential_findings`, `test_finalizing_text_with_credential_findings_asks_the_person_first`, `test_every_credential_finding_is_shown_not_only_the_first_few` |
 | INV-11 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_other_text_is_the_draft_itself_exactly_as_given`, `test_the_text_as_supplied_is_kept_beside_the_seed` |
 | INV-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_a_run_stops_and_says_which_language_was_not_written`, `test_a_registered_address_is_recorded_and_checked` |
-| SRC-1 | `test_fetch_accepts_supported_hosts`, `test_fetch_rejects_disallowed_host_without_network`, `test_invalid_seed_returns_recovery_instruction`, `test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason`, `test_an_address_that_cannot_be_read_is_told_apart_from_a_draft`, `test_what_cannot_be_used_as_a_source_is_said_in_plain_words`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
+| SRC-1 | `test_fetch_accepts_supported_hosts`, `test_fetch_rejects_disallowed_host_without_network`, `test_invalid_seed_returns_recovery_instruction`, `test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason`, `test_an_address_that_cannot_be_read_is_told_apart_from_a_draft`, `test_what_cannot_be_used_as_a_source_is_said_in_plain_words`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open`, `test_every_source_kind_is_in_one_table_and_the_fetch_list_comes_from_it` |
 | SRC-2 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_a_bare_address_is_read_by_code`, `test_a_short_request_with_a_supported_address_goes_to_the_agent`, `test_language_guess`, `test_the_title_of_a_draft_is_never_a_comment_inside_code`, `test_a_draft_without_a_title_line_says_which_title_was_taken`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
 | SRC-3 | `test_fetched_qiita_post_becomes_final_seed_and_existing_source`, `test_a_post_read_from_the_naver_page_goes_on_with_a_notice`, `test_naver_html_extraction_keeps_paragraphs_and_code` |
 | SRC-4 | `test_seed_gate_blocks_an_unfinalized_seed`, `test_finalize_requires_a_seed`, `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it` |
 | SRC-5 | No unit test: 코드 어디에서도 글에 딸린 코드를 요구하지 않으므로 검사할 동작이 없다 |
 | SRC-6 | `test_another_article_in_the_same_session_keeps_nothing_of_the_first`, `test_a_revised_seed_discards_what_was_made_from_the_old_text`, `test_a_revised_seed_leaves_no_file_of_the_old_text_behind`, `test_a_file_left_from_an_earlier_text_cannot_be_saved_back`, `test_a_localization_older_than_the_source_is_marked` |
 | SRC-7 | `test_a_structured_copy_is_used_only_when_its_letters_are_the_same`, `test_text_for_structuring_goes_to_the_model_between_markers`, `test_a_post_read_from_the_naver_page_goes_on_with_a_notice` |
+| SRC-8 | `test_a_medium_post_is_read_from_the_feed_and_is_a_draft`, `test_a_medium_post_missing_from_the_feed_is_refused_in_plain_words`, `test_every_source_kind_is_in_one_table_and_the_fetch_list_comes_from_it` |
 | LOC-1 | `test_language_gate_skips_the_source_language`, `test_language_gate_runs_a_target_language`, `test_localized_title_is_used_for_target_languages_only` |
 | LOC-2 | `test_altered_code_is_an_error`, `test_missing_code_block_link_and_heading_are_errors`, `test_mermaid_structure_must_not_change`, `test_plain_text_block_translates_prose_lines_only`, `test_english_plain_text_block_stays_verbatim`, `test_plain_text_blocks_are_copied_for_an_english_source_and_translated_otherwise` |
 | LOC-3 | `test_writer_refiner_and_critic_get_the_same_words_on_facts_and_examples` |
