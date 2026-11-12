@@ -3,11 +3,13 @@
 초기 설계와 사용성 테스트로 쌓인 기능을 한 번 정리해 v1로 확정하기 위한 설계 문서입니다.
 지금 상태의 기록은 [kr-AS-BUILT.md](./kr-AS-BUILT.md)에 있고, 이 문서의 `G-`, `B-` 번호는 그 문서의 11절과 12절을 가리킵니다.
 
+> **v1.0에 반영됨 (2026-11-12).** 5절의 작업 패키지 24개를 모두 구현했고, 그 결과가 [SPEC.md](./SPEC.md) 버전 1.0입니다. 이 문서는 그 작업의 계획으로 남깁니다. 본문에서 "지금"이라고 적은 곳은 계획을 쓴 시점(커밋 `b5e1793`)을 뜻합니다. 8절의 "v1.0의 근거" 열만 구현된 코드에 맞춰 고쳤습니다.
+
 | 항목 | 값 |
 | :--- | :--- |
-| 상태 | 제안. 구현은 시작하지 않았습니다 |
+| 상태 | v1.0에 반영됨. 작업 패키지 24개를 모두 구현했습니다 (2026-11-12) |
 | 기준 | 커밋 `b5e1793`의 코드와 [SPEC.md](./SPEC.md) |
-| 확정에 필요한 것 | 6절의 결정 7건. Q8은 정해졌습니다 |
+| 확정에 필요한 것 | 없습니다. 6절의 항목은 모두 권장안대로 정해졌습니다 |
 | 구현 단위 | 5절의 작업 패키지 24개. 하나씩 SPEC, 코드, 테스트 순서로 반영합니다 |
 | 고친 날 | 2026-11-12 오후. 역량별 근거를 다시 대조해 8절을 더하고, 4.2절과 WP-05, WP-06을 고치고, 4.10절과 WP-00, WP-19 ~ WP-23을 더했습니다 |
 
@@ -379,6 +381,7 @@ flowchart TD
 
 #### WP-18 SPEC v1.0 마감 (M, G-15)
 
+- SPEC: OPS-7 신설. SRC-2, WEB-2, WEB-10 개정 (G-12와 SRC-7에 맞춤).
 - 문서: SPEC.md 머리에 버전을 적고, 부록 A에 결정 37 ~ 51과 이 문서의 A-01 ~ A-21을 올리고, 7절과 8절을 고칩니다. kr-SPEC.md를 맞춥니다. AGENTS.md의 프로젝트 규칙(레인, 단일 편집 경로, 웹 계층의 금지 사항, 문구집, 도구 규약, 운영 규칙)을 고칩니다. 이 문서와 kr-AS-BUILT.md 머리에 "v1.0에 반영됨"을 적습니다.
 - README: 구조 그림에서 도구 개수를 지우고 레인과 원본 종류를 반영합니다. 1단계 설명을 SRC-7, SRC-8에 맞춥니다. 기능 위치 표를 8절의 근거 위치로 고칩니다. 상태 표에는 실제로 실행된 것만 올립니다. 2026-11-12에 페이지에서 DEV Community와 Qiita 게시, Naver URL 등록, 세 언어의 덱 생성이 실행되었고(kr-AS-BUILT.md 10절), 평가 결과는 WP-23의 것을 날짜와 함께 적습니다. 파일 목록을 맞춥니다.
 - 설정 파일: `.env.example`에 새 환경 변수를 더하고, 시크릿 이름 목록에 `GOOGLE_SLIDES_OAUTH`를 더하고, 로컬 시크릿 파일의 형식 설명을 코드와 맞춥니다. `agents-cli-manifest.yaml`의 `session_type` 옆에 코드의 실제 기본값이 SQLite 파일임을 주석으로 적습니다.
@@ -466,7 +469,7 @@ flowchart TD
 
 ## 6. 결정이 필요한 항목
 
-권장안으로 설계를 적어 두었습니다. 다르게 정하면 해당 작업만 바뀝니다. 아래 표의 항목은 아직 정해지지 않았고, 정해진 것은 표 아래에 따로 적습니다.
+권장안으로 설계를 적어 두었습니다. 다르게 정하면 해당 작업만 바뀝니다. 아래 표는 계획을 쓸 때의 질문이고, 정해진 내용은 표 아래에 적습니다. v1.0에서 Q1 ~ Q7은 모두 권장안대로 구현했습니다.
 
 | 번호 | 질문 | 권장 | 다른 선택 | 영향 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -484,6 +487,13 @@ flowchart TD
 | :--- | :--- | :--- |
 | 2026-11-12 | Q8. CI를 추가할지 | 추가합니다. GitHub Actions로 린터, 단위 테스트, Terraform 검증을 돌립니다. WP-22를 진행합니다 |
 | 2026-11-12 | 추론 모델의 기본값 | `gemini-4-argon`을 그대로 씁니다. 실행에서 문제가 생기면 그때 `REASONING_MODEL_NAME`으로 바꿉니다. 코드의 모델 이름은 건드리지 않습니다 (규칙 3번) |
+| 2026-11-12 | Q1. 직접 입력한 프롬프트 | 권장안. 칩은 제안만 보여 주고 입력한 것은 "내 기록"에 그대로 둡니다 (WP-13) |
+| 2026-11-12 | Q2. 문장으로 요청한 슬라이드의 승인 | 권장안. 승인을 거칩니다 (WP-05) |
+| 2026-11-12 | Q3. 평문 자동 구조화 | 권장안. 글자 보존 검사를 통과한 경우에만 씁니다 (WP-07) |
+| 2026-11-12 | Q4. 확정 때의 PDF 자동 내보내기 | 권장안. 없애고 버튼으로만 내보냅니다 (WP-09) |
+| 2026-11-12 | Q5. 접근 토큰 | 권장안. v1에 넣었습니다 (WP-17) |
+| 2026-11-12 | Q6. 슬라이드 계획의 동시 실행 | 권장안. 기본값 3입니다. 실제 모델로는 아직 확인하지 않았습니다 (WP-04) |
+| 2026-11-12 | Q7. `LICENSE` 파일 | 권장안. Apache-2.0 전문을 `LICENSE`로 추가했습니다 (WP-18) |
 
 ## 7. v1에 넣지 않는 것
 
@@ -502,31 +512,35 @@ flowchart TD
 
 README의 기능 위치 표가 다루는 역량을 19개로 나누어, 지금 코드에 있는 근거와 약한 곳을 다시 대조했습니다. 약한 곳은 모두 5절의 작업으로 닫습니다.
 
-| 번호 | 역량 | 지금의 근거 | 약한 곳 | 닫는 작업 |
+v1.0을 마감하며 근거 열을 구현된 코드에 맞춰 고쳤습니다 (규칙 8번). "약한 곳" 열은 계획을 쓴 시점(커밋 `b5e1793`)의 기록이고, 적힌 작업으로 모두 닫혔습니다. README의 기능 위치 표는 이 근거 열과 같은 곳을 가리키고, `test_every_place_the_readme_points_to_exists`가 그 표의 파일과 이름이 실제로 있는지 확인합니다.
+
+| 번호 | 역량 | v1.0의 근거 | 약한 곳 (`b5e1793` 시점) | 닫은 작업 |
 | :--- | :--- | :--- | :--- | :--- |
-| 1 | 도구 설명 | 도구 18개 중 16개에 목적, `Args`, `Returns` | 2개에 매개변수 설명이 없음 (B-17) | WP-19, 06 |
-| 2 | 도구 이름 | 하는 일과 대상이 이름에 있음. 예: `publish_qiita_article_draft` | 없음. `update_article_post`는 WP-06에서 `set_article_post_title`과 `replace_passage_in_article_post`로 바뀜 | – |
-| 3 | 명시적 스키마 | `app/schemas.py`의 입력, 출력 모델. `output_schema` 3개 | 허용 값이 모델에 전달되지 않음. 7개 도구는 직접 비교로 검사 (B-17) | WP-19 |
-| 4 | 복구를 안내하는 오류 | 18개 모두 `error_code`와 `recovery_instruction`을 돌려줌 | 없음. 새 도구도 같아야 함 | WP-19의 테스트 |
+| 1 | 도구 설명 | 에이전트 트리의 도구 20개 모두에 목적, `Args`, `Returns`. `tests/unit/test_tool_contract.py`가 트리에서 도구를 읽어 검사 | 2개에 매개변수 설명이 없음 (B-17) | WP-19, 06 |
+| 2 | 도구 이름 | 하는 일과 대상이 이름에 있음. 예: `publish_qiita_article_draft`, `set_article_post_title`, `replace_passage_in_article_post`, `request_approval_to_create_slide_decks` | 없음. `update_article_post`는 WP-06에서 `set_article_post_title`과 `replace_passage_in_article_post`로 바뀜 | – |
+| 3 | 명시적 스키마 | `app/schemas.py`의 입력, 출력 모델과 `LanguageCode`, `PlatformName`, `CodeMode`. `output_schema` 3종(`LocalizedTitles`, `ReviewVerdict`, `SlideDeckPlan`) | 허용 값이 모델에 전달되지 않음. 7개 도구는 직접 비교로 검사 (B-17) | WP-19 |
+| 4 | 복구를 안내하는 오류 | 20개 모두 `error_code`와 `recovery_instruction`을 돌려줌. 도구 규약 테스트가 검사 | 없음. 새 도구도 같아야 함 | WP-19의 테스트 |
 | 5 | 시스템 지시문 | `COORDINATOR_INSTRUCTION`의 역할, 도메인 지식, 세션 상태, 작업 흐름, 제약 구획 | 없음. WP-05, 06이 문단을 고칠 때 구획을 유지 | – |
 | 6 | 대화 이력 압축 | `EventsCompactionConfig`, `ContextCacheConfig` | 없음 | – |
-| 7 | 영구 세션 상태 | SQLite 세션, Agent Runtime 세션, 글 저장소, 실행 기록 | 매니페스트의 `session_type` 값이 실제 기본값과 달라 보임 | WP-18 |
+| 7 | 영구 세션 상태 | SQLite 세션, Agent Runtime 세션(`app/app_utils/services.py`), 글 저장소(`app/persistence.py`), 실행 기록(`app/runs.py`) | 매니페스트의 `session_type` 값이 실제 기본값과 달라 보임 | WP-18 |
 | 8 | 비동기 기억 작업 | `schedule_memory_consolidation`의 백그라운드 작업, `PreloadMemoryTool` | 없음 | – |
-| 9 | 멀티 에이전트 패턴 | 코디네이터, `ParallelAgent` 2개, `LoopAgent` 2개, `SequentialAgent` 4개, 코드 게이트 | 없음. WP-04가 계획 파이프라인을 한 벌 더 만들어도 구성은 같음 | – |
-| 10 | 모델 배정 | `app/models.py`의 `MODEL_ROUTES` 표 | 표 밖의 직접 호출 2곳. 평가의 판정 모델 이름이 코드에 있음 (B-07, B-20) | WP-07, 13, 23 |
-| 11 | 가드레일과 정책 | `ContentPolicyPlugin`, `app/policy.py`, 구조 검사와 검토 루프, 무작위 표식 | 직접 호출 2곳이 플러그인과 표식을 지나지 않음 (B-07, G-03) | WP-07, 13 |
-| 12 | 사람의 승인 | 게시 2개, 덱, 확정 도구의 `request_confirmation`과 `ResumabilityConfig` | 채팅 문장이 승인 없이 덱을 만드는 길 (B-03) | WP-05 |
-| 13 | 구조화 로그 | `StructuredLogHandler`, 가림 필터, `log_event` | 활동 기록의 기본 출력이 `print` (B-18) | WP-21 |
-| 14 | 의도와 결과 기록 | `ObservabilityPlugin`, `ArticlePipeline.act`. 실제 로그에 의도 241건, 결과 240건 | 호출 id가 가려져 짝이 안 맞는 기록이 360건 중 24건 (B-16) | WP-20 |
-| 15 | 분산 추적 | `traced_span` 9곳, ADK의 스팬, API 서버의 내보내기 설정 | 페이지와 스크립트에서는 꺼져 있음. 로그 710건의 추적 id가 모두 비어 있음 (B-15) | WP-20 |
-| 16 | 개인정보 가림 | 정규식은 항상, Cloud DLP는 설정으로. 로그와 기억에 적용 | DLP 경로를 실행해 본 적이 없음. 식별자를 카드 번호로 오인 (B-16) | WP-20 |
-| 17 | 자동 평가 | 평가 6개 사례와 지표 2개, 단위 테스트 431건, SPEC 추적 검사 | 평가 사례 하나가 낡음. 단위 테스트 한 건이 모델에 닿음 (B-04, B-20) | WP-01, 23 |
-| 18 | 코드형 인프라 | Terraform(스캐폴드와 `blog_agent.tf`), README의 `agents-cli` 명령 표 | 검증한 적이 없음. CI가 없음. 린터가 통과하지 않음 (B-19) | WP-00, 22 |
+| 9 | 멀티 에이전트 패턴 | 코디네이터, `ParallelAgent` 2곳, `LoopAgent` 2곳, `SequentialAgent` 4곳, 코드 게이트. 계획 파이프라인은 `build_slide_planning_pipeline`으로 두 벌(코디네이터 아래, 별도 `App`의 루트) | 없음. WP-04가 계획 파이프라인을 한 벌 더 만들어도 구성은 같음 | – |
+| 10 | 모델 배정 | `app/models.py`의 `MODEL_ROUTES` 표(작업 종류 9개). 에이전트 밖의 호출은 `app/llm.py`의 `generate_text` 하나이고 같은 표에서 모델을 고름. 평가의 판정 모델은 `FAST_MODEL_NAME` | 표 밖의 직접 호출 2곳. 평가의 판정 모델 이름이 코드에 있음 (B-07, B-20) | WP-07, 13, 23 |
+| 11 | 가드레일과 정책 | `ContentPolicyPlugin`, `app/policy.py`, 구조 검사와 검토 루프, 무작위 표식(`fenced`), 구조화본의 글자 검사(`same_letters`). 관문 호출도 본문을 표식 사이에 넣음 | 직접 호출 2곳이 플러그인과 표식을 지나지 않음 (B-07, G-03) | WP-07, 13 |
+| 12 | 사람의 승인 | 게시 2개, 덱, 확정, 슬라이드 요청(`request_approval_to_create_slide_decks`) 도구의 `request_confirmation`과 `ResumabilityConfig` | 채팅 문장이 승인 없이 덱을 만드는 길 (B-03) | WP-05 |
+| 13 | 구조화 로그 | `StructuredLogHandler`, 가림 필터, `log_event`, `log_activity` | 활동 기록의 기본 출력이 `print` (B-18) | WP-21 |
+| 14 | 의도와 결과 기록 | `ObservabilityPlugin`, `ArticlePipeline.act`, `app/llm.py`의 관문 호출. 계획 시점의 실제 로그에 의도 241건, 결과 240건 | 호출 id가 가려져 짝이 안 맞는 기록이 360건 중 24건 (B-16) | WP-20 |
+| 15 | 분산 추적 | `setup_tracing`, 액션마다 `root_span`(`app/runs.py` 2곳, `scripts/run_pipeline.py` 3곳), `traced_span` 16곳(`app/platforms.py` 9, `app/google_slides.py` 5, `app/llm.py` 1, `app/web_ui.py` 1), ADK의 스팬, API 서버의 내보내기 설정 | 페이지와 스크립트에서는 꺼져 있음. 로그 710건의 추적 id가 모두 비어 있음 (B-15) | WP-20 |
+| 16 | 개인정보 가림 | 정규식은 항상, Cloud DLP는 설정으로. 로그와 기억에 적용. DLP 경로는 대역 클라이언트로 단위 테스트 | DLP 경로를 실행해 본 적이 없음. 식별자를 카드 번호로 오인 (B-16) | WP-20 |
+| 17 | 자동 평가 | 평가 8개 사례와 지표 2개, 단위 테스트 563건, SPEC 추적 검사 | 평가 사례 하나가 낡음. 단위 테스트 한 건이 모델에 닿음 (B-04, B-20) | WP-01, 23 |
+| 18 | 코드형 인프라 | Terraform(스캐폴드와 `blog_agent.tf`), README의 `agents-cli` 명령 표, `.github/workflows/ci.yml` | 검증한 적이 없음. CI가 없음. 린터가 통과하지 않음 (B-19) | WP-00, 22 |
 | 19 | 시크릿 관리 | `get_secret`의 환경 변수, Secret Manager, 저장소 밖 파일 순서. Terraform의 시크릿 컨테이너와 최소 권한 | 없음 | – |
 
 9개(4, 5, 6, 7, 8, 9, 10, 11, 19)는 지금 근거로 충분하고, 그중 셋(7, 10, 11)에 다듬을 곳이 있습니다. 나머지 10개에는 코드를 꼼꼼히 읽는 사람이 지적할 만한 약한 곳이 있습니다.
 
 ### 점검하면서 실행한 것
+
+계획을 쓴 시점(커밋 `b5e1793`)에 실행한 것의 기록입니다. 고치지 않았습니다.
 
 | 확인 | 결과 |
 | :--- | :--- |
@@ -625,3 +639,7 @@ SPEC.md에 들어갈 영어 문장입니다. 개정은 지금 문장을 이것�
 | OPS-4 | 신설 | Models are called from two places: the agents in `app/agent.py` and the gateway in `app/llm.py`. The web layer calls no model and no platform; it starts actions of the pipeline |
 | OPS-5 | 신설 | Every function an agent can call as a tool has a name that says what it does and to what; a docstring with its purpose, each argument and what it returns; typed arguments without defaults, where the allowed languages, platforms and code modes are enumerations the model is shown; arguments checked through a Pydantic model before anything happens; and, when it cannot do what was asked, a result with `error_code` and `recovery_instruction` instead of an exception |
 | OPS-6 | 신설 | Every push runs the linter, the unit tests and a Terraform validation in CI (`.github/workflows/ci.yml`). None of them needs a credential |
+| OPS-7 | 신설 (WP-18) | In `README.md`, the table "Where each capability lives" points only at what is there: every file or folder it names exists in the repository, and every name it gives as code is found in a file that its row names |
+| SRC-2 | 개정 (WP-18) | "No model is involved (INV-11)"를 "Storing involves no model (INV-11); a draft without a heading is afterwards offered to a model for structure only, under the check of SRC-7"로 바꿉니다 |
+| WEB-2 | 개정 (WP-18) | 폼의 구성에 "`Recent sources…` (WEB-14) and `Clear / New article` (PER-4)"를 더합니다 |
+| WEB-10 | 개정 (WP-18) | Settings의 내용에 "the choice of the interface language (WEB-13)"와 "a link to the setup guide in the interface language"를 더합니다 |

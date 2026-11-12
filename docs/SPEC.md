@@ -10,15 +10,13 @@ this file wins.
 Requirement ids (`INV-1`, `PUB-3`, ...) are stable. A requirement that is not
 built yet says so in its own text and is listed again in section 8.
 
-> **Status, 2026-11-12.** The code has moved ahead of this document. What
-> follows is accurate up to commit `58c2dc1`. The 21 commits after it changed
-> behaviour without changing this text. The fifteen differences are listed in
-> [kr-AS-BUILT.md](./kr-AS-BUILT.md), section 11 (in Korean), together with
-> the defects found while recording them; four of the differences touch
-> invariants as they are written here (INV-6, INV-7, INV-8, INV-11).
-> [kr-DESIGN-v1.md](./kr-DESIGN-v1.md) (in Korean) proposes how code, tests
-> and this document are brought back in step as version 1.0. Until that is
-> done, read this document together with that list.
+> **Version 1.0, 2026-11-12.** This text, the code and the unit tests describe
+> the same system. Before this version the code had moved ahead of the text:
+> [kr-AS-BUILT.md](./kr-AS-BUILT.md) records the code as it was at commit
+> `b5e1793` and the differences found then, and
+> [kr-DESIGN-v1.md](./kr-DESIGN-v1.md) is the plan of the work that brought
+> the two back in step (both in Korean). The decisions are listed in
+> Appendix A.
 
 ---
 
@@ -63,13 +61,13 @@ whatever else it improves.
 
 | Term | Meaning |
 | :--- | :--- |
-| Source document | What the author hands in: Markdown text or a file, or the URL of a post on one of the three platforms |
+| Source document | What the author hands in: Markdown or plain text, a file, or the URL of a post on one of the three platforms, of a Google Docs document or of a Medium post (SRC-1) |
 | Seed | The source document once stored: one language, one title, final |
 | Post | The article in one language: the seed itself in the source language, a localization in the other two |
 | Finalize | The author's sign-off of one post (title and text) as ready to send |
 | Slide plan | Per language: deck title, opening script, numbered slides (title, bullets, visual note, optional image reference, speaker script), closing script. Stored in the session and mirrored to `slides.<lang>.md` |
 | Speaker notes | In the page, the link to `slides.<lang>.md`; in a deck, the notes under each slide. They carry the same scripts |
-| Run | One source document processed end to end; one page address, one session |
+| Run | One source document processed end to end; one page address, one session that is its record (RUN-2) |
 
 ## 4. Workflow
 
@@ -93,7 +91,7 @@ stage at a time and waits.
 | | Requirement |
 | :--- | :--- |
 | SRC-1 | A source document is Markdown or plain text (pasted, or a `.md`, `.markdown` or `.txt` file) of 50 to 60,000 characters (`BLOG_AGENT_MAX_ARTICLE_CHARS`), a Google Docs document URL (`https://docs.google.com/document/d/...`), one https URL of a post on `qiita.com`, `dev.to`, `blog.naver.com` or `m.blog.naver.com`, or one https URL of a Medium post (`medium.com/@author/slug`). Other file formats (such as Microsoft Word), addresses elsewhere, addresses that are not https, and texts that are too short or too long are refused in plain words before anything is stored |
-| SRC-2 | A draft handed to the web page or the script (pasted text, a `.md`/`.txt` file, or a Google Docs URL exported as Markdown) is stored by code, byte for byte, with its language detected from the script it is written in. Its title is the first level-1 heading outside code blocks, else the `title` of its front matter, else its first line of prose; in the last two cases the run carries a notice naming the title it took. No model is involved (INV-11). A bare URL is read by code as well; only a short message that says more than a URL goes to the agent |
+| SRC-2 | A draft handed to the web page or the script (pasted text, a `.md`/`.txt` file, or a Google Docs URL exported as Markdown) is stored by code, byte for byte, with its language detected from the script it is written in. Its title is the first level-1 heading outside code blocks, else the `title` of its front matter, else its first line of prose; in the last two cases the run carries a notice naming the title it took. Storing involves no model (INV-11); a draft without a heading is afterwards offered to a model for structure only, under the check of SRC-7. A bare URL is read by code as well; only a short message that says more than a URL goes to the agent |
 | SRC-3 | A URL is read through the platform's API (Qiita, DEV) or from the public mobile page (Naver). The platform is recorded as the original and never written to (INV-4). Naver text is given Markdown structure under SRC-7 |
 | SRC-4 | The seed is final when stored by the web page or the script. In a chat it is final only when the author says so |
 | SRC-5 | Companion code is optional and never required |
@@ -162,7 +160,7 @@ stage at a time and waits.
 | | Requirement |
 | :--- | :--- |
 | WEB-1 | One page. Heading "Trilingual Blog Agent"; under it "Automatically transform an article into blog posts and presentation slides across three languages.", shown, like every text of the page, in the interface language (WEB-13) |
-| WEB-2 | Form: "Source document" with the hint "Share a post URL, a .md file, or your document."; attach or drop a file; "Slide options" with "Choose the slide length to create Google Slides in your configured Google Drive."; Length, Languages (checkboxes, all ticked), Audience (SLD-1); one Run button |
+| WEB-2 | Form: "Source document" with the hint "Share a post URL, a .md file, or your document."; attach or drop a file; "Recent sources…" (WEB-14) and "Clear / New article" (PER-4); "Slide options" with "Choose the slide length to create Google Slides in your configured Google Drive."; Length, Languages (checkboxes, all ticked), Audience (SLD-1); one Run button |
 | WEB-3 | Progress card: the article title, then the status line (elapsed time and latest activity while working; when finished, a link to `manifest.md`), then the steps in three rows. Row 1: "Source document", "Transform", "Prepare posts", "Summarize", "Review & edit". Row 2, under "Prepare posts": "Prepare slides" (when slides were asked for); the slides step shows each language asked for as waiting, planning, creating the deck, done or failed. Row 3: "Finalize posts", "Approve & draft", "Publish posts", "Verify & complete". Each step is computed from what the server holds, the same before and after a reload |
 | WEB-4 | Results table, the source language first, columns in the order of the work: Language (name, status badge under it), Title, Files, Slides, Next step. Nothing is listed under the table |
 | WEB-5 | Files: `post.<lang>.md` and, for Korean, `naver_blog.html`; each opens a preview. Slides: per language, what its state allows and nothing else: "Create slides…" without a plan; "Speaker notes" and "Create deck…" with a plan; with a deck also "Google Slides", "PDF" with its export time or "Export PDF", and "Re-create…"; "Update deck…" when the speaker notes changed after the deck was made |
@@ -170,7 +168,7 @@ stage at a time and waits.
 | WEB-7 | Preview: the file name, "edit" when the file may be edited, "raw text". Markdown is rendered; no script from article text can run, no form can be submitted and no base address set. Mermaid blocks appear as drawings with their source under them when the operator allowed mermaid.ink; otherwise as code |
 | WEB-8 | Editor: full window; title field for posts; Save; unsaved changes are guarded. Saving a post undoes its finalization and says so. For a slide plan with a deck: after Save the sync dialog opens when the deck differs; "Update deck…" and "Pull from deck…" are always there |
 | WEB-9 | "Ask the agent for a change": one line to the agent; the agent's reply is shown on the page when the turn ends. When the agent asks for an approval, the request is shown with Approve and Decline; an answer goes to that request only (INV-1), and other requests pending at that moment are declined and said to be. Requests left unanswered when a new line is sent are gone, and a notice says so. Under the box are suggestions from the page's own texts, in the interface language, ordered by how often they were used. What a person typed is kept in the browser as typed, listed under its own heading, and never translated. A request for slides typed to the agent is shown as an approval request, like a post, before anything is made (INV-6) |
-| WEB-10 | Settings shows the fixed language-to-platform mapping, per credential whether it is configured, and the Google account that decks go to, as reported by the server at that moment. No names or values of secrets |
+| WEB-10 | Settings shows the choice of the interface language (WEB-13), the fixed language-to-platform mapping, per credential whether it is configured, and the Google account that decks go to, as reported by the server at that moment, and a link to the setup guide in the interface language. No names or values of secrets |
 | WEB-11 | While a lane works, nothing else can be started in that lane; one sentence says so and names the lane. The other lane stays usable (RUN-1). A lost connection is shown. When an action ends without doing what was asked, a notice says what did not happen (INV-12) |
 | WEB-12 | Texts for people are written for people: platform names not ids, no Python lists, no exception class names. A sentence is written whole in the catalog (WEB-13), not put together from pieces. Each of the three languages is named in its own writing: English, 한국어, 日本語 |
 | WEB-13 | The page, the editor and the previews are shown in English, Korean or Japanese, chosen in Settings and remembered in the browser. Every text the page itself shows comes from one catalog per language with the same keys; a text that is missing falls back to English. Notices from the server carry a code so the page can show them in that language. What the author wrote or typed, what the agent answered and what a platform returned are shown as they are |
@@ -209,6 +207,7 @@ stage at a time and waits.
 | OPS-4 | Models are called from two places: the agents in `app/agent.py` and the gateway in `app/llm.py`. The web layer calls no model and no platform; it starts actions of the pipeline |
 | OPS-5 | Every function an agent can call as a tool has a name that says what it does and to what; a docstring with its purpose, each argument and what it returns; typed arguments without defaults, where the allowed languages, platforms and code modes are enumerations the model is shown; arguments checked through a Pydantic model before anything happens; and, when it cannot do what was asked, a result with `error_code` and `recovery_instruction` instead of an exception |
 | OPS-6 | Every push runs the linter, the unit tests and a Terraform validation in CI (`.github/workflows/ci.yml`). None of them needs a credential |
+| OPS-7 | In `README.md`, the table "Where each capability lives" points only at what is there: every file or folder it names exists in the repository, and every name it gives as code is found in a file that its row names |
 
 ### 5.10 Runs
 
@@ -225,17 +224,20 @@ stage at a time and waits.
 
 ```mermaid
 flowchart TD
-    Page[Web page] --> Pipe[ArticlePipeline]
+    Page[Web page] --> Runs[Runs: two lanes, run records]
+    Runs --> Pipe[ArticlePipeline]
     Script[run_pipeline.py] --> Pipe
-    Pipe -->|registers a draft, exports, finalizes, syncs| Tools[Tool functions]
-    Pipe -->|asks for localization and slide planning| Coord[Coordinator agent]
+    Pipe -->|a person's actions: store, export, edit, finalize, post, deck, sync| Tools[Tool functions]
+    Pipe -->|localization, requests in words| Coord[Coordinator agent]
+    Pipe -->|slide planning, a working session per language| PlanApp[slide planning application]
+    Pipe -->|structure for a draft, SRC-7| Gate[Model gateway]
     Chat[Chat and API surface] --> Coord
     Coord --> Loc[localization_pipeline]
     Coord --> Plan[slide_planning_pipeline]
     Coord --> Tools
     Tools --> Policy[posting policy]
-    Tools --> Ext[Qiita, DEV, Naver read, Google Slides]
-    Pipe --> Sess[(Session store)]
+    Tools --> Ext[Qiita, DEV, Naver read, Google Docs read, Medium read, Google Slides]
+    Pipe --> Sess[(Record session)]
     Coord --> Sess
     Tools --> Store[(Article store and workspace files)]
 ```
@@ -245,11 +247,19 @@ flowchart TD
   passed, and whether a post may be sent are code (`app/workflow_agents.py`,
   `app/policy.py`), not a model.
 - The pipeline does in code what needs no judgement (SRC-2, reading a URL, the
-  Naver export, finalizing, creating a deck, posting, syncing, the manifest) by
-  calling the same tool functions the agent calls, as an action a person
-  started, and asks the agent only for localization and slide planning. After
-  each step it checks that the step produced what was asked and reports a
-  notice otherwise.
+  Naver export, editing, finalizing, creating a deck, posting, syncing, the
+  manifest) by calling the same tool functions the agent calls, as an action a
+  person started. Models are asked for localization (through the coordinator),
+  for slide planning (the planning pipeline as an application of its own, in
+  a working session per language, RUN-2), for a request typed in words, and
+  for the structure of a draft (the gateway `app/llm.py`, SRC-7). After each
+  step the pipeline checks that the step produced what was asked and reports
+  a notice otherwise.
+- The web page starts every action through `app/runs.py`, which keeps the two
+  lanes of a run (RUN-1), opens one trace per action (OPS-1) and writes the
+  run record under `workspace/.jobs/`. The web layer (`app/web_ui.py`) calls
+  no model and no platform and reads no meaning into what a person typed
+  (OPS-4).
 - Session state is the record within a run; the keys are all in
   `app/state.py`. Workspace files mirror it for reading. The article store is
   the history.
@@ -258,28 +268,49 @@ flowchart TD
 | :--- | :--- |
 | `localized_key(lang)`, `LOCALIZED_TITLES` | Posts |
 | `FINALIZED_POSTS` | Digest of the finalized title and text, and whether findings were acknowledged |
+| `LOCALIZED_FROM` | Digest of the source text a localization was made from (WEB-15) |
 | `SLIDE_PLANS`, `SLIDE_TIMING` | Plan of record and its timing report |
-| `GOOGLE_SLIDES_DECKS` | Deck id, address, counts |
+| `GOOGLE_SLIDES_DECKS` | Deck id, address, counts, when it was created, the addresses of the decks it replaced, its PDF and when that was exported |
 | `DECK_TEXT_BASELINE` | Text on which file and deck last agreed |
 | `PUBLICATIONS` (per platform) | Original, exported, draft or public, with id and address |
 
 The names are the constants in `app/state.py`. `PRESENTATION_BRIEF`,
-`SLIDE_DECK_PLAN` and `SLIDE_DRAFT_TIMING` are the working area of the slide
-planning run in progress. After it, only the pipeline looks at the brief, to
-check that the plan it got is in the language it asked for.
+`SLIDE_DECK_PLAN` and `SLIDE_DRAFT_TIMING` are the working area of a slide
+planning run. The page and the script plan in a working session, so there
+these keys never reach the record; in a chat the planning runs in the
+conversation's own session. `SURFACE` says that a session is driven by the
+page, `RUN_OPTIONS` holds the length and audience a run was started with, and
+`SLIDE_REQUEST` holds a slide request a person approved until the slides lane
+takes it.
 
 ## 7. Known limits
 
 - Naver: reading is best effort from the public page; posting is by hand.
+- Medium: only a post that is still in its author's feed can be read (SRC-8).
+- The check of SRC-7 is strict: a structured copy in which the model added,
+  dropped or changed a single letter or digit is not used, and the text as
+  supplied goes on without headings. The notice says so.
 - The structure check cannot tell prose from commands in Latin script inside
   plain-text blocks (LOC-2), and treats a line that starts with a comment
   marker as a comment in every language.
 - Speaking time is estimated from length at assumed rates, not measured.
 - SLD-4 depends on the planning model; it was observed on two plans, not
   proven.
+- Each language's slides are planned on their own (SLD-5), so the decks of one
+  talk in three languages need not have the same slides.
+- Planning several languages at once (SLD-14) was checked with stand-ins for
+  the model only. Whether a model quota carries three planning runs at the
+  same time is not known; `BLOG_AGENT_SLIDE_PARALLELISM=1` plans one after the
+  other.
 - A diagram whose address would exceed 2,000 characters cannot be placed on a
   slide; the slide is then laid out as text.
 - Deck layout is computed once. Text pushed later is not re-fitted.
+- The server does not see what is changed in a deck in Google Slides. The page
+  therefore says when a PDF was exported, not whether it is current, and
+  "Update deck…" appears for changes to the speaker notes file only.
+- A slide request typed to the agent becomes an approval request only on the
+  page. In a chat and on the API surface the agent sets a brief, plans in the
+  conversation, and creates one deck at a time behind its own approval.
 - The page has no login (SEC-1). Started with `--host` for another address, it
   requires the access token (SEC-7), but it speaks plain HTTP: the token and
   its cookie can be read on the network between the browser and the server,
@@ -305,7 +336,13 @@ check that the plan it got is in the language it asked for.
   request therefore declines the others pending at that moment (INV-1); they
   have to be asked for again.
 - An approval request that was pending when the server stopped is gone after
-  the restart (PER-2).
+  the restart (PER-2). An interrupted run is not continued by itself: the
+  page says which lane was interrupted and offers the slides that are
+  missing (RUN-4).
+- Not every sentence on the page is in the interface language (WEB-13): the
+  agent's replies, what a platform returned, and the reasons the posting
+  policy and the tools give for a refusal are shown in English as they were
+  written.
 - The step "Prepare posts" is shown as done when the Naver file exists or
   Naver is the original; it does not wait for the author's review.
 - Local memory is in-process; Memory Bank needs a deployment that has not been
@@ -315,9 +352,12 @@ check that the plan it got is in the language it asked for.
 
 | | Item | State |
 | :--- | :--- | :--- |
-| 1 | Licence | `README.md` names Apache-2.0; the repository has no `LICENSE` file. The owner decides |
+| 1 | Licence | Decided: Apache-2.0. `LICENSE` holds the licence text. The files the scaffold generated carry a licence header with a copyright line; the files written for this project carry none. Whether they get one, and in whose name, is the owner's decision |
 | 2 | A third posting state after a draft is published by hand on the site | Covered today by "Update post…" with Public; a way to only register the public address is not built |
-| 3 | Deployment to Agent Runtime, Terraform apply, Cloud DLP | Written, never run. CI runs on every push (OPS-6); it validates the Terraform files and applies nothing |
+| 3 | Deployment to Agent Runtime, Terraform apply, Cloud DLP, export to Cloud Trace | Written, never run against the services. CI runs on every push (OPS-6); it validates the Terraform files and applies nothing |
+| 4 | `uv.lock` | The lock file names a package index that answers only inside the network it was written in. CI therefore resolves the dependencies again from PyPI (`UV_DEFAULT_INDEX` in `.github/workflows/ci.yml`) and does not install with `--locked`. Writing the lock file again against PyPI is left to the owner |
+| 5 | What version 1.0 was not run with | A real model planning slides in working sessions, three languages at once; the structuring gateway with a real model; a real Medium address; the Google Slides API after the changes of this version; the access token on a host name behind a proxy. The Korean and Japanese texts of the catalogs were not read by a native reader. `README.md` keeps the list of what was run |
+| 6 | One plan for a talk, localized into the other languages, so that the three decks have the same slides | Not built; a candidate for a later version (section 7 of the plan) |
 
 <!-- requirements:end -->
 
@@ -368,6 +408,52 @@ changed or added to it, in order.
 | 34 | After an independent review of the rebuilt code: a yes to finalize holds only for the text that was asked about; no article text in the coordinator's instruction; the server answers only to its own name; a deck sync writes only the changes that were shown; every credential finding is shown | Gaps the review found in the first version of this specification's code |
 | 35 | Article tables placed on slides as native Google Slides tables (`table:N`, SLD-11); PDF export of a deck (`slides.<lang>.pdf`, SLD-12) on finalize and on demand from the Slides column | Open items 1 and 2 of section 8 |
 | 36 | Clarified INV-4 (only blog-platform URLs mark a platform as `existing_source`); draft source-language posts are editable on the page before publication; Google Docs document URLs (`https://docs.google.com/document/d/...`) are read as Markdown drafts (`.md`, `.txt`, Google Docs only) | Uneditable draft source post; blog URLs and local files only |
+| 37 | The status line sits under the article title; the steps of posting are part of the progress display, which then became three rows (WEB-3) | Two bars of five steps |
+| 38 | Tags are entered in the approval dialog of a post, with the platform's rule under the input (WEB-6) | A tags input outside the approval |
+| 39 | A reload brings the source document back into the input box; "Clear / New article" starts fresh (PER-4) | An empty form after a reload |
+| 40 | Plain text without headings, and text read from a Naver page, is given Markdown structure by a model. Kept only under a check since A-06 (SRC-7) | Text stored without structure |
+| 41 | The activity log opens by itself while a run works | A log that had to be opened |
+| 42 | The interface language can be chosen: English, Korean, Japanese. Completed by A-12 (WEB-13) | English only |
+| 43 | Slides can be made, and made again, after the run, when they are needed. On buttons since A-13 | Slides only as part of the run |
+| 44 | The source-language post can be edited; suggestions and a dialog of prompts under the request box | A source post that could not be changed; one bare input line |
+| 45 | The agent changes the title and the text of a post with a tool, and acts on such a request without asking back. The tool was replaced by A-05 | Edits by a person only |
+| 46 | Settings: a status badge per platform, a link to the setup guide, setup guides in three languages (WEB-10) | — |
+| 47 | A "Recent sources" dialog. Its list is the server's since A-11 (WEB-14) | — |
+| 48 | The URL of a Medium post can be read. Specified as a read-only source by A-07 (SRC-8) | Medium out of scope |
+| 49 | While slides are made, posts can be reviewed, finalized and posted. Made safe by A-01 and A-02 (RUN-1, RUN-2) | One action at a time for the whole run |
+| 50 | One sentence can ask for slides in several languages. Behind an approval since A-04 (INV-6) | One language per request |
+| 51 | The texts of the chips wrap; a prompt a person typed was shown in the interface language. Withdrawn by A-10: what a person typed stays as typed | — |
+
+Decisions 37 to 51 were taken during usability tests, in code, before this
+document was changed; [kr-AS-BUILT.md](./kr-AS-BUILT.md) records them. Version
+1.0 kept, bounded or withdrew each of them with the decisions below, which
+carry the numbers of the plan ([kr-DESIGN-v1.md](./kr-DESIGN-v1.md), section
+3). The questions the plan put to the owner were settled the way the plan
+recommended.
+
+| | Decision of version 1.0 | Replaces |
+| :--- | :--- | :--- |
+| A-01 | A run has two lanes, main and slides; one action at a time in a lane, both lanes at the same time (RUN-1) | A check of whether the posts were ready, which let actions run beside an agent turn (decision 49) |
+| A-02 | The session of a run is its record and has one writer at a time. Slides are planned in a working session per language and only the result is written to the record. A write by code changes only the entries it changed (RUN-2, SLD-5) | Writes of whole dictionaries from several places at once |
+| A-03 | Every action a person starts runs as the work of a lane and ends as done or as a notice (RUN-3) | Tasks whose result nobody received |
+| A-04 | What makes something outside the machine (a post, a file in Drive) starts only after a person's approval: the dialog of a button, or the confirmation a tool pauses for. A slide request typed to the agent is such a request (INV-6, WEB-9) | Decks created because a message contained certain words (decision 50) |
+| A-05 | The title and the text of a post are changed through one function, whoever changes them. The agent replaces a passage it quotes; it does not retype a post (PUB-11) | Two ways to edit that behaved differently (decision 45) |
+| A-06 | The text as supplied is kept. A structured copy is used only when code confirms that its letters and digits are the same (INV-11, SRC-7) | A model's copy stored in place of the original, checked by length only (decision 40) |
+| A-07 | The kinds of source are one table; the hosts that may be fetched and the sentences that name them are made from it. Medium is a read-only source (SRC-8, INV-8) | Host lists in four places; Medium read by the code and absent from this document (decision 48) |
+| A-08 | Models are called from two places: the agents and one gateway. The web layer calls no model and no platform (OPS-4) | Model clients of their own in the web layer and the structuring module |
+| A-09 | A PDF is a snapshot of one deck: exported on demand, removed when a new deck replaces that deck. Finalizing a post exports nothing. A deck made again keeps the address of the one before (SLD-12, SLD-13) | Export on finalize (decision 35); a PDF that outlived its deck |
+| A-10 | Chips show suggestions from the catalogs, ordered by use. What a person typed is kept as typed under its own heading (WEB-9) | Typed prompts read with regular expressions and translated by a model (decision 51) |
+| A-11 | "Recent sources" is the server's list of runs, made from the run records alone (WEB-14) | A second list kept in the browser, with the source texts |
+| A-12 | Every text of the page comes from one catalog per language; notices from the server carry a code (WEB-13) | A table of texts inside the page that covered part of it (decision 42) |
+| A-13 | The progress display keeps three rows and shows each language in the slides step; the Slides column has the buttons its state allows (WEB-3, WEB-5) | Slides made again by typing to the agent (decision 43) |
+| A-14 | An interrupted run offers the slides that are missing, with its own options, which the run record keeps (RUN-4) | Starting again from the beginning |
+| A-15 | Styles, script and texts are files of their own; the pages run no inline script (SEC-8) | One file of 1,625 lines |
+| A-16 | Unit tests run with the network and the model gateway refused, and `.env` is not read (OPS-2) | A rule kept by care |
+| A-17 | On an address other than localhost every route requires an access token (SEC-7) | A caution in the documents |
+| A-18 | The contract of a tool is a requirement, kept by tests that read the tools from the agent tree (OPS-5) | A rule in `AGENTS.md` |
+| A-19 | One action a person starts is one trace; log records carry its ids; identifiers are not redacted (OPS-1, SEC-4) | Tracing on the agent's API server only; call ids rewritten by redaction |
+| A-20 | Every push runs the linter, the unit tests and a Terraform validation in CI, without credentials (OPS-6) | Checks run by hand |
+| A-21 | A test checks that the files and names in the README's table of capabilities exist (OPS-7) | A table that could go stale unnoticed |
 
 ## Appendix B. Traceability
 
@@ -470,6 +556,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | OPS-4 | `test_models_are_called_from_the_agents_and_the_gateway_only` |
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: the workflow runs on GitHub, not in the unit tests; whether it passed is shown on the commit it ran for |
+| OPS-7 | `test_every_place_the_readme_points_to_exists` |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |

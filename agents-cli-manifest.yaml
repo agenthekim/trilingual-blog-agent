@@ -16,6 +16,11 @@ create_params:
   # serves /apps/ under the agent directory name, so keep the two equal there.
   app_name: "app"
   deployment_target: "agent_runtime"
+  # What the project was scaffolded with, kept for `agents-cli`. It is not
+  # what the code does by default: locally, sessions are kept in a SQLite
+  # file (.adk/sessions.sqlite3, or LOCAL_SESSION_DB), and on Agent Runtime
+  # in its managed sessions. In-memory sessions are used only with
+  # USE_IN_MEMORY_SESSION=true. See app/app_utils/services.py.
   session_type: "in_memory"
   cicd_runner: "skip"
   is_a2a: true
