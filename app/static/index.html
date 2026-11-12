@@ -134,36 +134,36 @@
   <header style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px">
     <div>
       <h1>Trilingual Blog Agent</h1>
-      <p>Automatically transform an article in one language into blog posts and presentation slides across three languages.</p>
+      <p data-i18n="subtitle">Automatically transform an article into blog posts and presentation slides across three languages.</p>
     </div>
     <button type="button" id="openSettings" class="btn-settings">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"></circle>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
       </svg>
-      <span>Settings</span>
+      <span data-i18n="settings">Settings</span>
     </button>
   </header>
 
   <form class="card" id="dropZone" novalidate>
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px">
-      <label class="field" for="source" style="margin-bottom:0">Source document
-        <span class="hint">Share a post URL, a .md file, or your document.</span>
+      <label class="field" for="source" style="margin-bottom:0"><span data-i18n="sourceTitle">Source document</span>
+        <span class="hint" data-i18n="sourceHint">Share a post URL, a .md file, or your document.</span>
       </label>
-      <button type="button" class="hidden" id="clearRun" style="font-size:12px; padding:0 12px; height:28px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; font-weight:500; white-space:nowrap">Clear / New article</button>
+      <button type="button" class="hidden" id="clearRun" data-i18n="clearBtn" style="font-size:12px; padding:0 12px; height:28px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; font-weight:500; white-space:nowrap">Clear / New article</button>
     </div>
     <textarea id="source" required placeholder="https://qiita.com/you/items/…   or   # My draft …"></textarea>
     <div class="under">
-      <button type="button" id="attach">Attach .md file</button>
+      <button type="button" id="attach" data-i18n="attachBtn">Attach .md file</button>
       <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" class="hidden">
-      <span class="muted small" id="fileInfo">or drop a file anywhere on this card</span>
+      <span class="muted small" id="fileInfo" data-i18n="dropHint">or drop a file anywhere on this card</span>
     </div>
 
     <fieldset>
-      <legend>Slide options</legend>
-      <p class="muted small" style="margin:0 0 10px">Choose the slide length to create Google Slides in your configured Google Drive.</p>
+      <legend data-i18n="slideLegend">Slide options</legend>
+      <p class="muted small" style="margin:0 0 10px" data-i18n="slideHint">Choose the slide length to create Google Slides in your configured Google Drive.</p>
       <div class="grid3">
-        <label class="field">Length
+        <label class="field"><span data-i18n="lengthLabel">Length</span>
           <select id="minutes">
             <option value="0">No slides</option><option value="3">3 min · 3 slides</option><option value="5">5 min · 5 slides</option>
             <option value="10">10 min · 10 slides</option><option value="15">15 min · 15 slides</option><option value="20">20 min · 20 slides</option>
@@ -171,14 +171,14 @@
           </select>
         </label>
         <div class="field" role="group" aria-label="Slide languages" style="display:grid; gap:4px; font-weight:600; font-size:13px">
-          <span>Languages</span>
+          <span data-i18n="languagesLabel">Languages</span>
           <div class="lang-checks">
             <label class="check-inline"><input type="checkbox" id="slideLangEn" value="en" checked><span>English</span></label>
             <label class="check-inline"><input type="checkbox" id="slideLangKo" value="ko" checked><span>Korean</span></label>
             <label class="check-inline"><input type="checkbox" id="slideLangJa" value="ja" checked><span>Japanese</span></label>
           </div>
         </div>
-        <label class="field">Audience
+        <label class="field"><span data-i18n="audienceLabel">Audience</span>
           <select id="audience">
             <option value="software engineers" selected>Developers</option>
             <option value="technical experts and specialists">Experts</option>
@@ -191,8 +191,8 @@
     </fieldset>
 
     <div class="formfoot">
-      <span class="muted small">Takes a few minutes. You review everything before anything is posted.</span>
-      <button class="primary" id="run" type="submit">Run</button>
+      <span class="muted small" data-i18n="formFoot">Takes a few minutes. You review everything before anything is posted.</span>
+      <button class="primary" id="run" type="submit" data-i18n="runBtn">Run</button>
     </div>
   </form>
 
@@ -217,16 +217,16 @@
   </section>
 
   <section class="card hidden" id="askCard">
-    <label class="field" for="message">Ask the agent for a change
-      <span class="hint">For example “shorten the English title” or “make the Korean intro less formal”.</span>
+    <label class="field" for="message"><span data-i18n="askTitle">Ask the agent for a change</span>
+      <span class="hint" data-i18n="askHint">For example “shorten the English title” or “make the Korean intro less formal”.</span>
     </label>
     <div class="askrow" style="margin-top:6px">
-      <input type="text" id="message" placeholder="Ask the agent for a change (e.g. replace examples, adjust tone)...">
-      <button id="send" type="button" class="primary">Send</button>
+      <input type="text" id="message" data-i18n="askPlaceholder" placeholder="Ask the agent for a change (e.g. replace examples, adjust tone)...">
+      <button id="send" type="button" class="primary" data-i18n="sendBtn">Send</button>
     </div>
     <div class="reply hidden" id="reply" aria-live="polite"></div>
     <details style="margin-top:14px" id="logBox">
-      <summary>Agent activity log</summary>
+      <summary data-i18n="logTitle">Agent activity log</summary>
       <pre id="log"></pre>
     </details>
   </section>
@@ -249,13 +249,22 @@
 
 <dialog id="settingsModal" aria-labelledby="settingsTitle">
   <div class="body">
-    <h2 id="settingsTitle">Publishing platforms</h2>
-    <p class="muted small" style="margin:0">Each language goes to one platform. This is fixed; what is set up on this server is shown next to it.</p>
+    <div style="margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--line)">
+      <label class="field" style="margin-bottom:4px; font-weight:600" for="uiLanguageSelect"><span data-i18n="langSettingLabel">Interface language</span></label>
+      <p class="muted small" style="margin:0 0 8px" data-i18n="langSettingHint">Choose the display language for this web page.</p>
+      <select id="uiLanguageSelect" style="width:100%; max-width:240px">
+        <option value="en">English (Default)</option>
+        <option value="ko">한국어 (Korean)</option>
+        <option value="ja">日本語 (Japanese)</option>
+      </select>
+    </div>
+    <h2 id="settingsTitle" data-i18n="settingsTitle">Publishing platforms</h2>
+    <p class="muted small" style="margin:0" id="settingsPlatformsHint" data-i18n="settingsHint">Each language goes to one platform. This is fixed; what is set up on this server is shown next to it.</p>
     <div id="settingsRows"></div>
     <p class="muted small" id="settingsNote" style="margin:0"></p>
   </div>
   <div class="foot">
-    <button type="button" class="primary" id="closeSettings">Done</button>
+    <button type="button" class="primary" id="closeSettings" data-i18n="doneBtn">Done</button>
   </div>
 </dialog>
 
@@ -263,6 +272,134 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+const UI_TRANSLATIONS = {
+  en: {
+    appTitle: "Trilingual Blog Agent",
+    subtitle: "Automatically transform an article into blog posts and presentation slides across three languages.",
+    settings: "Settings",
+    sourceTitle: "Source document",
+    sourceHint: "Share a post URL, a .md file, or your document.",
+    clearBtn: "Clear / New article",
+    attachBtn: "Attach .md file",
+    dropHint: "or drop a file anywhere on this card",
+    slideLegend: "Slide options",
+    slideHint: "Choose the slide length to create Google Slides in your configured Google Drive.",
+    lengthLabel: "Length",
+    languagesLabel: "Languages",
+    audienceLabel: "Audience",
+    formFoot: "Takes a few minutes. You review everything before anything is posted.",
+    runBtn: "Run",
+    askTitle: "Ask the agent for a change",
+    askHint: "For example “shorten the English title” or “make the Korean intro less formal”.",
+    askPlaceholder: "Ask the agent for a change (e.g. replace examples, adjust tone)...",
+    sendBtn: "Send",
+    logTitle: "Agent activity log",
+    settingsTitle: "Publishing platforms",
+    settingsHint: "Each language goes to one platform. This is fixed; what is set up on this server is shown next to it.",
+    langSettingLabel: "Interface language",
+    langSettingHint: "Choose the display language for this web page.",
+    doneBtn: "Done",
+    colLang: "Language",
+    colTitle: "Title",
+    colFiles: "Files",
+    colSlides: "Slides",
+    colNext: "Next step",
+  },
+  ko: {
+    appTitle: "Trilingual Blog Agent",
+    subtitle: "하나의 기술 글을 3개 국어 블로그 포스트와 발표 슬라이드로 자동 변환합니다.",
+    settings: "설정",
+    sourceTitle: "원본 문서",
+    sourceHint: "게시물 URL, .md 파일 또는 초안 텍스트를 입력하세요.",
+    clearBtn: "초기화 / 새 글 작성",
+    attachBtn: ".md 파일 첨부",
+    dropHint: "또는 파일을 이 카드 위로 끌어다 놓으세요",
+    slideLegend: "슬라이드 옵션",
+    slideHint: "설정된 Google Drive에 생성할 슬라이드 길이를 선택하세요.",
+    lengthLabel: "발표 시간",
+    languagesLabel: "언어",
+    audienceLabel: "대상 청중",
+    formFoot: "수 분이 소요됩니다. 게시 전에 모든 내용을 직접 검토하실 수 있습니다.",
+    runBtn: "실행",
+    askTitle: "에이전트에 수정 요청하기",
+    askHint: "예: “영문 제목을 짧게 해줘” 또는 “한국어 서론을 덜 격식 있게 다듬어줘”.",
+    askPlaceholder: "에이전트에 변경을 요청하세요 (예: 예시 교체, 톤 조정)...",
+    sendBtn: "전송",
+    logTitle: "에이전트 실행 로그",
+    settingsTitle: "발행 플랫폼 설정",
+    settingsHint: "각 언어는 지정된 플랫폼으로 전달됩니다. 서버에 구성된 인증 상태가 아래에 표시됩니다.",
+    langSettingLabel: "페이지 표시 언어",
+    langSettingHint: "웹 UI에서 사용할 언어를 선택하세요.",
+    doneBtn: "완료",
+    colLang: "언어",
+    colTitle: "제목",
+    colFiles: "파일",
+    colSlides: "슬라이드",
+    colNext: "다음 단계",
+  },
+  ja: {
+    appTitle: "Trilingual Blog Agent",
+    subtitle: "1つの記事を3か国語のブログ記事とプレゼンスライドに自動変換します。",
+    settings: "設定",
+    sourceTitle: "ソースドキュメント",
+    sourceHint: "記事のURL、.mdファイル、または文章を入力してください。",
+    clearBtn: "クリア / 新規記事",
+    attachBtn: ".mdファイルを添付",
+    dropHint: "またはこのカード上にファイルをドロップ",
+    slideLegend: "スライド設定",
+    slideHint: "Google Driveに作成するスライドの長さを選択してください。",
+    lengthLabel: "長さ",
+    languagesLabel: "言語",
+    audienceLabel: "対象読者",
+    formFoot: "数分かかります。投稿前にすべての内容を確認できます。",
+    runBtn: "実行",
+    askTitle: "エージェントに変更を依頼",
+    askHint: "例:「英語のタイトルを短くして」「日本語の導入を柔らかくして」",
+    askPlaceholder: "エージェントに変更を依頼してください（例: 例示の変更、トーン調整など）...",
+    sendBtn: "送信",
+    logTitle: "エージェント実行ログ",
+    settingsTitle: "投稿プラットフォーム",
+    settingsHint: "各言語は特定のプラットフォームに対応しています。サーバーの設定状況が右側に表示されます。",
+    langSettingLabel: "表示言語",
+    langSettingHint: "このページの表示言語を選択してください。",
+    doneBtn: "完了",
+    colLang: "言語",
+    colTitle: "タイトル",
+    colFiles: "ファイル",
+    colSlides: "スライド",
+    colNext: "次のステップ",
+  }
+};
+const UI_LANG_KEY = "tba.ui_lang";
+let currentUiLang = localStorage.getItem(UI_LANG_KEY) || "en";
+
+function applyUiLanguage(lang) {
+  if (!UI_TRANSLATIONS[lang]) lang = "en";
+  currentUiLang = lang;
+  localStorage.setItem(UI_LANG_KEY, lang);
+  document.documentElement.lang = lang;
+  if ($("uiLanguageSelect")) $("uiLanguageSelect").value = lang;
+  const t = UI_TRANSLATIONS[lang];
+  for (const [key, text] of Object.entries(t)) {
+    const nodes = document.querySelectorAll(`[data-i18n="${key}"]`);
+    nodes.forEach((node) => {
+      if (node.tagName === "INPUT" || node.tagName === "TEXTAREA") {
+        node.placeholder = text;
+      } else {
+        node.textContent = text;
+      }
+    });
+  }
+  const ths = document.querySelectorAll("table.results thead th");
+  if (ths.length >= 5) {
+    ths[0].textContent = t.colLang;
+    ths[1].textContent = t.colTitle;
+    ths[2].textContent = t.colFiles;
+    ths[3].textContent = t.colSlides;
+    ths[4].textContent = t.colNext;
+  }
+}
+
 const STATUS = {
   not_posted: ["Not posted", ""], exported_for_manual_post: ["Ready to paste", "warn"],
   draft: ["Draft created", "ok"], published: ["Published", "ok"], existing_source: ["Original", "ok"],
@@ -627,6 +764,9 @@ async function openSettings() {
 }
 $("openSettings").addEventListener("click", openSettings);
 $("closeSettings").addEventListener("click", () => $("settingsModal").close());
+if ($("uiLanguageSelect")) {
+  $("uiLanguageSelect").addEventListener("change", (e) => applyUiLanguage(e.target.value));
+}
 $("clearRun").addEventListener("click", () => {
   $("source").value = ""; $("file").value = "";
   $("fileInfo").textContent = "or drop a file anywhere on this card";
@@ -682,6 +822,8 @@ zone.addEventListener("submit", async (e) => {
     $("progress").scrollIntoView({behavior: "smooth", block: "start"});
   } catch (error) { toast(error.message, 6000); $("run").disabled = false; }
 });
+
+applyUiLanguage(currentUiLang);
 
 // Restore the last settings, then the run in the address or the last run of this browser.
 try {

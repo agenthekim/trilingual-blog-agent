@@ -558,7 +558,7 @@ def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
     page = client.get("/").text
     for text in (
         "<h1>Trilingual Blog Agent</h1>",
-        "Automatically transform an article in one language into blog posts and "
+        "Automatically transform an article into blog posts and "
         "presentation slides across three languages.",
         "Source document",
         "Share a post URL, a .md file, or your document.",
