@@ -27,7 +27,6 @@ from typing import Any
 
 from google.adk.errors import StaleSessionError
 from google.adk.events import Event, EventActions
-from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions.base_session_service import (
     BaseSessionService,
@@ -649,12 +648,18 @@ class ArticlePipeline:
             from app.app_utils.services import get_session_service
 
             session_service = get_session_service()
+        # The process-wide memory service, the one the agent API server and
+        # Agent Runtime use too: what a turn here adds to memory is in the
+        # same place whichever surface the next turn comes from.
+        from app.app_utils.services import get_memory_service
+
+        memory_service = get_memory_service()
         self._app = agent_app
         self._sessions = session_service
         self._runner = Runner(
             app=agent_app,
             session_service=self._sessions,
-            memory_service=InMemoryMemoryService(),
+            memory_service=memory_service,
             auto_create_session=True,
         )
         # Slide planning runs here, in a working session per language (SLD-5).
@@ -662,7 +667,7 @@ class ArticlePipeline:
         self._slide_runner = Runner(
             app=slide_app,
             session_service=self._sessions,
-            memory_service=InMemoryMemoryService(),
+            memory_service=memory_service,
         )
         self.session_id = session_id or uuid.uuid4().hex
         # Activity lines go to whoever shows them (the page's run, the

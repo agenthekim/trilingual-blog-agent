@@ -8,6 +8,8 @@ a patched secret lookup.
 from __future__ import annotations
 
 import asyncio
+import io
+import json
 import runpy
 from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
@@ -16,6 +18,10 @@ from typing import Any
 import httpx
 import pytest
 from google.adk.events import Event, EventActions
+from google.adk.memory.base_memory_service import (
+    BaseMemoryService,
+    SearchMemoryResponse,
+)
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
@@ -750,30 +756,192 @@ def test_the_remembered_coordinator_is_the_root_agent() -> None:
     assert memory.COORDINATOR_AGENT_NAME == root_agent.name
 
 
-def test_what_is_sent_to_the_memory_service_is_the_filtered_list() -> None:
-    sent: list[Event] = []
+class _MemoryStandIn(BaseMemoryService):
+    """A memory service that records what it is given, when it is let to."""
 
-    async def add_events_to_memory(*, events: list[Event]) -> None:
-        sent.extend(events)
+    def __init__(self, fails: bool = False) -> None:
+        self.sent: list[dict[str, Any]] = []
+        self.started = asyncio.Event()
+        self.may_finish = asyncio.Event()
+        self.fails = fails
 
-    context = SimpleNamespace(
+    async def add_session_to_memory(self, session: Any) -> None:
+        raise AssertionError("only the events of the turn are written")
+
+    async def search_memory(self, **query: Any) -> SearchMemoryResponse:
+        return SearchMemoryResponse()
+
+    async def add_events_to_memory(self, **written: Any) -> None:
+        self.started.set()
+        await self.may_finish.wait()
+        if self.fails:
+            raise ConnectionError("memory bank unreachable: Prefer short titles.")
+        self.sent.append(written)
+
+
+def _turn_context(service: Any) -> SimpleNamespace:
+    return SimpleNamespace(
         invocation_id="turn-2",
         session=SimpleNamespace(
+            app_name="app",
+            user_id="author",
+            id="session-1",
             events=[
                 _event("user", _text("Prefer short titles.")),
                 _event("localizer_ko_agent", _text(ARTICLE)),
-            ]
+            ],
         ),
-        add_events_to_memory=add_events_to_memory,
+        _invocation_context=SimpleNamespace(memory_service=service),
     )
 
-    async def turn() -> None:
-        await memory.schedule_memory_consolidation(context)
+
+def test_what_is_sent_to_the_memory_service_is_the_filtered_list() -> None:
+    async def turn() -> _MemoryStandIn:
+        service = _MemoryStandIn()
+        service.may_finish.set()
+        await memory.schedule_memory_consolidation(_turn_context(service))
         await asyncio.gather(*memory._background_tasks)
+        return service
 
-    asyncio.run(turn())
+    (written,) = asyncio.run(turn()).sent
+    assert [event.content.parts[0].text for event in written["events"]] == [
+        "Prefer short titles."
+    ]
+    assert (written["app_name"], written["user_id"], written["session_id"]) == (
+        "app",
+        "author",
+        "session-1",
+    )
 
-    assert [event.content.parts[0].text for event in sent] == ["Prefer short titles."]
+
+def _memory_records(stream: Any) -> list[dict[str, Any]]:
+    records = [json.loads(line) for line in stream.getvalue().splitlines()]
+    return [record for record in records if record.get("event_phase") == "MEMORY"]
+
+
+@pytest.mark.asyncio
+async def test_memory_is_written_in_the_background_after_the_callback_returned() -> (
+    None
+):
+    """The callback returns while the write has not finished, and the write
+    uses nothing of the context once the turn is over."""
+    service = _MemoryStandIn()
+    context = _turn_context(service)
+    before = set(memory._background_tasks)
+
+    assert await memory.schedule_memory_consolidation(context) is None
+    (task,) = memory._background_tasks - before  # held until it ends
+    await service.started.wait()
+    assert not task.done() and service.sent == []
+
+    # The turn is over: whatever the context held is gone.
+    context.session = None
+    context._invocation_context = None
+    service.may_finish.set()
+    await task
+    assert len(service.sent) == 1 and service.sent[0]["session_id"] == "session-1"
+    assert task not in memory._background_tasks
+
+    # A runner without a memory service: nothing is scheduled.
+    assert await memory.schedule_memory_consolidation(_turn_context(None)) is None
+    assert memory._background_tasks == before
+
+
+@pytest.mark.asyncio
+async def test_a_failing_memory_write_is_logged_and_not_raised() -> None:
+    from google.cloud.logging_v2.handlers import StructuredLogHandler
+
+    from app import observability
+
+    stream = io.StringIO()
+    handler = StructuredLogHandler(stream=stream)
+    handler.addFilter(observability._RedactionFilter())
+    logger = observability.get_logger()
+    logger.addHandler(handler)
+    try:
+        service = _MemoryStandIn(fails=True)
+        service.may_finish.set()
+        before = set(memory._background_tasks)
+        await memory.schedule_memory_consolidation(_turn_context(service))
+        (task,) = memory._background_tasks - before
+        await task  # ends without an exception
+        assert task.exception() is None
+
+        # A task that is cancelled, as at shutdown, is said too.
+        held = _MemoryStandIn()
+        await memory.schedule_memory_consolidation(_turn_context(held))
+        (cancelled,) = memory._background_tasks - before
+        await held.started.wait()
+        cancelled.cancel()
+        await asyncio.gather(cancelled, return_exceptions=True)
+        await asyncio.sleep(0)  # the done callback runs on the next pass
+    finally:
+        logger.removeHandler(handler)
+
+    failed, was_cancelled = _memory_records(stream)
+    assert failed["message"] == "memory consolidation failed"
+    assert failed["severity"] == "WARNING"
+    assert failed["error_code"] == "ConnectionError"
+    assert failed["session_id"] == "session-1" and failed["events"] == 1
+    assert "Prefer short titles" not in stream.getvalue()
+    assert was_cancelled["message"] == "memory consolidation cancelled"
+    assert memory._background_tasks == before
+
+
+@pytest.mark.asyncio
+async def test_the_page_and_the_script_use_the_shared_memory_service(
+    isolated_workspace, monkeypatch
+) -> None:
+    """The runners of a pipeline are given ``get_memory_service()``, and a
+    real turn of the coordinator's callback writes to it."""
+    from google.adk.agents import Agent
+    from google.adk.apps import App
+    from google.adk.sessions import InMemorySessionService
+
+    from app.app_utils import services
+    from app.pipeline import ArticlePipeline
+    from tests.unit.test_approvals import ScriptedModel, _says
+
+    shared = _MemoryStandIn()
+    shared.may_finish.set()
+    services.get_memory_service.cache_clear()
+    monkeypatch.setattr(services, "get_memory_service", lambda: shared)
+    agent = Agent(
+        name=memory.COORDINATOR_AGENT_NAME,
+        model=ScriptedModel(model="scripted", script=[_says("Short titles it is.")]),
+        instruction="Answer the user.",
+        after_agent_callback=memory.schedule_memory_consolidation,
+    )
+    pipeline = ArticlePipeline(
+        log=lambda _: None,
+        session_service=InMemorySessionService(),
+        agent_app=App(name="app", root_agent=agent),
+    )
+    assert pipeline._runner.memory_service is shared
+    assert pipeline._slide_runner.memory_service is shared
+
+    before = set(memory._background_tasks)
+    await pipeline.say("Prefer short titles.")
+    await asyncio.gather(*(memory._background_tasks - before))
+
+    (written,) = shared.sent
+    assert written["session_id"] == pipeline.session_id
+    assert [event.content.parts[0].text for event in written["events"]] == [
+        "Prefer short titles.",
+        "Short titles it is.",
+    ]
+
+    # Without a stand-in: one service for the process, the in-memory one here.
+    monkeypatch.undo()
+    services.get_memory_service.cache_clear()
+    first = ArticlePipeline(
+        log=lambda _: None, session_service=InMemorySessionService()
+    )
+    second = ArticlePipeline(
+        log=lambda _: None, session_service=InMemorySessionService()
+    )
+    assert first._runner.memory_service is services.get_memory_service()
+    assert second._runner.memory_service is first._runner.memory_service
 
 
 # ---------------------------------------------------------------------------

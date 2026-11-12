@@ -207,6 +207,7 @@ stage at a time and waits.
 | OPS-5 | Every function an agent can call as a tool has a name that says what it does and to what; a docstring with its purpose, each argument and what it returns; typed arguments without defaults, where the allowed languages, platforms and code modes are enumerations the model is shown; arguments checked through a Pydantic model before anything happens; and, when it cannot do what was asked, a result with `error_code` and `recovery_instruction` instead of an exception. This also holds when a tool raises an exception nobody expected: a plugin registered on both applications answers it with the code `TOOL_FAILED`, the type of the exception without its text, and an instruction not to repeat the call, and the log still records that the call ended in an exception. When it did what was asked, or waits for a person, its result validates against the output model declared for it in `TOOL_OUTPUT_MODELS`, which refuses a key it does not declare |
 | OPS-6 | Every push runs the linter, the unit tests and a Terraform validation in CI (`.github/workflows/ci.yml`). None of them needs a credential |
 | OPS-7 | In `README.md`, the table "Where each capability lives" points only at what is there: every file or folder it names exists in the repository, and every name it gives as code is found in a file that its row names. Its rows are the nineteen criteria of the course rubric, by name and in order |
+| OPS-8 | What the author and the coordinator said in a turn (SEC-4) is written to long-term memory in the background: the callback that ends the turn schedules the write and returns, so no reply waits for it. The write takes the events, the memory service and the session identifiers before the turn ends and uses nothing of the turn afterwards; the task is held until it ends; a write that fails or is cancelled is a structured log record, never an exception. The page, the script, the agent API server and Agent Runtime use one memory service per process (`get_memory_service`): in memory locally, Memory Bank on Agent Runtime |
 
 ### 5.10 Runs
 
@@ -343,8 +344,9 @@ takes it.
   written.
 - The step "Prepare posts" is shown as done when the Naver file exists or
   Naver is the original; it does not wait for the author's review.
-- Local memory is in-process; Memory Bank needs a deployment that has not been
-  made.
+- Local memory is in-process: the page, the script and the agent API server
+  of one process share it (OPS-8), and it is lost when the process stops.
+  Memory Bank needs a deployment that has not been made.
 
 ## 8. Open questions and work not built
 
@@ -564,6 +566,7 @@ what the models then did was read in real runs, recorded in `docs/STATUS.md`.
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool`, `test_a_tool_that_raises_gives_the_model_a_guided_error`, `test_every_tool_has_a_declared_output_model_with_described_fields`, `test_a_success_result_validates_against_the_output_model_of_every_tool` |
 | OPS-6 | No unit test: the workflow runs on GitHub, not in the unit tests; whether it passed is shown on the commit it ran for |
 | OPS-7 | `test_every_place_the_readme_points_to_exists`, `test_the_readme_table_has_the_nineteen_criteria_in_order` |
+| OPS-8 | `test_memory_is_written_in_the_background_after_the_callback_returned`, `test_a_failing_memory_write_is_logged_and_not_raised`, `test_the_page_and_the_script_use_the_shared_memory_service`, `test_what_is_sent_to_the_memory_service_is_the_filtered_list`, `test_a_turn_with_nothing_to_remember_schedules_nothing` |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs`, `test_finalizing_a_post_does_not_touch_slides` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |

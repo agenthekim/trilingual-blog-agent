@@ -138,14 +138,18 @@ def isolated_workspace(tmp_path, monkeypatch):
     monkeypatch.setenv("USE_IN_MEMORY_SESSION", "1")
     monkeypatch.delenv("SESSION_SERVICE_URI", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_AGENT_ENGINE_ID", raising=False)
-    from app.app_utils.services import get_session_service
+    from app.app_utils.services import get_memory_service, get_session_service
     from app.persistence import get_article_store
 
+    # A fresh memory service per test too: what one test's turns remembered
+    # is not there for the next.
     get_article_store.cache_clear()
     get_session_service.cache_clear()
+    get_memory_service.cache_clear()
     yield tmp_path
     get_article_store.cache_clear()
     get_session_service.cache_clear()
+    get_memory_service.cache_clear()
 
 
 @pytest.fixture

@@ -205,6 +205,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | OPS-5 | 에이전트가 도구로 부를 수 있는 모든 함수는 다음을 갖춘다. 무엇을 어디에 하는지 말하는 이름, 목적과 각 인자와 반환값을 적은 독스트링, 기본값이 없고 타입이 선언된 인자(허용되는 언어, 플랫폼, 코드 방식은 모델에 보이는 열거형이다), 어떤 일도 일어나기 전에 Pydantic 모델로 하는 인자 검사, 그리고 요청한 일을 할 수 없을 때 예외 대신 `error_code`와 `recovery_instruction`이 든 결과. 도구가 예상하지 못한 예외를 던질 때도 마찬가지다. 두 애플리케이션에 등록된 플러그인이 `TOOL_FAILED` 코드, 예외의 내용을 뺀 타입 이름, 같은 호출을 반복하지 말라는 지시로 응답하며, 로그에는 그 호출이 예외로 끝났다는 기록이 그대로 남는다. 요청한 일을 했거나 사람의 답을 기다릴 때 그 결과는 `TOOL_OUTPUT_MODELS`에 선언된 출력 모델의 검증을 통과하며, 이 모델은 선언하지 않은 키를 거부한다 |
 | OPS-6 | 푸시할 때마다 CI(`.github/workflows/ci.yml`)에서 린터, 단위 테스트, Terraform 검증을 실행한다. 어느 것도 자격 증명이 필요 없다 |
 | OPS-7 | `README.md`의 표 "Where each capability lives"는 실제로 있는 것만 가리킨다. 표에 적힌 파일과 폴더는 모두 저장소에 있고, 코드로 적힌 이름은 모두 그 행이 가리키는 파일 가운데 하나에 있다. 표의 행은 과정 루브릭의 열아홉 기준이며, 루브릭의 이름과 순서를 따른다 |
+| OPS-8 | 한 턴에서 작성자와 코디네이터가 한 말(SEC-4)은 백그라운드에서 장기 메모리에 기록한다. 턴을 끝내는 콜백은 기록을 예약만 하고 반환하므로 어떤 응답도 기록을 기다리지 않는다. 기록 작업은 턴이 끝나기 전에 이벤트, 메모리 서비스, 세션 식별자를 받아 두고 그 뒤로는 턴의 어떤 것도 쓰지 않는다. 작업은 끝날 때까지 참조를 유지하며, 실패하거나 취소된 기록은 예외가 아니라 구조화된 로그 기록으로 남는다. 페이지, 스크립트, 에이전트 API 서버, Agent Runtime은 프로세스마다 하나의 메모리 서비스(`get_memory_service`)를 쓴다. 로컬에서는 인메모리, Agent Runtime에서는 Memory Bank다 |
 
 ### 5.10 실행
 
@@ -331,8 +332,9 @@ flowchart TD
   영어로 보여 준다.
 - "Prepare posts" 단계는 Naver 파일이 있거나 Naver가 원본이면 완료로 표시된다.
   작성자의 검토를 기다리지 않는다.
-- 로컬 메모리는 프로세스 내부에 있다. Memory Bank에는 배포가 필요한데 아직
-  배포하지 않았다.
+- 로컬 메모리는 프로세스 내부에 있다. 한 프로세스의 페이지, 스크립트, 에이전트
+  API 서버가 이를 함께 쓰며(OPS-8), 프로세스가 멈추면 사라진다. Memory Bank에는
+  배포가 필요한데 아직 배포하지 않았다.
 
 ## 8. 미해결 질문과 구현되지 않은 작업
 
@@ -549,6 +551,7 @@ flowchart TD
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool`, `test_a_tool_that_raises_gives_the_model_a_guided_error`, `test_every_tool_has_a_declared_output_model_with_described_fields`, `test_a_success_result_validates_against_the_output_model_of_every_tool` |
 | OPS-6 | No unit test: 워크플로는 단위 테스트가 아니라 GitHub에서 실행된다. 통과 여부는 실행 대상 커밋에 표시된다 |
 | OPS-7 | `test_every_place_the_readme_points_to_exists`, `test_the_readme_table_has_the_nineteen_criteria_in_order` |
+| OPS-8 | `test_memory_is_written_in_the_background_after_the_callback_returned`, `test_a_failing_memory_write_is_logged_and_not_raised`, `test_the_page_and_the_script_use_the_shared_memory_service`, `test_what_is_sent_to_the_memory_service_is_the_filtered_list`, `test_a_turn_with_nothing_to_remember_schedules_nothing` |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs`, `test_finalizing_a_post_does_not_touch_slides` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
