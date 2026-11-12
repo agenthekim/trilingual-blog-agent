@@ -302,6 +302,9 @@ class DeckRequest(BaseModel):
     language: Language
     # True only when a person pressed the approve button for this deck.
     approved: bool = False
+    replan: bool = False
+    minutes: int = 15
+    audience: str = "software engineers"
 
 
 class DeckPdfRequest(BaseModel):
@@ -567,11 +570,24 @@ async def post_draft(job_id: str, request: DraftRequest) -> dict[str, bool]:
 
 @web.post("/api/jobs/{job_id}/deck")
 async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
-    """Create the Google Slides deck of one language, approved by a person."""
+    """Create or recreate the Google Slides deck of one language, approved by a person."""
     job = _job(job_id)
     if not request.approved:
         raise HTTPException(400, "A deck is created only with a person's approval.")
-    _start(job, lambda: job.pipeline.create_deck(request.language), "create_deck")
+    if request.replan:
+        _start(
+            job,
+            lambda: job.pipeline.prepare_slides_and_deck(
+                request.language,
+                minutes=request.minutes,
+                audience=request.audience,
+                create_deck=True,
+                replan=True,
+            ),
+            "create_deck",
+        )
+    else:
+        _start(job, lambda: job.pipeline.create_deck(request.language), "create_deck")
     return {"accepted": True}
 
 

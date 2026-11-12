@@ -304,6 +304,10 @@ const UI_TRANSLATIONS = {
     colFiles: "Files",
     colSlides: "Slides",
     colNext: "Next step",
+    createSlidesBtn: "Create slides…",
+    createDeckBtn: "Create deck…",
+    recreateDeckBtn: "Re-create slides…",
+    speakerNotes: "Speaker notes",
   },
   ko: {
     appTitle: "Trilingual Blog Agent",
@@ -336,6 +340,10 @@ const UI_TRANSLATIONS = {
     colFiles: "파일",
     colSlides: "슬라이드",
     colNext: "다음 단계",
+    createSlidesBtn: "슬라이드 생성…",
+    createDeckBtn: "덱 생성…",
+    recreateDeckBtn: "슬라이드 재생성…",
+    speakerNotes: "발표자 노트",
   },
   ja: {
     appTitle: "Trilingual Blog Agent",
@@ -368,6 +376,10 @@ const UI_TRANSLATIONS = {
     colFiles: "ファイル",
     colSlides: "スライド",
     colNext: "次のステップ",
+    createSlidesBtn: "スライド作成…",
+    createDeckBtn: "デッキ作成…",
+    recreateDeckBtn: "スライド再作成…",
+    speakerNotes: "発表者ノート",
   }
 };
 const UI_LANG_KEY = "tba.ui_lang";
@@ -491,16 +503,45 @@ function languageRow(row, busy) {
     el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name))));
 
   // Slides: the deck and the speaker notes of this language, nothing of another.
+  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   const slideItems = [];
-  if (row.deck && row.deck.url) slideItems.push(el("div", {},
-    el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
-  if (row.slides_file) {
+  if (row.deck && row.deck.url) {
+    slideItems.push(el("div", {},
+      el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
+    if (row.slides_file) {
+      slideItems.push(el("div", {class: "muted small"},
+        el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, t.speakerNotes || "Speaker notes")));
+    }
+    slideItems.push(el("div", {style: "margin-top:4px"},
+      el("button", {
+        type: "button",
+        class: "ghost",
+        style: "font-size:11.5px; padding:2px 8px; height:24px; border:1px solid var(--line); border-radius:4px; cursor:pointer",
+        disabled: busy,
+        onclick: () => createDeck(row, true)
+      }, t.recreateDeckBtn || "Re-create slides…")));
+  } else if (row.slides_file) {
     slideItems.push(el("div", {class: "muted small"},
-      el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, "Speaker notes")));
-    if (!(row.deck && row.deck.url)) slideItems.push(el("div", {},
-      el("button", {type: "button", class: "ghost", disabled: busy, onclick: () => createDeck(row)}, "Create deck…")));
+      el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, t.speakerNotes || "Speaker notes")));
+    slideItems.push(el("div", {style: "margin-top:4px"},
+      el("button", {
+        type: "button",
+        class: "ghost",
+        style: "font-size:11.5px; padding:2px 8px; height:24px; border:1px solid var(--line); border-radius:4px; cursor:pointer",
+        disabled: busy,
+        onclick: () => createDeck(row, false)
+      }, t.createDeckBtn || "Create deck…")));
+  } else {
+    slideItems.push(el("div", {},
+      el("button", {
+        type: "button",
+        class: "ghost",
+        style: "font-size:11.5px; padding:2px 8px; height:24px; border:1px solid var(--line); border-radius:4px; cursor:pointer",
+        disabled: busy,
+        onclick: () => createDeck(row, true)
+      }, t.createSlidesBtn || "Create slides…")));
   }
-  const slidesCol = el("td", {class: "slides-col"}, ...(slideItems.length > 0 ? slideItems : [el("span", {class: "muted"}, "–")]));
+  const slidesCol = el("td", {class: "slides-col"}, ...slideItems);
 
   // Next step: review, finalize, approve, post. Only the one that is next is shown.
   const next = el("div", {class: "next"});
@@ -713,15 +754,30 @@ async function loadConfig() {
   if (!config) config = await api("/api/config");
   return config;
 }
-async function createDeck(row) {
+async function createDeck(row, replan = false) {
   // Name the account, so a deck never lands in a Drive nobody expected.
   let account = null;
   try { account = (await loadConfig()).slides_account; } catch (e) {}
+  const hasPlan = Boolean(row.slides_file);
+  const willReplan = replan || !hasPlan;
+  const isRecreating = willReplan && row.deck && row.deck.url;
+
+  let title = `Create the ${row.language_name} Google Slides deck?`;
+  let okLabel = "Approve and create";
+  if (isRecreating) {
+    title = `Re-create the ${row.language_name} slides and deck?`;
+    okLabel = "Approve and re-create";
+  } else if (willReplan) {
+    title = `Generate slides and create the ${row.language_name} deck?`;
+  }
+
+  const fromDesc = willReplan ? `the latest post.${row.language}.md` : (row.slides_file || "speaker notes");
+  const whereDesc = account ? `a new file in the Google Drive of ${account}` : "a new file in your Google Drive";
   const ok = await confirmAction({
-    title: `Create the ${row.language_name} Google Slides deck?`,
-    summary: [["From", "the speaker notes of this language"], ["Where", account ? `a new file in the Google Drive of ${account}` : "a new file in your Google Drive"], ["Contains", "one slide per minute, script in the speaker notes"]],
-    okLabel: "Approve and create"});
-  if (ok) act("deck", {language: row.language, approved: true});
+    title: title,
+    summary: [["From", fromDesc], ["Where", whereDesc], ["Contains", "one slide per minute, script in the speaker notes"]],
+    okLabel: okLabel});
+  if (ok) act("deck", {language: row.language, approved: true, replan: willReplan});
 }
 function exportPdf(row) {
   act("pdf", {language: row.language});

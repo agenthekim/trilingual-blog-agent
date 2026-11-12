@@ -486,6 +486,21 @@ def test_a_deck_is_created_for_the_language_that_was_asked_for(
     assert created == ["ja"]
 
 
+def test_a_deck_can_be_recreated_with_replan(real, monkeypatch) -> None:
+    client, job = real
+    called: list[tuple[str, bool]] = []
+
+    async def fake_prepare(language, minutes=15, audience="software engineers", create_deck=True, replan=False):
+        called.append((language, replan))
+        return None
+
+    monkeypatch.setattr(job.pipeline, "prepare_slides_and_deck", fake_prepare)
+    url = f"/api/jobs/{job.id}/deck"
+    client.post(url, json={"language": "en", "approved": True, "replan": True})
+    status = _wait(client, job.id)
+    assert called == [("en", True)] and status["notice"] is None
+
+
 def test_a_run_is_reopened_from_its_record_after_a_restart(real) -> None:
     client, job = real
     job.add_log(">>> a line from before the restart")

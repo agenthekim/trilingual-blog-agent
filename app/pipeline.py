@@ -792,6 +792,21 @@ class ArticlePipeline:
             await self.summarize()
         return None
 
+    async def prepare_slides_and_deck(
+        self,
+        language: str,
+        minutes: int = 15,
+        audience: str = "software engineers",
+        create_deck: bool = True,
+        replan: bool = False,
+    ) -> str | None:
+        """Create or recreate the slides and Google Slides deck for one language."""
+        if replan:
+            notes = await self._prepare_talk(language, minutes, audience, create_deck)
+            await self.summarize()
+            return " ".join(notes) or None
+        return await self.create_deck(language, summarize=True)
+
     async def export_pdf(self, language: str) -> str | None:
         """Export one language's Google Slides deck as PDF (SLD-12)."""
         result = await self.act(export_google_slides_pdf, language)
