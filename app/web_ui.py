@@ -486,6 +486,35 @@ async def config() -> dict[str, Any]:
     return answer
 
 
+@web.get("/api/jobs")
+async def list_recent_jobs() -> dict[str, Any]:
+    """Recent runs with their source text and title, newest first."""
+    items: list[dict[str, Any]] = []
+    for path in sorted(
+        _jobs_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+    )[:30]:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            job_id = str(record.get("id") or "")
+            source_text = str(record.get("source_text") or "").strip()
+            if not _JOB_ID.match(job_id) or not source_text:
+                continue
+            job = _job(job_id)
+            current = await job.pipeline.session_state()
+            title = str(current.get(state.SEED_TITLE) or "").strip()
+            items.append(
+                {
+                    "job_id": job_id,
+                    "source_text": source_text,
+                    "title": title,
+                    "created": float(record.get("created") or 0),
+                }
+            )
+        except Exception:
+            continue
+    return {"jobs": items}
+
+
 @web.post("/api/jobs")
 async def start_job(request: StartRequest) -> dict[str, str]:
     wants_slides = request.talk_minutes > 0 and bool(request.talk_languages)
