@@ -525,7 +525,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | SYN-5 | `test_a_title_emptied_in_the_deck_is_not_pulled` |
 | WEB-1 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed`, `test_there_is_one_page_and_the_classic_layout_is_gone` |
 | WEB-2 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
-| WEB-3 | `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck`, `test_a_run_is_reopened_from_its_record_after_a_restart`, `test_the_slides_step_says_where_each_language_asked_for_stands` |
+| WEB-3 | `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck`, `test_a_run_is_reopened_from_its_record_after_a_restart`, `test_the_slides_step_says_where_each_language_asked_for_stands`, `test_slides_of_a_run_that_stopped_before_the_posts_did_not_fail` |
 | WEB-4 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
 | WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for`, `test_each_row_offers_the_slide_action_its_state_allows` |
 | WEB-6 | `test_overview_lists_titles_files_and_next_steps`, `test_posting_from_the_page_needs_a_finalized_post_and_carries_the_persons_choice` |

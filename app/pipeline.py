@@ -356,7 +356,9 @@ def slides_progress(
     - what the lane said, while it works and for how its work ended;
     - with nothing said (after a restart): 'done' when what was asked for is
       there, 'waiting' when the slides of the run are still to be started
-      (``slides_to_come``), else 'failed': asked for and not there.
+      (``slides_to_come``) or the language has no post to make slides from
+      (the run stopped before the posts: nothing was tried, so nothing
+      failed), else 'failed': asked for, could have been made, and not there.
 
     A row whose language the lane is working on right now gets that phase as
     ``slides_progress`` and offers no action meanwhile (WEB-5).
@@ -378,7 +380,9 @@ def slides_progress(
             if row["slides_state"] in ("deck", wanted):
                 phase = "done"
             else:
-                phase = "waiting" if slides_to_come else "failed"
+                # Slides are made from a post; without one nothing was tried.
+                tried = bool(row["title"]) and not slides_to_come
+                phase = "failed" if tried else "waiting"
         entries.append({"language": language, "phase": phase})
     # In the order they were asked for; a language asked for later comes after.
     entries.sort(

@@ -1168,3 +1168,33 @@ async def test_a_medium_post_missing_from_the_feed_is_refused_in_plain_words(
         assert "Traceback" not in message and "PlatformError" not in message
     # Nothing was stored and no model was asked.
     assert said == [] and await pipeline.session_state() == {}
+
+
+def test_slides_of_a_run_that_stopped_before_the_posts_did_not_fail() -> None:
+    """WEB-3: the source could not be read, so no slides were tried."""
+    from app.pipeline import slides_progress
+
+    def phases(view):
+        entries = slides_progress(
+            view, {}, ["en", "ko", "ja"], True, slides_busy=False, slides_to_come=False
+        )
+        return {entry["language"]: entry["phase"] for entry in entries}
+
+    # No article was stored: every language waits; none is marked as failed.
+    assert phases(overview({})) == {"en": "waiting", "ko": "waiting", "ja": "waiting"}
+
+    # With the posts there and nothing made, the slides were asked for, could
+    # have been made and are missing: that is still said as failed.
+    with_posts = {
+        state.PROJECT_ID: "proj-x",
+        state.SEED_TITLE: "제목",
+        state.SEED_MARKDOWN: "# 제목\n\n본문\n",
+        state.SOURCE_LANGUAGE: "ko",
+        state.localized_key("en"): "# Title\n\nBody\n",
+        state.LOCALIZED_TITLES: {"en": "Title"},
+    }
+    assert phases(overview(with_posts)) == {
+        "en": "failed",
+        "ko": "failed",
+        "ja": "waiting",  # no Japanese post was written
+    }
