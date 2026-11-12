@@ -192,6 +192,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | SEC-4 | 로그와 저장되는 메모리는 마스킹을 거친다(이메일, 전화번호, 자격 증명 패턴. 활성화된 경우 Cloud DLP). 메모리에는 작성자와 코디네이터가 한 말을 담으며 각 메시지는 1,000자로 자른다. 작성 에이전트가 만들어 낸 것과 도구가 반환한 것은 저장하지 않는다. 식별자(함수 호출 id, 호출 id, 실행 id, 추적 id)는 마스킹하지 않으며, 식별자 안의 숫자열은 카드 번호로 보지 않는다 |
 | SEC-5 | 다이어그램 소스는 슬라이드용이든 미리보기용이든 `BLOG_AGENT_RENDER_MERMAID`가 켜져 있을 때에만 mermaid.ink로 보낸다. README는 두 경우를 모두 밝힌다 |
 | SEC-6 | Slides 권한 부여는 개인 계정이나 전용 Google 계정의 것이어야 하며, 회사나 학교 계정이어서는 절대 안 된다. 덱 하나를 승인해 달라는 요청은 채팅에서든 페이지에서든 그 계정을 명시한다. Settings도 계정을 명시하며, 실행 양식의 "your configured Google Drive"가 어느 계정인지는 여기서 확인한다 |
+| SEC-8 | 페이지와 편집기는 이 서버의 자체 파일에 있는 스크립트만 실행한다. 정책 헤더가 인라인 스크립트를 금지한다 |
 
 ### 5.9 운영
 
@@ -447,6 +448,7 @@ flowchart TD
 | SEC-4 | `test_pii_and_credentials_are_redacted_for_logs`, `test_memories_keep_only_what_author_and_coordinator_said`, `test_a_draft_pasted_into_the_chat_is_cut_before_it_is_remembered`, `test_identifiers_are_not_taken_for_card_numbers`, `test_a_card_number_in_a_message_is_still_redacted`, `test_cloud_dlp_is_called_only_when_enabled_and_a_failure_keeps_the_regex_result` |
 | SEC-5 | `test_mermaid_rendering_is_off_unless_enabled`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
 | SEC-6 | `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_settings_names_the_account_that_decks_go_to` |
+| SEC-8 | `test_the_page_runs_no_inline_script`, `test_the_files_of_the_page_are_served_fresh_and_by_name_only` |
 | OPS-1 | `test_log_records_are_scrubbed_before_emission`, `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action`, `test_activity_lines_are_also_structured_records`, `test_the_application_never_logs_with_print` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: 코드를 수정하는 사람을 위한 규칙이다. 기본값은 `app/models.py`에 있으며 환경 변수에서 읽는다 |

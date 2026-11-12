@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -113,7 +114,10 @@ def test_preview_links_to_the_editor_only_for_files_a_person_may_change(client) 
 def test_editor_page_is_served_and_saves_through_the_file_api(client) -> None:
     page = client.get("/edit", params={"job": JOB_ID, "file": "post.ko.md"})
     assert page.status_code == 200 and page.headers["cache-control"] == "no-store"
-    assert 'id="text"' in page.text and "PUT" in page.text
+    assert 'id="text"' in page.text
+    # The page holds no script of its own; the one it loads does the saving.
+    assert '<script src="/static/edit.js"></script>' in page.text
+    assert "PUT" in client.get("/static/edit.js").text
     # The page itself carries no article text; it loads it as plain text.
     assert "alert(1)" not in page.text
     raw = client.get(f"/api/jobs/{JOB_ID}/files/post.ko.md", params={"raw": 1})
@@ -614,7 +618,8 @@ def test_the_page_carries_the_wording_and_the_column_order_that_were_agreed(
 ) -> None:
     import re
 
-    page = client.get("/").text
+    # The texts are in the page and in the script it loads.
+    page = client.get("/").text + client.get("/static/app.js").text
     for text in (
         "<h1>Trilingual Blog Agent</h1>",
         "Automatically transform an article into blog posts and "
@@ -686,7 +691,7 @@ def test_settings_names_the_account_that_decks_go_to(client, monkeypatch) -> Non
     assert config["google_slides"] is True
     assert config["slides_account"] == "owner@example.com"
     monkeypatch.setattr(web_ui, "_config_cache", None)
-    page = client.get("/").text
+    page = client.get("/static/app.js").text
     assert "a new file in the Google Drive of ${account}" in page
 
 
@@ -852,3 +857,60 @@ def test_posts_can_be_saved_finalized_and_posted_while_slides_are_made(
     refused = client.post(f"{base}/deck", json={"language": "en", "approved": True})
     assert refused.status_code == 409
     assert refused.json()["detail"] == web_ui.BUSY["slides"]
+
+
+def test_the_page_runs_no_inline_script(client) -> None:
+    """SEC-8: script comes from this server's own files, and a header says so."""
+    import re
+
+    for address, script in (("/", "/static/app.js"), ("/edit", "/static/edit.js")):
+        page = client.get(address)
+        assert page.status_code == 200
+        policy = page.headers["content-security-policy"]
+        rules = dict(
+            rule.strip().split(" ", 1) for rule in policy.split(";") if rule.strip()
+        )
+        # Without 'unsafe-inline' a browser runs neither a script written into
+        # the page nor an ``onclick=`` attribute.
+        assert rules["script-src"] == "'self'"
+        assert rules["default-src"] == "'self'"
+        assert rules["base-uri"] == "'none'"
+        assert page.headers["cache-control"] == "no-store"
+        # The page itself agrees with its header: one script element, loaded
+        # from a file, and no handler written on an element.
+        scripts = re.findall(r"<script\b([^>]*)>(.*?)</script>", page.text, re.S)
+        assert scripts == [(f' src="{script}"', "")]
+        assert not re.search(r"<[^>]*\son[a-z]+\s*=", page.text)
+        assert "javascript:" not in page.text and "<style" not in page.text
+        assert client.get(script).status_code == 200
+    # Nothing the scripts do needs evaluating text as code.
+    for script in ("app.js", "edit.js"):
+        text = (web_ui.STATIC_DIR / script).read_text(encoding="utf-8")
+        assert not re.search(
+            r"\beval\(|new Function\(|\.innerHTML\b|document\.write", text
+        )
+
+
+def test_the_files_of_the_page_are_served_fresh_and_by_name_only(client) -> None:
+    for name, kind in (
+        ("app.css", "text/css"),
+        ("edit.css", "text/css"),
+        ("app.js", "text/javascript"),
+        ("edit.js", "text/javascript"),
+    ):
+        answer = client.get(f"/static/{name}")
+        assert answer.status_code == 200, name
+        assert answer.headers["content-type"] == f"{kind}; charset=utf-8"
+        assert answer.headers["cache-control"] == "no-store"
+        assert answer.headers["x-content-type-options"] == "nosniff"
+        assert answer.text == (web_ui.STATIC_DIR / name).read_text(encoding="utf-8")
+    # Every file a page asks for is one of these, and exists.
+    for page in ("index.html", "edit.html"):
+        text = (web_ui.STATIC_DIR / page).read_text(encoding="utf-8")
+        for asked in re.findall(r'(?:src|href)="(/static/[^"]+)"', text):
+            assert client.get(asked).status_code == 200, asked
+    # The pages are served at their own addresses, with the policy; nothing
+    # else in the folder, and nothing outside it, is served from here.
+    for name in ("index.html", "edit.html", "nothing.js", "..%2Fweb_ui.py", "APP.JS"):
+        assert client.get(f"/static/{name}").status_code == 404, name
+    assert client.get("/static/%2e%2e/web_ui.py").status_code in (400, 404)

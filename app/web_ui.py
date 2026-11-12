@@ -282,9 +282,24 @@ async def _draw_diagram(code: str) -> bytes | None:
     return None
 
 
+# The page and the editor run script from this server's own files only: no
+# inline script, no script from elsewhere (SEC-8). Styles may also be written
+# on an element, which the pages do; nothing else is loaded from another place.
+_PAGE_HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+}
+# The files a page loads: styles and script, by the names they are written
+# under and nothing else in the folder (SEC-2).
+_ASSET_NAME = re.compile(r"[a-z][a-z0-9_-]*\.(css|js)")
+_ASSET_TYPES = {"css": "text/css", "js": "text/javascript"}
+
+
 def _static(name: str) -> FileResponse:
     return FileResponse(
-        STATIC_DIR / name, media_type="text/html", headers={"Cache-Control": "no-store"}
+        STATIC_DIR / name, media_type="text/html", headers=_PAGE_HEADERS
     )
 
 
@@ -299,6 +314,21 @@ async def file_editor() -> FileResponse:
     loads the text and saves it through the same API as everything else, and
     shows it only as text in a text box, never as HTML."""
     return _static("edit.html")
+
+
+@web.get("/static/{name}")
+async def static_file(name: str) -> FileResponse:
+    """A style sheet or a script of the page, never kept by the browser: a
+    page loaded after the server changed runs the script that goes with it."""
+    match = _ASSET_NAME.fullmatch(name)
+    path = STATIC_DIR / name
+    if match is None or not path.is_file():
+        raise HTTPException(404, "No such file.")
+    return FileResponse(
+        path,
+        media_type=_ASSET_TYPES[match.group(1)],
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 _CONFIG_SECONDS = 60
