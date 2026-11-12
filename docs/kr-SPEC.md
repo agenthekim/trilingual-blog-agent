@@ -188,12 +188,13 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| SEC-1 | 웹 서버에는 로그인이 없다. localhost에서 수신하며 localhost 앞으로 온 요청에만 응답한다. 다른 `--host`로 시작한 경우에는 예외로, 서버에 닿을 수 있는 누구에게나 어떤 이름으로든 응답한다. 에이전트의 API 서버는 수동으로 시작하면 localhost에서 수신한다 |
+| SEC-1 | 웹 서버에는 로그인이 없다. localhost에서 수신하며 localhost 앞으로 온 요청에만 응답한다. 다른 `--host`로 시작하면 어떤 이름으로 온 요청에든 응답하고 SEC-7의 접근 토큰을 요구한다. 에이전트의 API 서버는 수동으로 시작하면 localhost에서 수신한다 |
 | SEC-2 | 라우트는 생성된 이름과 일치하는 파일 이름만 받으며 절대 프로젝트 폴더를 벗어나지 않는다 |
 | SEC-3 | 인증된 HTTP 클라이언트는 리디렉션을 따라가지 않는다. 인증 없는 요청은 리디렉션을 최대 세 번까지 따라가며 매번 호스트를 다시 검사한다(INV-8) |
 | SEC-4 | 로그와 저장되는 메모리는 마스킹을 거친다(이메일, 전화번호, 자격 증명 패턴. 활성화된 경우 Cloud DLP). 메모리에는 작성자와 코디네이터가 한 말을 담으며 각 메시지는 1,000자로 자른다. 작성 에이전트가 만들어 낸 것과 도구가 반환한 것은 저장하지 않는다. 식별자(함수 호출 id, 호출 id, 실행 id, 추적 id)는 마스킹하지 않으며, 식별자 안의 숫자열은 카드 번호로 보지 않는다 |
 | SEC-5 | 다이어그램 소스는 슬라이드용이든 미리보기용이든 `BLOG_AGENT_RENDER_MERMAID`가 켜져 있을 때에만 mermaid.ink로 보낸다. README는 두 경우를 모두 밝힌다 |
 | SEC-6 | Slides 권한 부여는 개인 계정이나 전용 Google 계정의 것이어야 하며, 회사나 학교 계정이어서는 절대 안 된다. 덱 하나를 승인해 달라는 요청은 채팅에서든 페이지에서든 그 계정을 명시한다. Settings도 계정을 명시하며, 실행 양식의 "your configured Google Drive"가 어느 계정인지는 여기서 확인한다 |
+| SEC-7 | localhost가 아닌 주소에서는 모든 경로가 접근 토큰을 요구한다. 토큰은 `BLOG_AGENT_UI_TOKEN`이거나, 시작할 때 만들어 열어야 할 주소의 일부로 서버 로그에 한 번 보여 주는 값이다. 처음 접속하면 토큰을 쿠키로 바꾼다. 토큰은 활동 로그에 기록하지 않으며 어떤 경로도 돌려주지 않는다 |
 | SEC-8 | 페이지와 편집기는 이 서버의 자체 파일에 있는 스크립트만 실행한다. 정책 헤더가 인라인 스크립트를 금지한다 |
 
 ### 5.9 운영
@@ -275,11 +276,11 @@ flowchart TD
   슬라이드는 텍스트로 배치한다.
 - 덱 레이아웃은 한 번만 계산한다. 나중에 푸시한 텍스트에 맞춰 다시 조정하지
   않는다.
-- 페이지에는 로그인이 없다(SEC-1). 다른 주소를 `--host`로 지정해 시작하면 어떤
-  이름으로 온 요청에든 응답한다. 이때 작성자의 브라우저에 열린 페이지가 자기
-  이름을 그 주소로 향하게 하면 작성자와 똑같이 응답을 받는다. 에이전트의 API
-  서버(`app/fast_api_app.py`)는 요청이 어떤 이름 앞으로 왔는지 전혀 확인하지
-  않는다.
+- 페이지에는 로그인이 없다(SEC-1). 다른 주소를 `--host`로 지정해 시작하면 접근
+  토큰을 요구하지만(SEC-7) 통신은 평문 HTTP다. 브라우저와 서버 사이의
+  네트워크에서 토큰과 쿠키를 읽을 수 있고, 토큰이 든 주소를 가진 사람은 작성자가
+  할 수 있는 일을 모두 할 수 있다. 에이전트의 API 서버(`app/fast_api_app.py`)는
+  요청이 어떤 이름 앞으로 왔는지 전혀 확인하지 않는다.
 - 채팅에서 같은 대화에 두 번째 초안을 저장하면 첫 번째 초안의 수정으로
   처리된다. 프로젝트가 유지되고 첫 번째 글의 플랫폼 초안이 갱신된다. 승인
   요청은 교체되는 제목을 명시한다(PUB-5). 다른 글은 새 대화에서 시작한다.
@@ -447,12 +448,13 @@ flowchart TD
 | PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart`, `test_an_interrupted_run_offers_the_slides_that_are_missing` |
 | PER-3 | `test_sqlite_store_survives_reopening`, `test_seed_revisions_are_numbered_and_persisted` |
 | PER-4 | No unit test: 브라우저 안에서 일어나는 페이지의 동작이다(마지막 실행은 로컬 스토리지에 보관된다). 헤드리스 브라우저에서 수동으로 확인한다 |
-| SEC-1 | `test_api_server_listens_on_localhost_by_default`, `test_the_server_answers_only_to_its_own_name` |
+| SEC-1 | `test_api_server_listens_on_localhost_by_default`, `test_the_server_answers_only_to_its_own_name`, `test_another_address_needs_the_token` |
 | SEC-2 | `test_project_file_stays_inside_the_project_folder`, `test_source_and_unknown_files_cannot_be_edited` |
 | SEC-3 | `test_authenticated_clients_do_not_follow_redirects`, `test_unauthenticated_fetch_stops_after_three_redirects`, `test_unauthenticated_fetch_rechecks_the_host_on_every_redirect` |
 | SEC-4 | `test_pii_and_credentials_are_redacted_for_logs`, `test_memories_keep_only_what_author_and_coordinator_said`, `test_a_draft_pasted_into_the_chat_is_cut_before_it_is_remembered`, `test_identifiers_are_not_taken_for_card_numbers`, `test_a_card_number_in_a_message_is_still_redacted`, `test_cloud_dlp_is_called_only_when_enabled_and_a_failure_keeps_the_regex_result` |
 | SEC-5 | `test_mermaid_rendering_is_off_unless_enabled`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
 | SEC-6 | `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_settings_names_the_account_that_decks_go_to` |
+| SEC-7 | `test_another_address_needs_the_token`, `test_localhost_needs_no_token` |
 | SEC-8 | `test_the_page_runs_no_inline_script`, `test_the_files_of_the_page_are_served_fresh_and_by_name_only` |
 | OPS-1 | `test_log_records_are_scrubbed_before_emission`, `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action`, `test_activity_lines_are_also_structured_records`, `test_the_application_never_logs_with_print` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |

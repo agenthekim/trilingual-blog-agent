@@ -138,8 +138,10 @@ uv run python -m app.web_ui                 # http://127.0.0.1:8502
 ```
 
 The front end has no login, so it listens on localhost, and answers only
-requests addressed to localhost, unless `--host` is given; with `--host` it
-serves anyone who can reach it. A run survives a restart of the server: its session is in a local
+requests addressed to localhost, unless `--host` is given; with `--host` for
+another address every route requires an access token (`BLOG_AGENT_UI_TOKEN`, or
+one made at start), and the address to open, with the token in it, is shown once
+in the terminal. A run survives a restart of the server: its session is in a local
 SQLite file (`.adk/sessions.sqlite3`) and its record and activity log are under
 `workspace/.jobs/`. Opening the run's address again, or just the page in the
 same browser, shows it as it was; a run that was working when the server

@@ -190,12 +190,13 @@ stage at a time and waits.
 
 | | Requirement |
 | :--- | :--- |
-| SEC-1 | The web server has no login. It listens on localhost and answers only requests addressed to localhost, unless it is started with another `--host`; then it serves anyone who can reach it, under any name. The agent's API server listens on localhost when started by hand |
+| SEC-1 | The web server has no login. It listens on localhost and answers only requests addressed to localhost. Started with another `--host`, it answers under any name and requires the access token of SEC-7. The agent's API server listens on localhost when started by hand |
 | SEC-2 | Routes take file names that match the generated names only and never leave the project folder |
 | SEC-3 | Authenticated HTTP clients do not follow redirects. Unauthenticated fetches follow at most three and re-check the host each time (INV-8) |
 | SEC-4 | Logs and stored memories pass redaction (emails, phone numbers, credential patterns; Cloud DLP when enabled). Memories hold what the author and the coordinator said, each message cut to 1,000 characters; what the writing agents produced and what tools returned is not stored. Identifiers (function call ids, invocation ids, run ids, trace ids) are not redacted, and a run of digits inside an identifier is not taken for a card number |
 | SEC-5 | Diagram source is sent to mermaid.ink only when `BLOG_AGENT_RENDER_MERMAID` is on, for slides and for previews alike; the README says both |
 | SEC-6 | The Slides grant belongs to a personal or dedicated Google account, never a work or school account. The request to approve a single deck names the account, in a chat and on the page; Settings names it too, which is where the account behind "your configured Google Drive" of the run form is shown |
+| SEC-7 | On an address other than localhost every route requires an access token: `BLOG_AGENT_UI_TOKEN`, or one made at start and shown once in the server's log as part of the address to open. The first visit exchanges it for a cookie. It is never written to the activity log or returned by a route |
 | SEC-8 | The page and the editor run script from this server's own files only; a policy header forbids inline script |
 
 ### 5.9 Operations
@@ -280,9 +281,11 @@ check that the plan it got is in the language it asked for.
   slide; the slide is then laid out as text.
 - Deck layout is computed once. Text pushed later is not re-fitted.
 - The page has no login (SEC-1). Started with `--host` for another address, it
-  serves any name; a page in the author's browser that points its own name at
-  that address is then served like the author. The agent's API server
-  (`app/fast_api_app.py`) does not check the name it is addressed by at all.
+  requires the access token (SEC-7), but it speaks plain HTTP: the token and
+  its cookie can be read on the network between the browser and the server,
+  and whoever has the address with the token can do everything the author
+  can. The agent's API server (`app/fast_api_app.py`) does not check the name
+  it is addressed by at all.
 - In a chat, a second draft saved in the same conversation is a revision of
   the first: it keeps the project and updates the first one's platform draft.
   The approval names the title that is replaced (PUB-5); start a new
@@ -453,12 +456,13 @@ what the models then did was read in real runs, recorded in `README.md`.
 | PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart`, `test_an_interrupted_run_offers_the_slides_that_are_missing` |
 | PER-3 | `test_sqlite_store_survives_reopening`, `test_seed_revisions_are_numbered_and_persisted` |
 | PER-4 | No unit test: behaviour of the page in a browser (the last run is kept in local storage); checked by hand in a headless browser |
-| SEC-1 | `test_api_server_listens_on_localhost_by_default`, `test_the_server_answers_only_to_its_own_name` |
+| SEC-1 | `test_api_server_listens_on_localhost_by_default`, `test_the_server_answers_only_to_its_own_name`, `test_another_address_needs_the_token` |
 | SEC-2 | `test_project_file_stays_inside_the_project_folder`, `test_source_and_unknown_files_cannot_be_edited` |
 | SEC-3 | `test_authenticated_clients_do_not_follow_redirects`, `test_unauthenticated_fetch_stops_after_three_redirects`, `test_unauthenticated_fetch_rechecks_the_host_on_every_redirect` |
 | SEC-4 | `test_pii_and_credentials_are_redacted_for_logs`, `test_memories_keep_only_what_author_and_coordinator_said`, `test_a_draft_pasted_into_the_chat_is_cut_before_it_is_remembered`, `test_identifiers_are_not_taken_for_card_numbers`, `test_a_card_number_in_a_message_is_still_redacted`, `test_cloud_dlp_is_called_only_when_enabled_and_a_failure_keeps_the_regex_result` |
 | SEC-5 | `test_mermaid_rendering_is_off_unless_enabled`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
 | SEC-6 | `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_settings_names_the_account_that_decks_go_to` |
+| SEC-7 | `test_another_address_needs_the_token`, `test_localhost_needs_no_token` |
 | SEC-8 | `test_the_page_runs_no_inline_script`, `test_the_files_of_the_page_are_served_fresh_and_by_name_only` |
 | OPS-1 | `test_log_records_are_scrubbed_before_emission`, `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action`, `test_activity_lines_are_also_structured_records`, `test_the_application_never_logs_with_print` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |

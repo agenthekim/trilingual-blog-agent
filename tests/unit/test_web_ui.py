@@ -777,9 +777,199 @@ def test_the_server_answers_only_to_its_own_name(client, monkeypatch) -> None:
         TestClient(web_ui.web, base_url="http://localhost:8502").get("/").status_code
         == 200
     )
-    # Bound to another address on purpose (--host): any name is then served.
+    # Bound to another address on purpose (--host): any name is then answered,
+    # and what it gets depends on the access token (SEC-7).
     monkeypatch.setattr(web_ui, "ALLOWED_HOSTS", None)
     assert other.get("/").status_code == 200
+    monkeypatch.setattr(web_ui, "ACCESS_TOKEN", "a-token-0123456789")
+    assert other.get("/").status_code == 401
+
+
+def test_another_address_needs_the_token(client, monkeypatch) -> None:
+    """SEC-7: bound to another address, every route needs the access token.
+    The first visit exchanges it for a cookie; the token is shown once, in the
+    terminal, and is in no answer, no structured record and no activity log."""
+    import hmac
+    import logging
+
+    from app import observability
+    from app.redaction import redact_text
+
+    monkeypatch.setattr(web_ui, "ALLOWED_HOSTS", web_ui.ALLOWED_HOSTS)
+    monkeypatch.setattr(web_ui, "ACCESS_TOKEN", None)
+
+    class Kept(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lines: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            fields = getattr(record, "json_fields", None) or {}
+            self.lines.append(f"{record.getMessage()} {fields}")
+
+    terminal, structured = Kept(), Kept()
+    web_ui._TERMINAL.addHandler(terminal)
+    observability.get_logger().addHandler(structured)
+    compared: list[int] = []
+    real_compare = hmac.compare_digest
+
+    def compare(a: bytes, b: bytes) -> bool:
+        compared.append(1)
+        return real_compare(a, b)
+
+    monkeypatch.setattr(web_ui.hmac, "compare_digest", compare)
+    try:
+        # A token of the operator's must be one nobody guesses.
+        for weak in ("short1", "no-digit-in-this-token", "has a space 1234567"):
+            with pytest.raises(ValueError, match="BLOG_AGENT_UI_TOKEN"):
+                web_ui.configure_access("0.0.0.0", 8502, weak)
+        assert web_ui.ACCESS_TOKEN is None and terminal.lines == []
+
+        # Without one, a token is made at start; the address is shown once.
+        web_ui.configure_access("0.0.0.0", 8502, None)
+        token = web_ui.ACCESS_TOKEN
+        assert token and web_ui.usable_token(token) and len(token) >= 32
+        assert web_ui.ALLOWED_HOSTS is None
+        assert len(terminal.lines) == 1
+        assert f":8502/?access_token={token}" in terminal.lines[0]
+        assert token != web_ui.new_access_token()
+
+        base = f"/api/jobs/{JOB_ID}"
+        job = web_ui.JOBS[JOB_ID]
+        routes = [
+            "/",
+            "/edit",
+            "/static/app.js",
+            "/static/i18n/en.json",
+            "/api/config",
+            "/api/jobs",
+            base,
+            f"{base}/files/post.ko.md",
+            "/no-such-route",
+        ]
+
+        def refused(response: Any) -> bool:
+            return (
+                response.status_code == 401
+                and "set-cookie" not in response.headers
+                and "location" not in response.headers  # nothing to loop on
+                and "access token" in response.text
+            )
+
+        # No token and no cookie: nothing is served, static files included.
+        other = TestClient(web_ui.web, base_url="http://machine.example:8502")
+        for path in routes:
+            assert refused(other.get(path)), path
+        assert refused(other.post(f"{base}/finalize", json={"language": "en"}))
+        assert refused(other.put(f"{base}/files/post.ko.md", json={"markdown": "x"}))
+        # The page's own requests get the sentence with its code (WEB-13).
+        assert other.get(base).json()["code"] == "needs_access_token"
+        assert other.get("/").headers["content-type"].startswith("text/plain")
+        # A wrong token, a wrong cookie, and a token sent as the cookie.
+        assert refused(other.get("/?access_token=" + "0" * len(token)))
+        assert refused(other.get("/?access_token="))
+        for wrong in ("0" * 64, token):
+            other.cookies.set(web_ui.ACCESS_COOKIE, wrong)
+            assert refused(other.get("/")), wrong
+            other.cookies.clear()
+        # The token does not open a request that changes something.
+        assert refused(
+            other.post(f"{base}/finalize?access_token={token}", json={"language": "en"})
+        )
+
+        # The first visit with the token: a cookie that scripts cannot read
+        # and other sites cannot send, and the same address without the token.
+        first = other.get(f"/edit?access_token={token}&job={JOB_ID}&file=post.ko.md")
+        assert first.status_code == 200
+        cookie = first.headers["set-cookie"]
+        assert cookie.startswith(f"{web_ui.ACCESS_COOKIE}=")
+        assert "HttpOnly" in cookie and "samesite=strict" in cookie.lower()
+        assert "Path=/" in cookie
+        assert f'content="0; url=/edit?job={JOB_ID}&amp;file=post.ko.md"' in first.text
+        assert first.headers["referrer-policy"] == "no-referrer"
+        assert first.headers["cache-control"] == "no-store"
+        # An address that would lead to another server is made this server's.
+        asked = {
+            "type": "http",
+            "method": "GET",
+            "path": "//elsewhere.example/",
+            "query_string": f"access_token={token}".encode(),
+            "headers": [],
+        }
+        away = web_ui._exchange(web_ui.Request(asked), token)
+        assert b'url=/%2Felsewhere.example/"' in away.body
+        assert b"url=//" not in away.body and b'href="//' not in away.body
+
+        # With the cookie everything works as on localhost: the page, its
+        # files, the editor and a preview in a new tab, and the actions.
+        answers = [first]
+        assert token.encode() not in away.body
+        for path in routes[:-1]:
+            if path == "/api/config":
+                continue  # asks the secret store; not this test's business
+            answer = other.get(path)
+            assert answer.status_code == 200, path
+            answers.append(answer)
+        saved = other.put(f"{base}/files/post.ko.md", json={"markdown": "# 새 글"})
+        assert saved.status_code == 200 and job.pipeline.saved
+        answers.append(saved)
+        assert other.get("/no-such-route").status_code == 404
+        job.add_log(">>> a line of the run")
+
+        # The token is in no answer, in no structured record and in no
+        # activity log; the terminal showed it once and only once.
+        for answer in answers:
+            assert token not in answer.text
+            assert token not in str(answer.headers)
+        assert not any(token in line for line in structured.lines)
+        assert not any(token in line for line in job.log)
+        assert sum(token in line for line in terminal.lines) == 1
+        # Tokens and cookies are compared in constant time.
+        assert compared
+        # Should the address ever reach a log record, the filter hides it.
+        hidden = redact_text(terminal.lines[0])
+        assert token not in hidden and "REDACTED" in hidden
+
+        # A token of the operator's is used as it is.
+        web_ui.configure_access("192.0.2.7", 8503, "operator-token-0123456789")
+        assert web_ui.ACCESS_TOKEN == "operator-token-0123456789"
+        assert (
+            "http://192.0.2.7:8503/?access_token=operator-token" in terminal.lines[-1]
+        )
+        assert refused(other.get("/"))  # the cookie of the earlier token
+    finally:
+        for handler in list(web_ui._TERMINAL.handlers):
+            if handler is terminal or isinstance(handler, web_ui._ToTerminal):
+                web_ui._TERMINAL.removeHandler(handler)
+        observability.get_logger().removeHandler(structured)
+
+
+def test_localhost_needs_no_token(client, monkeypatch) -> None:
+    """SEC-7, SEC-1: on localhost nothing changes. No token is made, asked
+    for or set, and the server still answers only to its own name."""
+    monkeypatch.setattr(web_ui, "ALLOWED_HOSTS", web_ui.ALLOWED_HOSTS)
+    monkeypatch.setattr(web_ui, "ACCESS_TOKEN", web_ui.ACCESS_TOKEN)
+    for host in ("127.0.0.1", "localhost", "::1"):
+        # Even a configured token is not used on localhost.
+        web_ui.configure_access(host, 8502, "operator-token-0123456789")
+        assert web_ui.ACCESS_TOKEN is None
+        assert web_ui.ALLOWED_HOSTS == web_ui.LOOPBACK_HOSTS
+    # Nothing was shown: the terminal has no handler of this server's.
+    assert not any(
+        isinstance(handler, web_ui._ToTerminal) for handler in web_ui._TERMINAL.handlers
+    )
+
+    for path in ("/", "/edit", "/static/app.js", f"/api/jobs/{JOB_ID}"):
+        answer = client.get(path)
+        assert answer.status_code == 200, path
+        assert "set-cookie" not in answer.headers
+    # A token in the address means nothing here: the page is served as it is.
+    with_token = client.get("/?access_token=anything")
+    assert with_token.status_code == 200 and "set-cookie" not in with_token.headers
+    assert with_token.text == client.get("/").text
+    # The host-name check stays as it is.
+    other = TestClient(web_ui.web, base_url="http://attacker.example")
+    assert other.get("/").status_code == 400
 
 
 def test_settings_names_the_account_that_decks_go_to(client, monkeypatch) -> None:

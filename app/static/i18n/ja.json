@@ -298,6 +298,7 @@
   "server.text_empty": "本文が空です。",
   "server.no_deck_yet": "この言語のGoogle Slidesデッキはまだありません。",
   "server.slide_plan_file_missing": "この言語のスライドプランのファイルがありません。",
+  "server.needs_access_token": "このサーバーにはアクセストークンが必要です。起動時にログに表示されたアドレスを開いてください。",
   "server.post_needs_approval": "記事は人が承認したときだけ送信します。",
   "server.deck_needs_approval": "デッキは人が承認したときだけ作成します。",
   "server.slides_need_approval": "スライドは人が承認したときだけ作成します。",

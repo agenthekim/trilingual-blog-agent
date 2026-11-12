@@ -298,6 +298,7 @@
   "server.text_empty": "The text is empty.",
   "server.no_deck_yet": "There is no Google Slides deck for this language yet.",
   "server.slide_plan_file_missing": "The slide plan file of this language is missing.",
+  "server.needs_access_token": "This server needs its access token. Open the address that its log showed when it started.",
   "server.post_needs_approval": "A post is sent only with a person's approval.",
   "server.deck_needs_approval": "A deck is created only with a person's approval.",
   "server.slides_need_approval": "Slides are made only with a person's approval.",

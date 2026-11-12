@@ -149,6 +149,10 @@ TEMPLATES: dict[str, str] = {
     "no_deck_yet": "There is no Google Slides deck for this language yet.",
     "slide_plan_file_missing": "The slide plan file of this language is missing.",
     # --- the web layer (app/web_ui.py) ---
+    "needs_access_token": (
+        "This server needs its access token. Open the address that its log "
+        "showed when it started."
+    ),
     "post_needs_approval": "A post is sent only with a person's approval.",
     "deck_needs_approval": "A deck is created only with a person's approval.",
     "slides_need_approval": "Slides are made only with a person's approval.",

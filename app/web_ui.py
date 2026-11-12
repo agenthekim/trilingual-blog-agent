@@ -5,9 +5,11 @@ Run it with::
     uv run python -m app.web_ui                 # http://127.0.0.1:8502
     uv run python -m app.web_ui --host 0.0.0.0  # reachable from other machines
 
-The server has no login. Anyone who can reach it can run the agent and approve
+The server has no login. Anyone who can use it can run the agent and approve
 posts with the configured platform credentials, so it binds to localhost unless
-told otherwise.
+told otherwise, and on any other address every route requires an access token
+(SEC-7): the address to open, with the token in it, is shown once in the
+terminal the server was started in.
 
 A run survives a restart of the server. Its session is in the session store
 (a SQLite file locally) and a small record of the run, with its activity log,
@@ -21,12 +23,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import hmac
 import html
 import json
+import logging
+import os
 import re
+import socket
+import sys
 import time
 from pathlib import Path
+from secrets import token_urlsafe
 from typing import Any, Literal
+from urllib.parse import urlencode
 
 from app.env_file import load_env_file
 
@@ -108,6 +117,171 @@ async def only_its_own_name(request: Request, call_next: Any) -> Response:
                 "This server answers only to its own address.", status_code=400
             )
     return await call_next(request)
+
+
+# --- The access token (SEC-7) ------------------------------------------------
+# On localhost there is none. Bound to another address, every route needs it:
+# the token itself once, in the address, and from then on the cookie the
+# first visit got for it. Set by ``configure_access``, which ``main`` calls.
+ACCESS_TOKEN: str | None = None
+ACCESS_TOKEN_ENV = "BLOG_AGENT_UI_TOKEN"
+ACCESS_PARAM = "access_token"
+ACCESS_COOKIE = "tba_access"
+_COOKIE_DAYS = 30
+_LOCAL_BINDS = ("127.0.0.1", "localhost", "::1")
+# What a token may be: it goes into an address as it is, it must not be
+# guessable, and with a digit in it the redaction of log records takes
+# ``access_token=...`` for the credential it is, should it ever get there.
+_TOKEN_SHAPE = re.compile(r"(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{16,200}")
+# The one place the address with the token is written: the terminal the
+# operator started the server in. It is a logger of its own that hands its
+# lines to nothing else, so the token is in no structured record (OPS-1) and
+# in no activity log.
+_TERMINAL = logging.getLogger("tba.terminal")
+_TERMINAL.propagate = False
+_TERMINAL.setLevel(logging.INFO)
+
+
+class _ToTerminal(logging.StreamHandler):
+    """Writes a line to the terminal (standard error) as it is."""
+
+
+def usable_token(value: str) -> bool:
+    """Whether an operator's token can be used: 16 or more letters, digits,
+    ``-`` and ``_``, at least one of them a digit."""
+    return _TOKEN_SHAPE.fullmatch(value) is not None
+
+
+def new_access_token() -> str:
+    """A token nobody can guess, in the shape ``usable_token`` asks for."""
+    while True:
+        token = token_urlsafe(32)
+        if usable_token(token):
+            return token
+
+
+def _same(offered: str, expected: str) -> bool:
+    """Compared in constant time: how long it takes says nothing about how
+    much of a guess was right."""
+    return hmac.compare_digest(offered.encode("utf-8"), expected.encode("utf-8"))
+
+
+def _cookie_value(token: str) -> str:
+    """What the cookie holds: made from the token, not the token. No answer
+    of this server carries the token itself."""
+    return hashlib.sha256(b"tba-access-cookie:" + token.encode("utf-8")).hexdigest()
+
+
+def _no_access(request: Request) -> Response:
+    """401 with one sentence, and nothing to follow: no redirect, so a
+    browser without the cookie cannot be sent in circles. The page's own
+    requests get the sentence with its code, to say it in its language."""
+    said = notice("needs_access_token")
+    headers = {"Cache-Control": "no-store"}
+    if request.url.path.startswith("/api/"):
+        answer = _refusal(401, said)
+        answer.headers.update(headers)
+        return answer
+    return PlainTextResponse(str(said), status_code=401, headers=headers)
+
+
+def _exchange(request: Request, token: str) -> Response:
+    """The first visit: the cookie for the token, and the same address
+    without the token.
+
+    The browser is sent on by the answer's own page rather than by a 3xx
+    redirect: a SameSite=Strict cookie is not sent on a request that follows
+    a redirect when the link was clicked on another site (a chat, a web
+    terminal), and the first visit would end in a 401. A page of this
+    server sending the browser on is a request of this site. The address
+    with the token is replaced in the history by the one without it, is not
+    passed on as a referrer, and is not kept by a cache.
+    """
+    rest = [
+        (name, value)
+        for name, value in request.query_params.multi_items()
+        if name != ACCESS_PARAM
+    ]
+    # One leading slash: "//name" would be read as another server's address.
+    onward = "/" + request.url.path.lstrip("/")
+    if rest:
+        onward += "?" + urlencode(rest)
+    address = html.escape(onward, quote=True)
+    answer = HTMLResponse(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        f'<meta http-equiv="refresh" content="0; url={address}">'
+        "<title>Trilingual Blog Agent</title></head>"
+        f'<body><a href="{address}">Continue</a></body></html>',
+        headers={
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+            "Content-Security-Policy": "default-src 'none'; base-uri 'none'",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+    answer.set_cookie(
+        ACCESS_COOKIE,
+        _cookie_value(token),
+        max_age=_COOKIE_DAYS * 86400,
+        path="/",
+        httponly=True,
+        samesite="strict",
+    )
+    return answer
+
+
+@web.middleware("http")
+async def needs_the_token(request: Request, call_next: Any) -> Response:
+    """On another address than localhost, nothing is served without the
+    token: not the page, not its files, not a route that does not exist."""
+    token = ACCESS_TOKEN
+    if token is None:
+        return await call_next(request)
+    offered = request.query_params.get(ACCESS_PARAM)
+    if request.method == "GET" and offered is not None:
+        return (
+            _exchange(request, token) if _same(offered, token) else _no_access(request)
+        )
+    if _same(request.cookies.get(ACCESS_COOKIE, ""), _cookie_value(token)):
+        return await call_next(request)
+    return _no_access(request)
+
+
+def configure_access(host: str, port: int, configured: str | None) -> None:
+    """Decide, from the address the server is bound to, who it serves.
+
+    On localhost nothing changes: no token, and only requests addressed to
+    localhost are answered. Bound to another address on purpose, it is
+    reached under names it cannot know, so it answers under any name and
+    requires the access token: ``configured`` (BLOG_AGENT_UI_TOKEN) or one
+    made now. The address to open is written once, to the terminal.
+    Raises ValueError when ``configured`` cannot be used as a token.
+    """
+    global ALLOWED_HOSTS, ACCESS_TOKEN
+    if host in _LOCAL_BINDS:
+        return
+    token = (configured or "").strip()
+    if token and not usable_token(token):
+        raise ValueError(
+            f"{ACCESS_TOKEN_ENV} must be 16 or more letters, digits, '-' or '_', "
+            "with at least one digit. Leave it unset to have one made."
+        )
+    ALLOWED_HOSTS = None
+    ACCESS_TOKEN = token or new_access_token()
+    if not any(isinstance(handler, _ToTerminal) for handler in _TERMINAL.handlers):
+        _TERMINAL.addHandler(_ToTerminal(sys.stderr))
+    # A server bound to every address is opened under this machine's name.
+    name = socket.gethostname() if host in ("0.0.0.0", "::") else host
+    if ":" in name:
+        name = f"[{name}]"
+    _TERMINAL.info(
+        "Open http://%s:%d/?%s=%s\nEvery route needs this access token. It is "
+        "shown here once; the first visit exchanges it for a cookie.",
+        name,
+        port,
+        ACCESS_PARAM,
+        ACCESS_TOKEN,
+    )
 
 
 Language = Literal["ko", "en", "ja"]
@@ -823,13 +997,15 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8502)
     args = parser.parse_args()
-    if args.host not in ("127.0.0.1", "localhost", "::1"):
-        # Bound to another address on purpose: it is then reached under names
-        # this server cannot know, and anyone who reaches it can use it.
-        global ALLOWED_HOSTS
-        ALLOWED_HOSTS = None
+    try:
+        configure_access(args.host, args.port, os.environ.get(ACCESS_TOKEN_ENV))
+    except ValueError as exc:
+        parser.error(str(exc))
     setup_tracing()  # before the first action, so every action has a trace
-    uvicorn.run(web, host=args.host, port=args.port, log_level="warning")
+    # No access log: an address a browser asked for can have the token in it.
+    uvicorn.run(
+        web, host=args.host, port=args.port, log_level="warning", access_log=False
+    )
 
 
 if __name__ == "__main__":

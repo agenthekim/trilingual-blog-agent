@@ -354,7 +354,13 @@ async function poll() {
   try { render(await api(`/api/jobs/${jobId}`)); missed = 0; }
   catch (error) {
     if (error.status === 404) forget(state && state.overview ? t("runGone") : "");
-    else { missed += 1; if (missed === 2) $("run").disabled = false; drawLive(); }
+    else {
+      missed += 1;
+      // Without the access cookie the server says so, in a sentence (SEC-7).
+      if (error.status === 401 && missed === 1) toast(error.message, 8000);
+      if (missed === 2) $("run").disabled = false;
+      drawLive();
+    }
   }
 }
 
