@@ -121,7 +121,7 @@ async function load() {
   try {
     const state = await (await api(`/api/jobs/${job}`)).json();
     if (!state.overview.editable.includes(name)) {
-      say(name.startsWith("post.") ? "This is the source article. Edit it where it was written and run again." : "This file cannot be edited here.", true);
+      say(name.startsWith("post.") ? "This post can no longer be edited here: it is already public, or its file is left from an earlier text. Edit a public post on its site." : "This file cannot be edited here.", true);
       return;
     }
     const row = state.overview.rows.find((r) => `post.${r.language}.md` === name);

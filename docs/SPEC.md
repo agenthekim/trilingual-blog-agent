@@ -97,7 +97,7 @@ stage at a time and waits.
 | SRC-3 | A URL is read through the platform's API (Qiita, DEV) or from the public mobile page (Naver). The platform is recorded as the original and never written to (INV-4). Naver text may lose headings, lists and links; the run then carries a notice saying so |
 | SRC-4 | The seed is final when stored by the web page or the script. In a chat it is final only when the author says so |
 | SRC-5 | Companion code is optional and never required |
-| SRC-6 | One run holds one article. Reading another published post into the same session starts a new project and keeps nothing of the previous article. Revising the seed's text discards the localizations, finalizations and slide plans made from the old text, and their files; publication records and decks, which are still that article's, stay. A post file left from an earlier text cannot be saved back |
+| SRC-6 | One run holds one article. Reading another published post into the same session starts a new project and keeps nothing of the previous article. Revising the seed's text discards the localizations, finalizations and slide plans made from the old text, and their files; publication records and decks, which are still that article's, stay. A post file left from an earlier text cannot be saved back. Editing the source-language post, on the page or through the agent, keeps the localizations and slide plans; each localization made from an earlier text is shown as older than the source until it is made again (WEB-15) |
 
 ### 5.2 Localization
 
@@ -120,10 +120,11 @@ stage at a time and waits.
 | PUB-4 | The title sent is the finalized title. The posting tools take tags and nothing else, so the model cannot name another title |
 | PUB-5 | The approval request names the platform, the title, the tags and whether a draft is created or updated; when the draft that is updated carries another title on the platform, the request names that title too. An approval without a visibility choice means a non-public draft (INV-2) |
 | PUB-6 | A draft that exists is updated, never duplicated. A public post is not posted again |
-| PUB-7 | Naver: the HTML export is written during the run, again whenever the Korean post is edited, and again when it is finalized. It contains no script, event handler, `javascript:` link, SVG or MathML. A text the export refuses leaves no file behind. Exporting again never discards a registered URL |
+| PUB-7 | Naver: the HTML export is written during the run, again whenever the Korean post is changed, by a person or by the agent, and again when it is finalized. It contains no script, event handler, `javascript:` link, SVG or MathML. A text the export refuses leaves no file behind. Exporting again never discards a registered URL |
 | PUB-8 | A registered URL must be https on the host of that platform, and that platform must not be the original; it is then fetched, and a notice says so when it does not answer |
 | PUB-9 | On surfaces without the page (chat, script), a post is finalized through a tool that asks the person to confirm and says how long the text is; the script asks at the prompt |
 | PUB-10 | Tags are checked against the platform's own rule before anything else happens: DEV at most four, lowercase letters and digits; Qiita one to five, no spaces |
+| PUB-11 | The title or text of a post is changed through one function, whoever changes it. It refuses a post that is public, checks the structure of a localization again, keeps a version, and writes or removes the Naver file. The agent changes a text by replacing a passage it quotes exactly, found once in the post; it does not retype a post |
 
 ### 5.4 Talk and slides
 
@@ -169,6 +170,7 @@ stage at a time and waits.
 | WEB-10 | Settings shows the fixed language-to-platform mapping, per credential whether it is configured, and the Google account that decks go to, as reported by the server at that moment. No names or values of secrets |
 | WEB-11 | While a lane works, nothing else can be started in that lane; one sentence says so and names the lane. The other lane stays usable (RUN-1). A lost connection is shown. When an action ends without doing what was asked, a notice says what did not happen (INV-12) |
 | WEB-12 | Texts for people are written for people: platform names not ids, no Python lists, no exception class names |
+| WEB-15 | A localization made from an earlier text of the source is marked as older than the source, and re-translating is offered |
 
 ### 5.7 Persistence
 
@@ -277,10 +279,17 @@ check that the plan it got is in the language it asked for.
   the first: it keeps the project and updates the first one's platform draft.
   The approval names the title that is replaced (PUB-5); start a new
   conversation for another article.
-- A post read from a blog platform (`existing_source`) or already published
-  cannot be edited on the page; a draft source post and localized posts can be
-  edited on the page before publication. Titles can be changed in the page's
-  editor, not in a chat.
+- A post that is already public cannot be changed here, on the page or by the
+  agent (PUB-11); it is edited on its site. Every other post can be edited
+  before publication: a localized post, a draft source post, and the copy of
+  a post that was read from its blog platform (`existing_source`). Editing
+  that copy never writes to the platform (INV-4). The agent sets a title or
+  replaces one quoted passage at a time; a passage that is not in the post,
+  or is there more than once, is refused and has to be quoted longer.
+- "Older than the source" (WEB-15) compares the source text only: changing
+  just the title of the source post marks nothing. A localization made before
+  this was recorded is not marked either. Re-translating makes both
+  localizations again and replaces edits made to them.
 - The agent takes all answers of a turn at once. Answering one approval
   request therefore declines the others pending at that moment (INV-1); they
   have to be asked for again.
@@ -378,7 +387,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | SRC-3 | `test_fetched_qiita_post_becomes_final_seed_and_existing_source`, `test_a_post_read_from_the_naver_page_goes_on_with_a_notice`, `test_naver_html_extraction_keeps_paragraphs_and_code` |
 | SRC-4 | `test_seed_gate_blocks_an_unfinalized_seed`, `test_finalize_requires_a_seed`, `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it` |
 | SRC-5 | No unit test: nothing in the code asks for companion code, so there is no behaviour to check |
-| SRC-6 | `test_another_article_in_the_same_session_keeps_nothing_of_the_first`, `test_a_revised_seed_discards_what_was_made_from_the_old_text`, `test_a_revised_seed_leaves_no_file_of_the_old_text_behind`, `test_a_file_left_from_an_earlier_text_cannot_be_saved_back` |
+| SRC-6 | `test_another_article_in_the_same_session_keeps_nothing_of_the_first`, `test_a_revised_seed_discards_what_was_made_from_the_old_text`, `test_a_revised_seed_leaves_no_file_of_the_old_text_behind`, `test_a_file_left_from_an_earlier_text_cannot_be_saved_back`, `test_a_localization_older_than_the_source_is_marked` |
 | LOC-1 | `test_language_gate_skips_the_source_language`, `test_language_gate_runs_a_target_language`, `test_localized_title_is_used_for_target_languages_only` |
 | LOC-2 | `test_altered_code_is_an_error`, `test_missing_code_block_link_and_heading_are_errors`, `test_mermaid_structure_must_not_change`, `test_plain_text_block_translates_prose_lines_only`, `test_english_plain_text_block_stays_verbatim`, `test_plain_text_blocks_are_copied_for_an_english_source_and_translated_otherwise` |
 | LOC-3 | `test_writer_refiner_and_critic_get_the_same_words_on_facts_and_examples` |
@@ -391,10 +400,11 @@ what the models then did was read in real runs, recorded in `README.md`.
 | PUB-4 | `test_the_title_sent_is_the_finalized_one_and_the_model_has_no_say` |
 | PUB-5 | `test_posting_pauses_for_human_approval_and_sends_nothing`, `test_an_approval_without_a_choice_means_a_private_draft`, `test_the_approval_names_the_draft_it_replaces` |
 | PUB-6 | `test_an_approved_post_creates_a_draft_and_the_next_one_updates_it`, `test_only_the_approving_person_can_make_a_post_public` |
-| PUB-7 | `test_the_naver_export_carries_nothing_that_can_run_code`, `test_exporting_again_never_forgets_a_registered_address`, `test_finalizing_korean_writes_the_naver_file_from_the_finalized_text`, `test_edit_replaces_what_the_agent_will_publish`, `test_svg_and_math_are_dropped_with_what_they_hold`, `test_an_embed_tag_does_not_swallow_the_rest_of_the_article`, `test_an_aligned_table_cell_keeps_one_style_attribute`, `test_an_edit_the_export_refuses_leaves_no_naver_file_to_paste` |
+| PUB-7 | `test_the_naver_export_carries_nothing_that_can_run_code`, `test_exporting_again_never_forgets_a_registered_address`, `test_finalizing_korean_writes_the_naver_file_from_the_finalized_text`, `test_edit_replaces_what_the_agent_will_publish`, `test_svg_and_math_are_dropped_with_what_they_hold`, `test_an_embed_tag_does_not_swallow_the_rest_of_the_article`, `test_an_aligned_table_cell_keeps_one_style_attribute`, `test_an_edit_the_export_refuses_leaves_no_naver_file_to_paste`, `test_the_naver_file_follows_an_edit_by_the_agent` |
 | PUB-8 | `test_a_registered_address_must_be_on_the_platforms_own_site`, `test_a_registered_address_is_recorded_and_checked` |
 | PUB-9 | `test_the_finalize_tool_records_nothing_until_a_person_confirms`, `test_finalizing_in_a_chat_waits_for_the_person` |
 | PUB-10 | `test_tags_follow_each_platforms_own_rule`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs` |
+| PUB-11 | `test_a_post_is_changed_through_one_function_whoever_changes_it`, `test_the_agent_replaces_a_quoted_passage_and_nothing_else`, `test_a_passage_that_is_missing_or_repeated_is_refused`, `test_a_public_post_is_not_changed_by_the_agent` |
 | SLD-1 | `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck`, `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
 | SLD-2 | `test_slide_timing_passes_for_one_minute_scripts`, `test_slide_timing_names_the_slides_to_fix`, `test_slide_timing_wants_words_for_the_title_and_thank_you_slides`, `test_slide_numbers_must_run_from_one_without_gaps_or_repeats`, `test_the_brief_decides_the_language_of_a_plan` |
 | SLD-3 | `test_the_planner_is_told_what_is_said_on_the_title_and_thank_you_slides` |
@@ -425,6 +435,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
 | WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
 | WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs` |
+| WEB-15 | `test_a_localization_older_than_the_source_is_marked` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |
 | PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart` |
 | PER-3 | `test_sqlite_store_survives_reopening`, `test_seed_revisions_are_numbered_and_persisted` |

@@ -28,6 +28,7 @@ from app.markdown_checks import (
 )
 from app.settings import (
     LANGUAGE_NAMES,
+    MAX_TITLE_CHARS,
     PLATFORM_FOR_LANGUAGE,
     render_mermaid_enabled,
 )
@@ -111,8 +112,15 @@ Stage 2 - Localization
     example "Shorten the English title" or "Make the Korean intro less
     formal"), always act on the blog post immediately without asking whether
     they mean the post or the slides and without asking them to supply the
-    text: call read_article_post(language), craft the improved title or
-    Markdown yourself, and save it right away with update_article_post.
+    text: call read_article_post(language) first. For a title, craft the
+    improved title yourself and save it right away with
+    set_article_post_title. For the text, call
+    replace_passage_in_article_post once for each passage that changes: quote
+    the passage exactly as read_article_post returned it and give the passage
+    that replaces it. Never retype a whole post. If the call answers that the
+    passage was not found or occurs more than once, quote a longer passage so
+    that it occurs exactly once and call again. A post that is already public
+    is not changed here: tell the user to edit it on the site.
 Stage 3 - Publishing
   - Requires the user's go-ahead for each platform, and a post the user has
     finalized. On the web page they press Finalize. Elsewhere, when they say
@@ -310,7 +318,8 @@ def title_localizer_instruction(ctx: ReadonlyContext) -> str:
         "would choose: same meaning and scope, no added claims, no clickbait.\n"
         "- Keep product names, API names and series numbering (such as ①, ⑤-2, "
         "Part 3) exactly as in the source.\n"
-        "- At most 120 characters each. No surrounding quotes, no Markdown.\n"
+        f"- At most {MAX_TITLE_CHARS} characters each. No surrounding quotes, "
+        "no Markdown.\n"
         "\n"
         f"{_MARKER_RULE}\n\n"
         f"Title:\n{fenced(title[:MAX_TITLE_IN_PROMPT])}\n\n"

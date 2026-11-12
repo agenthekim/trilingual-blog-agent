@@ -6,10 +6,11 @@ import asyncio
 
 import pytest
 
-from app import platforms, state
+from app import platforms, policy, state
 from app.persistence import SqliteArticleStore, get_article_store
+from app.settings import workspace_dir
 from app.tools import articles, publish, slides
-from tests.unit.conftest import SEED_KO, FakeToolContext
+from tests.unit.conftest import SEED_KO, FakeToolContext, finalize
 
 FAKE_KEY = "AIza" + "B" * 35
 
@@ -800,3 +801,195 @@ def test_markdown_tables_are_extracted_and_placed_as_native_slide_tables(
     assert reqs[0]["createTable"]["objectId"] == "slide_001_table"
     inserted = [r["insertText"]["text"] for r in reqs if "insertText" in r]
     assert "Standard" in inserted and "1000 MB/s" in inserted
+
+
+# --- changing a post that exists (PUB-11) -----------------------------------
+
+
+def test_the_agent_replaces_a_quoted_passage_and_nothing_else(
+    finalized_project,
+) -> None:
+    before = finalized_project.state[state.localized_key("en")]
+    finalized_project.state[state.LOCALIZED_TITLES] = {"en": "Title"}
+    finalize(finalized_project, "en")
+    project_id = finalized_project.state[state.PROJECT_ID]
+
+    result = articles.replace_passage_in_article_post(
+        "en", "끝입니다.", "That is all.", finalized_project
+    )
+
+    assert result["status"] == "success" and result["title"] == "Title"
+    after = finalized_project.state[state.localized_key("en")]
+    # The passage, and only the passage: every other character is as it was.
+    assert after == before.replace("끝입니다.", "That is all.")
+    assert after.count("That is all.") == 1 and "끝입니다." not in after
+    # The same things happen as when a person saves an edit: the file, a
+    # version, the structure check, and the sign-off is undone.
+    file = workspace_dir() / project_id / "post.en.md"
+    assert file.read_text(encoding="utf-8") == after
+    stored = get_article_store().latest_version(project_id, "en")
+    assert stored["markdown"] == after and stored["kind"] == "edited"
+    assert result["check"] == finalized_project.state[state.FIDELITY_REPORT]["en"]
+    assert result["check"]["passed"] is True
+    assert not policy.is_finalized(finalized_project.state, "en")
+    # The other posts were not touched.
+    assert finalized_project.state[state.SEED_MARKDOWN] == SEED_KO
+
+    # A title is set without retyping the text; the heading line follows it.
+    titled = articles.set_article_post_title(
+        "en", "  A better title ", finalized_project
+    )
+    assert titled["title"] == "A better title"
+    assert finalized_project.state[state.LOCALIZED_TITLES]["en"] == "A better title"
+    assert finalized_project.state[state.localized_key("en")] == after.replace(
+        "# Title\n", "# A better title\n"
+    )
+    # A heading that says something else than the old title is left alone,
+    # and so is a line in a code block that only looks like a heading.
+    again = articles.set_article_post_title("ja", "新しい題", finalized_project)
+    assert again["status"] == "success"
+    japanese = finalized_project.state[state.localized_key("ja")]
+    assert japanese.startswith("# タイトル\n") and "# 주석입니다" in japanese
+
+
+def test_a_passage_that_is_missing_or_repeated_is_refused(finalized_project) -> None:
+    before = dict(finalized_project.state)
+    project_id = finalized_project.state[state.PROJECT_ID]
+
+    missing = articles.replace_passage_in_article_post(
+        "en", "a sentence that is not there", "x", finalized_project
+    )
+    assert missing["status"] == "error"
+    assert missing["error_code"] == "PASSAGE_NOT_FOUND"
+    assert "occurrences: 0" in missing["message"]
+    assert "read_article_post" in missing["recovery_instruction"]
+
+    # '## ' opens two headings of the post.
+    repeated = articles.replace_passage_in_article_post(
+        "en", "## ", "### ", finalized_project
+    )
+    assert repeated["error_code"] == "PASSAGE_NOT_UNIQUE"
+    assert "occurs 2 times" in repeated["message"]
+    assert "quote a longer passage" in repeated["recovery_instruction"]
+    assert "occurs once" in repeated["recovery_instruction"]
+
+    # Nothing was written by either: no state, no file, no version.
+    assert finalized_project.state == before
+    assert not (workspace_dir() / project_id / "post.en.md").exists()
+    assert get_article_store().latest_version(project_id, "en") is None
+
+    # Quoted longer, the same change goes through.
+    done = articles.replace_passage_in_article_post(
+        "en", "## 정리", "### 정리", finalized_project
+    )
+    assert done["status"] == "success"
+
+    # A replacement that would leave no post is refused as well.
+    whole = finalized_project.state[state.localized_key("en")]
+    emptied = articles.replace_passage_in_article_post(
+        "en", whole, "", finalized_project
+    )
+    assert emptied["error_code"] == "POST_SIZE_OUT_OF_RANGE"
+    assert finalized_project.state[state.localized_key("en")] == whole
+
+
+def test_a_public_post_is_not_changed_by_the_agent(finalized_project) -> None:
+    finalized_project.state[state.PUBLICATIONS] = {
+        "devto": {
+            "platform": "devto",
+            "language": "en",
+            "state": "published",
+            "url": "https://dev.to/someone/a-post-1abc",
+        }
+    }
+    before = dict(finalized_project.state)
+    project_id = finalized_project.state[state.PROJECT_ID]
+
+    for result in (
+        articles.replace_passage_in_article_post(
+            "en", "끝입니다.", "That is all.", finalized_project
+        ),
+        articles.set_article_post_title("en", "Another title", finalized_project),
+        articles.apply_post_edit(
+            "en", "Another title", "# New\n\nText.", finalized_project
+        ),
+    ):
+        assert result["status"] == "error"
+        assert result["error_code"] == "POST_IS_PUBLIC"
+        assert "DEV Community" in result["message"]
+        assert "on the site" in result["recovery_instruction"]
+    assert finalized_project.state == before
+    assert not (workspace_dir() / project_id / "post.en.md").exists()
+    assert get_article_store().latest_version(project_id, "en") is None
+
+    # A draft on the platform is not public: the post can still be changed.
+    finalized_project.state[state.PUBLICATIONS] = {
+        "devto": {"platform": "devto", "language": "en", "state": "draft"}
+    }
+    assert (
+        articles.set_article_post_title("en", "Another title", finalized_project)[
+            "status"
+        ]
+        == "success"
+    )
+
+
+def test_the_naver_file_follows_an_edit_by_the_agent(finalized_project) -> None:
+    project_id = finalized_project.state[state.PROJECT_ID]
+    naver = workspace_dir() / project_id / "naver_blog.html"
+    publish.export_naver_blog_paste_ready_html(finalized_project)
+    assert "끝입니다." in naver.read_text(encoding="utf-8")
+
+    # The Korean text changes: the file to paste is written again from it.
+    result = articles.replace_passage_in_article_post(
+        "ko", "끝입니다.", "여기까지입니다.", finalized_project
+    )
+    assert result["status"] == "success" and result["naver_file"] == "written"
+    html = naver.read_text(encoding="utf-8")
+    assert "여기까지입니다." in html and "끝입니다." not in html
+
+    # A text the export refuses leaves no file behind to be pasted by mistake.
+    result = articles.replace_passage_in_article_post(
+        "ko", "여기까지입니다.", f"키는 {FAKE_KEY} 입니다.", finalized_project
+    )
+    assert result["status"] == "success" and result["naver_file"] == "removed"
+    assert not naver.exists()
+
+    # A post in another language has no Naver file to follow it.
+    result = articles.set_article_post_title("en", "Another title", finalized_project)
+    assert result["naver_file"] is None and not naver.exists()
+
+
+def test_the_longest_title_is_one_number_in_one_place() -> None:
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from pydantic import ValidationError
+
+    from app import pipeline, prompts, schemas, settings, web_ui
+
+    limit = settings.MAX_TITLE_CHARS
+    assert not hasattr(pipeline, "MAX_TITLE_CHARS")
+    longest, too_long = "t" * limit, "t" * (limit + 1)
+    for build in (
+        lambda title: web_ui.EditRequest(markdown="text", title=title),
+        lambda title: schemas.PostTitleInput(language="en", title=title),
+        lambda title: schemas.LocalizedTitles(ko=title, en=title, ja=title),
+    ):
+        build(longest)
+        with pytest.raises(ValidationError):
+            build(too_long)
+    # Where the number has to be written out, it is the same number.
+    editor = Path(web_ui.__file__).parent / "static" / "edit.html"
+    assert f'id="title" maxlength="{limit}"' in editor.read_text(encoding="utf-8")
+    assert f"at most {limit} characters" in articles.set_article_post_title.__doc__
+    asked = prompts.title_localizer_instruction(
+        SimpleNamespace(
+            state={
+                state.SEED_TITLE: "제목",
+                state.SEED_MARKDOWN: SEED_KO,
+                state.SOURCE_LANGUAGE: "ko",
+            }
+        )
+    )
+    assert f"- At most {limit} characters each." in asked

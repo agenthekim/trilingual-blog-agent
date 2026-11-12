@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from typing import Any
 
@@ -24,6 +25,10 @@ FINALIZED_POSTS = "finalized_posts"
 # Per pending request to finalize, the digest of what the person was asked
 # about, so a yes cannot be carried over to a text that changed meanwhile.
 FINALIZATIONS_ASKED = "finalizations_asked"
+# Per language, the digest of the source text a localization was made from
+# (see source_digest). When the source text has another digest now, that
+# localization is older than the source (WEB-15).
+LOCALIZED_FROM = "localized_from"
 
 # Slide planning works on one language at a time. These three keys are the
 # working area of the planning run in progress; nothing reads them afterwards.
@@ -70,6 +75,7 @@ DERIVED_FROM_SEED = (
     LOCALIZED_TITLES,
     FINALIZED_POSTS,
     FINALIZATIONS_ASKED,
+    LOCALIZED_FROM,
     PRESENTATION_BRIEF,
     SLIDE_DECK_PLAN,
     SLIDE_DRAFT_TIMING,
@@ -105,3 +111,21 @@ def article_title(state: Mapping[str, Any], language: str) -> str:
     return (
         (state.get(LOCALIZED_TITLES) or {}).get(language) or ""
     ).strip() or seed_title
+
+
+def source_digest(state: Mapping[str, Any]) -> str:
+    """Digest of the source text as it is now, or '' when there is none."""
+    text = state.get(SEED_MARKDOWN) or ""
+    return hashlib.sha256(text.encode()).hexdigest() if text else ""
+
+
+def older_than_source(state: Mapping[str, Any], language: str) -> bool:
+    """Whether the localization of ``language`` was made from an earlier source text.
+
+    Only what was recorded can be compared: a localization made before the
+    digest was recorded is not marked.
+    """
+    if state.get(SOURCE_LANGUAGE) == language or not state.get(localized_key(language)):
+        return False
+    made_from = (state.get(LOCALIZED_FROM) or {}).get(language)
+    return bool(made_from) and made_from != source_digest(state)

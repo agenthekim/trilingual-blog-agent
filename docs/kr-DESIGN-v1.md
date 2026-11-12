@@ -505,7 +505,7 @@ README의 기능 위치 표가 다루는 역량을 19개로 나누어, 지금 �
 | 번호 | 역량 | 지금의 근거 | 약한 곳 | 닫는 작업 |
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | 도구 설명 | 도구 18개 중 16개에 목적, `Args`, `Returns` | 2개에 매개변수 설명이 없음 (B-17) | WP-19, 06 |
-| 2 | 도구 이름 | 하는 일과 대상이 이름에 있음. 예: `publish_qiita_article_draft` | `update_article_post`는 무엇을 어떻게 바꾸는지 이름에 없음 | WP-06 |
+| 2 | 도구 이름 | 하는 일과 대상이 이름에 있음. 예: `publish_qiita_article_draft` | 없음. `update_article_post`는 WP-06에서 `set_article_post_title`과 `replace_passage_in_article_post`로 바뀜 | – |
 | 3 | 명시적 스키마 | `app/schemas.py`의 입력, 출력 모델. `output_schema` 3개 | 허용 값이 모델에 전달되지 않음. 7개 도구는 직접 비교로 검사 (B-17) | WP-19 |
 | 4 | 복구를 안내하는 오류 | 18개 모두 `error_code`와 `recovery_instruction`을 돌려줌 | 없음. 새 도구도 같아야 함 | WP-19의 테스트 |
 | 5 | 시스템 지시문 | `COORDINATOR_INSTRUCTION`의 역할, 도메인 지식, 세션 상태, 작업 흐름, 제약 구획 | 없음. WP-05, 06이 문단을 고칠 때 구획을 유지 | – |

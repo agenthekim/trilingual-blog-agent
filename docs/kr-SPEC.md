@@ -95,7 +95,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | SRC-3 | URL은 플랫폼의 API(Qiita, DEV)로 읽거나 공개된 모바일 페이지(Naver)에서 읽는다. 그 플랫폼은 원본으로 기록하고 절대 쓰지 않는다(INV-4). Naver에서 읽은 본문은 헤딩, 목록, 링크가 빠질 수 있으며, 그때는 그 사실을 알리는 알림이 실행에 붙는다 |
 | SRC-4 | 시드는 웹 페이지나 스크립트가 저장하는 시점에 최종본이 된다. 채팅에서는 작성자가 그렇다고 말할 때에만 최종본이 된다 |
 | SRC-5 | 글에 딸린 코드는 선택 사항이며, 어떤 경우에도 요구하지 않는다 |
-| SRC-6 | 실행 하나는 글 한 편을 담는다. 같은 세션에 다른 게시된 글을 읽어 오면 새 프로젝트가 시작되고 이전 글의 것은 아무것도 남지 않는다. 시드 본문을 고치면 이전 본문으로 만든 현지화본, 확정, 슬라이드 계획과 그 파일들이 폐기된다. 게시 기록과 덱은 여전히 그 글의 것이므로 남는다. 이전 본문에서 남은 게시물 파일은 다시 저장할 수 없다 |
+| SRC-6 | 실행 하나는 글 한 편을 담는다. 같은 세션에 다른 게시된 글을 읽어 오면 새 프로젝트가 시작되고 이전 글의 것은 아무것도 남지 않는다. 시드 본문을 고치면 이전 본문으로 만든 현지화본, 확정, 슬라이드 계획과 그 파일들이 폐기된다. 게시 기록과 덱은 여전히 그 글의 것이므로 남는다. 이전 본문에서 남은 게시물 파일은 다시 저장할 수 없다. 원본 언어 게시물을 페이지에서든 에이전트를 통해서든 편집하면 현지화본과 슬라이드 계획은 남는다. 이전 본문으로 만든 현지화본은 다시 만들 때까지 원본보다 오래된 것으로 표시된다(WEB-15) |
 
 ### 5.2 현지화
 
@@ -118,10 +118,11 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | PUB-4 | 전송되는 제목은 확정된 제목이다. 게시 도구는 태그만 받고 그 밖에는 아무것도 받지 않으므로 모델이 다른 제목을 지정할 수 없다 |
 | PUB-5 | 승인 요청에는 플랫폼, 제목, 태그, 그리고 초안을 새로 만드는지 갱신하는지가 명시된다. 갱신할 초안이 플랫폼에서 다른 제목을 달고 있으면 그 제목도 명시된다. 공개 여부를 선택하지 않은 승인은 비공개 초안을 뜻한다(INV-2) |
 | PUB-6 | 이미 있는 초안은 갱신하며 절대 중복해서 만들지 않는다. 공개된 게시물은 다시 게시하지 않는다 |
-| PUB-7 | Naver: HTML 내보내기 파일은 실행 중에 작성하고, 한국어 게시물이 편집될 때마다, 그리고 확정될 때 다시 작성한다. 이 파일에는 스크립트, 이벤트 핸들러, `javascript:` 링크, SVG, MathML이 없다. 내보내기가 거부한 본문은 파일을 남기지 않는다. 다시 내보내도 등록된 URL은 절대 폐기되지 않는다 |
+| PUB-7 | Naver: HTML 내보내기 파일은 실행 중에 작성하고, 사람이든 에이전트든 한국어 게시물을 바꿀 때마다, 그리고 확정될 때 다시 작성한다. 이 파일에는 스크립트, 이벤트 핸들러, `javascript:` 링크, SVG, MathML이 없다. 내보내기가 거부한 본문은 파일을 남기지 않는다. 다시 내보내도 등록된 URL은 절대 폐기되지 않는다 |
 | PUB-8 | 등록하는 URL은 해당 플랫폼 호스트의 https 주소여야 하고, 그 플랫폼은 원본이 아니어야 한다. 그런 다음 그 URL을 가져와 보고, 응답하지 않으면 알림으로 그 사실을 알린다 |
 | PUB-9 | 페이지가 없는 환경(채팅, 스크립트)에서는 사람에게 확인을 요청하고 본문 길이를 알려 주는 도구로 게시물을 확정한다. 스크립트는 입력 프롬프트에서 묻는다 |
 | PUB-10 | 태그는 다른 어떤 일보다 먼저 플랫폼 자체 규칙에 맞는지 검사한다. DEV는 최대 네 개이며 소문자와 숫자로 쓴다. Qiita는 한 개에서 다섯 개이며 공백이 없다 |
+| PUB-11 | 게시물의 제목과 본문은 누가 바꾸든 함수 하나를 거쳐 바뀐다. 이 함수는 공개된 게시물을 거절하고, 현지화본의 구조를 다시 검사하고, 판을 남기고, Naver 파일을 쓰거나 지운다. 에이전트는 정확히 인용한 구절이 게시물에 한 번만 있을 때 그 구절을 바꾸는 방식으로 본문을 고치며, 게시물을 다시 타이핑하지 않는다 |
 
 ### 5.4 발표와 슬라이드
 
@@ -167,6 +168,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | WEB-10 | Settings는 고정된 언어-플랫폼 대응, 자격 증명별 설정 여부, 그리고 덱이 들어가는 Google 계정을 그 시점에 서버가 보고한 대로 보여 준다. 시크릿의 이름이나 값은 표시하지 않는다 |
 | WEB-11 | 레인이 작업하는 동안에는 그 레인에서 다른 어떤 것도 시작할 수 없으며, 한 문장으로 그 사실을 알리고 어느 레인인지 말한다. 다른 레인은 계속 쓸 수 있다(RUN-1). 연결이 끊기면 이를 표시한다. 작업이 요청대로 수행되지 않은 채 끝나면 무엇이 이루어지지 않았는지 알림으로 알린다(INV-12) |
 | WEB-12 | 사람에게 보여 주는 문구는 사람이 읽도록 쓴다. ID가 아닌 플랫폼 이름을 쓰고, Python 리스트나 예외 클래스 이름은 쓰지 않는다 |
+| WEB-15 | 원본의 이전 본문으로 만든 현지화본은 원본보다 오래된 것으로 표시하고, 다시 번역하기를 제안한다 |
 
 ### 5.7 영속성
 
@@ -273,10 +275,17 @@ flowchart TD
 - 채팅에서 같은 대화에 두 번째 초안을 저장하면 첫 번째 초안의 수정으로
   처리된다. 프로젝트가 유지되고 첫 번째 글의 플랫폼 초안이 갱신된다. 승인
   요청은 교체되는 제목을 명시한다(PUB-5). 다른 글은 새 대화에서 시작한다.
-- 블로그 플랫폼에서 읽어 온 게시물(`existing_source`)이나 이미 공개된 게시물은
-  페이지에서 편집할 수 없으며, 초안으로 입력된 원본 언어 게시물과 현지화된
-  게시물은 공개 전에 페이지에서 편집할 수 있다. 제목은 채팅이 아니라 페이지의
-  편집기에서 바꿀 수 있다.
+- 이미 공개된 게시물은 페이지에서도 에이전트로도 바꿀 수 없다(PUB-11). 공개된
+  게시물은 그 사이트에서 편집한다. 그 밖의 게시물은 공개 전에 모두 편집할 수
+  있다. 현지화된 게시물, 초안으로 입력된 원본 언어 게시물, 블로그 플랫폼에서
+  읽어 온 게시물(`existing_source`)의 사본이 여기에 해당한다. 그 사본을 편집해도
+  플랫폼에는 쓰지 않는다(INV-4). 에이전트는 제목을 정하거나, 인용한 구절을 한
+  번에 하나씩 바꾼다. 게시물에 없거나 두 번 이상 나오는 구절은 거절되며, 더
+  길게 인용해야 한다.
+- "원본보다 오래됨"(WEB-15)은 원본 본문만 비교한다. 원본 게시물의 제목만 바꾸면
+  아무것도 표시되지 않는다. 이 기록이 생기기 전에 만든 현지화본도 표시되지
+  않는다. 다시 번역하면 두 현지화본을 모두 새로 만들며, 현지화본에 해 둔 편집은
+  새 번역으로 바뀐다.
 - 에이전트는 한 턴의 답을 한꺼번에 받는다. 따라서 승인 요청 하나에 답하면 그
   시점에 대기 중이던 나머지 요청은 거절된다(INV-1). 거절된 요청은 다시 요청해야
   한다.
@@ -372,7 +381,7 @@ flowchart TD
 | SRC-3 | `test_fetched_qiita_post_becomes_final_seed_and_existing_source`, `test_a_post_read_from_the_naver_page_goes_on_with_a_notice`, `test_naver_html_extraction_keeps_paragraphs_and_code` |
 | SRC-4 | `test_seed_gate_blocks_an_unfinalized_seed`, `test_finalize_requires_a_seed`, `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it` |
 | SRC-5 | No unit test: 코드 어디에서도 글에 딸린 코드를 요구하지 않으므로 검사할 동작이 없다 |
-| SRC-6 | `test_another_article_in_the_same_session_keeps_nothing_of_the_first`, `test_a_revised_seed_discards_what_was_made_from_the_old_text`, `test_a_revised_seed_leaves_no_file_of_the_old_text_behind`, `test_a_file_left_from_an_earlier_text_cannot_be_saved_back` |
+| SRC-6 | `test_another_article_in_the_same_session_keeps_nothing_of_the_first`, `test_a_revised_seed_discards_what_was_made_from_the_old_text`, `test_a_revised_seed_leaves_no_file_of_the_old_text_behind`, `test_a_file_left_from_an_earlier_text_cannot_be_saved_back`, `test_a_localization_older_than_the_source_is_marked` |
 | LOC-1 | `test_language_gate_skips_the_source_language`, `test_language_gate_runs_a_target_language`, `test_localized_title_is_used_for_target_languages_only` |
 | LOC-2 | `test_altered_code_is_an_error`, `test_missing_code_block_link_and_heading_are_errors`, `test_mermaid_structure_must_not_change`, `test_plain_text_block_translates_prose_lines_only`, `test_english_plain_text_block_stays_verbatim`, `test_plain_text_blocks_are_copied_for_an_english_source_and_translated_otherwise` |
 | LOC-3 | `test_writer_refiner_and_critic_get_the_same_words_on_facts_and_examples` |
@@ -385,10 +394,11 @@ flowchart TD
 | PUB-4 | `test_the_title_sent_is_the_finalized_one_and_the_model_has_no_say` |
 | PUB-5 | `test_posting_pauses_for_human_approval_and_sends_nothing`, `test_an_approval_without_a_choice_means_a_private_draft`, `test_the_approval_names_the_draft_it_replaces` |
 | PUB-6 | `test_an_approved_post_creates_a_draft_and_the_next_one_updates_it`, `test_only_the_approving_person_can_make_a_post_public` |
-| PUB-7 | `test_the_naver_export_carries_nothing_that_can_run_code`, `test_exporting_again_never_forgets_a_registered_address`, `test_finalizing_korean_writes_the_naver_file_from_the_finalized_text`, `test_edit_replaces_what_the_agent_will_publish`, `test_svg_and_math_are_dropped_with_what_they_hold`, `test_an_embed_tag_does_not_swallow_the_rest_of_the_article`, `test_an_aligned_table_cell_keeps_one_style_attribute`, `test_an_edit_the_export_refuses_leaves_no_naver_file_to_paste` |
+| PUB-7 | `test_the_naver_export_carries_nothing_that_can_run_code`, `test_exporting_again_never_forgets_a_registered_address`, `test_finalizing_korean_writes_the_naver_file_from_the_finalized_text`, `test_edit_replaces_what_the_agent_will_publish`, `test_svg_and_math_are_dropped_with_what_they_hold`, `test_an_embed_tag_does_not_swallow_the_rest_of_the_article`, `test_an_aligned_table_cell_keeps_one_style_attribute`, `test_an_edit_the_export_refuses_leaves_no_naver_file_to_paste`, `test_the_naver_file_follows_an_edit_by_the_agent` |
 | PUB-8 | `test_a_registered_address_must_be_on_the_platforms_own_site`, `test_a_registered_address_is_recorded_and_checked` |
 | PUB-9 | `test_the_finalize_tool_records_nothing_until_a_person_confirms`, `test_finalizing_in_a_chat_waits_for_the_person` |
 | PUB-10 | `test_tags_follow_each_platforms_own_rule`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs` |
+| PUB-11 | `test_a_post_is_changed_through_one_function_whoever_changes_it`, `test_the_agent_replaces_a_quoted_passage_and_nothing_else`, `test_a_passage_that_is_missing_or_repeated_is_refused`, `test_a_public_post_is_not_changed_by_the_agent` |
 | SLD-1 | `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck`, `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
 | SLD-2 | `test_slide_timing_passes_for_one_minute_scripts`, `test_slide_timing_names_the_slides_to_fix`, `test_slide_timing_wants_words_for_the_title_and_thank_you_slides`, `test_slide_numbers_must_run_from_one_without_gaps_or_repeats`, `test_the_brief_decides_the_language_of_a_plan` |
 | SLD-3 | `test_the_planner_is_told_what_is_said_on_the_title_and_thank_you_slides` |
@@ -419,6 +429,7 @@ flowchart TD
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
 | WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
 | WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs` |
+| WEB-15 | `test_a_localization_older_than_the_source_is_marked` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |
 | PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart` |
 | PER-3 | `test_sqlite_store_survives_reopening`, `test_seed_revisions_are_numbered_and_persisted` |

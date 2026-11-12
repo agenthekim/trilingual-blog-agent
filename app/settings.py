@@ -32,6 +32,10 @@ ALLOWED_ARTICLE_HOSTS: dict[str, str] = {
 
 HTTP_TIMEOUT_SECONDS = float(os.environ.get("BLOG_AGENT_HTTP_TIMEOUT", "20"))
 MAX_ARTICLE_CHARS = int(os.environ.get("BLOG_AGENT_MAX_ARTICLE_CHARS", "60000"))
+# The longest title a post may have, for every language and every way a title
+# is set (the title localizer, the editor page, the agent). It is below the
+# tightest platform limit (DEV Community: 128 characters).
+MAX_TITLE_CHARS = 120
 
 
 def render_mermaid_enabled() -> bool:

@@ -180,6 +180,12 @@ class LocalizationReportAgent(BaseAgent):
 
         lines = ["Localization finished.", ""]
         final_report: dict[str, Any] = {}
+        # Which source text each localization was made from, so that a later
+        # edit of the source shows them as older than it (WEB-15).
+        made_from = state.source_digest(session_state)
+        localized_from: dict[str, str] = dict(
+            session_state.get(state.LOCALIZED_FROM) or {}
+        )
         source = session_state.get(state.SOURCE_LANGUAGE)
         titles: dict[str, str] = (
             {source: state.article_title(session_state, source)} if source else {}
@@ -188,6 +194,8 @@ class LocalizationReportAgent(BaseAgent):
             text = session_state.get(state.localized_key(language)) or ""
             check = check_fidelity(seed, text)
             final_report[language] = check
+            if text:
+                localized_from[language] = made_from
             if text and project_id:
                 store.add_version(project_id, language, "localized", text)
                 file = f"post.{language}.md"
@@ -225,7 +233,10 @@ class LocalizationReportAgent(BaseAgent):
             self,
             ctx,
             "\n".join(lines),
-            state_delta={state.FIDELITY_REPORT: final_report},
+            state_delta={
+                state.FIDELITY_REPORT: final_report,
+                state.LOCALIZED_FROM: localized_from,
+            },
         )
 
 

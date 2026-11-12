@@ -59,6 +59,7 @@ from app.schemas import DevtoDraftInput, QiitaDraftInput
 from app.settings import (
     LANGUAGE_NAMES,
     LANGUAGES,
+    MAX_TITLE_CHARS,
     PLATFORM_FOR_LANGUAGE,
     render_mermaid_enabled,
     workspace_dir,
@@ -196,7 +197,7 @@ class PromptLocalizeRequest(BaseModel):
 
 class EditRequest(BaseModel):
     markdown: str = Field(min_length=1, max_length=200_000)
-    title: str | None = Field(default=None, max_length=120)
+    title: str | None = Field(default=None, max_length=MAX_TITLE_CHARS)
 
 
 class FinalizeRequest(BaseModel):

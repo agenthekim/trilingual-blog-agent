@@ -13,9 +13,15 @@ import re
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-from app.settings import ALLOWED_ARTICLE_HOSTS, MAX_ARTICLE_CHARS
+from app.settings import ALLOWED_ARTICLE_HOSTS, MAX_ARTICLE_CHARS, MAX_TITLE_CHARS
 
 LanguageCode = Literal["ko", "en", "ja"]
 PlatformName = Literal["naver_blog", "devto", "qiita"]
@@ -167,9 +173,13 @@ class LocalizedTitles(BaseModel):
     The limit is the tightest platform limit (DEV Community: 128 characters).
     """
 
-    ko: str = Field(max_length=120, description="Korean title for Naver Blog.")
-    en: str = Field(max_length=120, description="English title for DEV Community.")
-    ja: str = Field(max_length=120, description="Japanese title for Qiita.")
+    ko: str = Field(
+        max_length=MAX_TITLE_CHARS, description="Korean title for Naver Blog."
+    )
+    en: str = Field(
+        max_length=MAX_TITLE_CHARS, description="English title for DEV Community."
+    )
+    ja: str = Field(max_length=MAX_TITLE_CHARS, description="Japanese title for Qiita.")
 
 
 class LanguageReview(BaseModel):
@@ -188,6 +198,50 @@ class ReviewVerdict(BaseModel):
     overall: Literal["pass", "fail"] = Field(
         description="'pass' only if every reviewed language passes."
     )
+
+
+# ---------------------------------------------------------------------------
+# Changing a post that exists (PUB-11)
+# ---------------------------------------------------------------------------
+class PostTitleInput(BaseModel):
+    """A new title for one language's post."""
+
+    language: LanguageCode
+    title: str = Field(min_length=1, max_length=MAX_TITLE_CHARS)
+
+    @field_validator("title")
+    @classmethod
+    def _one_line_of_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("the title is empty")
+        if "\n" in value or "\r" in value:
+            raise ValueError("a title is one line")
+        return value
+
+
+class PassageReplacementInput(BaseModel):
+    """A passage quoted from one language's post, and what to put in its place."""
+
+    language: LanguageCode
+    passage: str = Field(min_length=1, max_length=MAX_ARTICLE_CHARS)
+    replacement: str = Field(
+        max_length=MAX_ARTICLE_CHARS,
+        description="The new passage; an empty string removes the quoted one.",
+    )
+
+    @field_validator("passage")
+    @classmethod
+    def _says_something(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("the quoted passage is empty")
+        return value
+
+    @model_validator(mode="after")
+    def _changes_something(self) -> PassageReplacementInput:
+        if self.passage == self.replacement:
+            raise ValueError("replacement is the same as passage; nothing would change")
+        return self
 
 
 # ---------------------------------------------------------------------------

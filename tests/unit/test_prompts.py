@@ -200,6 +200,43 @@ def test_the_coordinator_is_told_how_slides_are_asked_for_on_each_surface() -> N
         assert f"<{section}>" in text and f"</{section}>" in text
 
 
+def test_the_coordinator_changes_a_post_one_quoted_passage_at_a_time() -> None:
+    text = prompts.COORDINATOR_INSTRUCTION
+    stage = text.split("Stage 2 - Localization", 1)[1].split("Stage 3 - Publishing", 1)[
+        0
+    ]
+    # The post is read first, then changed with the two tools of PUB-11.
+    assert "call read_article_post(language) first" in stage
+    assert (
+        "For a title, craft the\n    improved title yourself and save it right away "
+        "with\n    set_article_post_title." in stage
+    )
+    assert (
+        "For the text, call\n    replace_passage_in_article_post once for each "
+        "passage that changes: quote\n    the passage exactly as read_article_post "
+        "returned it" in stage
+    )
+    assert "Never retype a whole post." in stage
+    # What to do when the passage is refused, and when the post is public.
+    assert (
+        "quote a longer passage so\n    that it occurs exactly once and call again"
+        in stage
+    )
+    assert "A post that is already public\n    is not changed here" in stage
+    # The tool that took a whole new text is not named anywhere any more.
+    assert "update_article_post" not in text
+    # It still acts at once, without asking back.
+    assert "always act on the blog post immediately" in stage
+    for section in (
+        "role",
+        "domain_knowledge",
+        "session_status",
+        "workflow",
+        "constraints",
+    ):
+        assert f"<{section}>" in text and f"</{section}>" in text
+
+
 def _inside_markers(text: str, needle: str) -> bool:
     at = text.index(needle)
     opened = [

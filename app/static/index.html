@@ -81,6 +81,7 @@
   table.results td:last-child, table.results th:last-child { padding-right:0; }
   table.results .who { font-weight:600; white-space:nowrap; }
   table.results .lang .badge { display:inline-block; margin-top:6px; }
+  table.results .lang .stale { display:grid; gap:4px; justify-items:start; }
   table.results .title { font-weight:600; min-width:180px; }
   table.results .files a { display:inline-block; }
   table.results .files div { display:flex; align-items:center; gap:4px; min-height:24px; white-space:nowrap; }
@@ -800,8 +801,13 @@ function languageRow(row, slidesBusy, pBusy) {
         el("span", {class: "muted small"}, pasteHint));
     }
   }
+  // A localization made from an earlier text of the source says so, and
+  // offers to make it again: the request is put in the message box, unsent.
+  const stale = row.older_than_source ? el("div", {class: "stale"},
+    el("span", {class: "badge warn", title: "The source article was edited after this post was translated from it."}, "Older than the source"),
+    el("button", {type: "button", class: "ghost small", onclick: offerRetranslation}, "Re-translate…")) : null;
   return el("tr", {},
-    el("td", {class: "lang"}, el("div", {class: "who"}, langName), el("span", {class: "badge " + tone}, label)),
+    el("td", {class: "lang"}, el("div", {class: "who"}, langName), el("span", {class: "badge " + tone}, label), stale),
     el("td", {class: "title"}, row.title),
     files,
     slidesCol,
@@ -1346,6 +1352,13 @@ function deletePromptHistoryItem(text) {
   savePromptHistory(list);
   renderPromptChips();
   renderPromptsModal();
+}
+
+// The built-in request to localize again, in the language of the page.
+const RETRANSLATE_PROMPT = 3;  // its place in ESSENTIAL_PROMPTS_BY_LANG
+function offerRetranslation() {
+  const list = ESSENTIAL_PROMPTS_BY_LANG[currentUiLang] || ESSENTIAL_PROMPTS_BY_LANG.en;
+  fillPromptInput(list[RETRANSLATE_PROMPT]);
 }
 
 function fillPromptInput(text) {

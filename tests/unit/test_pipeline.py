@@ -748,3 +748,147 @@ async def test_draft_source_language_post_can_be_edited_before_finalizing(
     assert rows["ko"]["finalized"] is False  # editing undoes finalization
     # Localized posts remain intact.
     assert rows["en"]["title"] and rows["ja"]["title"]
+
+
+@pytest.mark.asyncio
+async def test_a_post_is_changed_through_one_function_whoever_changes_it(
+    isolated_workspace, monkeypatch
+) -> None:
+    """PUB-11: the editor page and the agent's two tools end in apply_post_edit."""
+    from app import pipeline as pipeline_module
+    from app.agent import root_agent
+    from app.persistence import get_article_store
+    from app.tools import articles
+    from tests.unit.conftest import FakeToolContext
+
+    calls: list[tuple[str, str, str]] = []
+    real = articles.apply_post_edit
+
+    def recorded(language, title, markdown, tool_context):
+        calls.append((language, title, markdown))
+        return real(language, title, markdown, tool_context)
+
+    monkeypatch.setattr(articles, "apply_post_edit", recorded)
+    monkeypatch.setattr(pipeline_module, "apply_post_edit", recorded)
+
+    # A person, through the editor page.
+    pipeline = await _pipeline_with_article()
+    edited = "# 제목\n\n손으로 고친 본문입니다. [링크](https://example.com)"
+    saved = await pipeline.save_edit("post.ko.md", edited, title="새 제목")
+    assert calls == [("ko", "새 제목", edited + "\n")]
+    by_hand = await pipeline.session_state()
+
+    # The agent, with the tools it is given. There is no third one: the tool
+    # that took a whole new text is gone.
+    tools = {getattr(tool, "__name__", "") for tool in root_agent.tools}
+    assert {"set_article_post_title", "replace_passage_in_article_post"} <= tools
+    assert "update_article_post" not in tools
+    assert not hasattr(articles, "update_article_post")
+    context = FakeToolContext(by_hand)
+    articles.set_article_post_title("ko", "또 다른 제목", context)
+    articles.replace_passage_in_article_post("ko", "손으로", "도구로", context)
+    assert [call[:2] for call in calls[1:]] == [("ko", "또 다른 제목"), ("ko", "")]
+    assert calls[2][2] == (edited + "\n").replace("손으로", "도구로")
+
+    # Whoever it was, the same things were done: the text and title in the
+    # session, the structure check, a version, the file and the Naver file.
+    folder = workspace_dir() / "proj-3"
+    for session, title, text in (
+        (by_hand, "새 제목", edited + "\n"),
+        (context.state, "또 다른 제목", (edited + "\n").replace("손으로", "도구로")),
+    ):
+        assert session[state.localized_key("ko")] == text
+        assert session[state.LOCALIZED_TITLES]["ko"] == title
+        assert session[state.FIDELITY_REPORT]["ko"]["passed"] is True
+        assert session[state.PUBLICATIONS]["naver_blog"]["title"] == title
+    assert saved["check"] == by_hand[state.FIDELITY_REPORT]["ko"]
+    stored = get_article_store().latest_version("proj-3", "ko")
+    assert stored["kind"] == "edited" and "도구로 고친" in stored["markdown"]
+    assert "도구로 고친" in (folder / "post.ko.md").read_text(encoding="utf-8")
+    assert "도구로 고친" in (folder / "naver_blog.html").read_text(encoding="utf-8")
+
+    # What the function refuses reaches the person as a sentence.
+    await pipeline._update_state(
+        {
+            state.PUBLICATIONS: {
+                **by_hand[state.PUBLICATIONS],
+                "naver_blog": {
+                    "platform": "naver_blog",
+                    "language": "ko",
+                    "state": "published",
+                    "url": "https://blog.naver.com/someone/223456789012",
+                },
+            }
+        }
+    )
+    with pytest.raises(ValueError, match="no longer be edited"):
+        await pipeline.save_edit("post.ko.md", edited)
+    assert len(calls) == 3  # refused before anything was changed
+
+
+@pytest.mark.asyncio
+async def test_a_localization_older_than_the_source_is_marked(
+    isolated_workspace,
+) -> None:
+    """SRC-6, WEB-15: editing the source keeps what was made from it, and says so."""
+    from app.workflow_agents import LocalizationReportAgent
+    from tests.unit.test_workflow_gates import run_agent
+
+    async def localized(session_state: dict) -> dict:
+        """The state after the report step of a localization run."""
+        events = await run_agent(
+            LocalizationReportAgent(name="localization_report"), session_state
+        )
+        after = dict(session_state)
+        for event in events:
+            after.update(event.actions.state_delta or {})
+        return after
+
+    def older(session_state: dict) -> dict[str, bool]:
+        rows = overview(session_state)["rows"]
+        return {row["language"]: row["older_than_source"] for row in rows}
+
+    pipeline = await _pipeline_with_article()
+    await pipeline._update_state(
+        {
+            state.localized_key("en"): "# Title\n\nText. [link](https://example.com)\n",
+            state.SLIDE_PLANS: {"en": _plan("en")},
+        }
+    )
+    write_workspace_file("proj-3", "post.en.md", "# Title\n\nText.\n")
+    before = await pipeline.session_state()
+    # A localization whose source text was never recorded is not marked.
+    assert older(before) == {"ko": False, "en": False, "ja": False}
+
+    # The report step records, per language, which source text it was made from.
+    made = await localized(before)
+    assert made[state.LOCALIZED_FROM] == {
+        "ko": state.source_digest(before),
+        "en": state.source_digest(before),
+    }
+    assert older(made) == {"ko": False, "en": False, "ja": False}
+    await pipeline._update_state({state.LOCALIZED_FROM: made[state.LOCALIZED_FROM]})
+
+    # The source-language post is edited: the localizations and the plan stay,
+    # and each localization is marked as older than the source.
+    await pipeline.save_edit(
+        "post.ja.md", "# 見出し\n\n書き直した本文です。[リンク](https://example.com)"
+    )
+    current = await pipeline.session_state()
+    assert current[state.localized_key("ko")] == before[state.localized_key("ko")]
+    assert current[state.localized_key("en")] == before[state.localized_key("en")]
+    assert current[state.SLIDE_PLANS] == before[state.SLIDE_PLANS]
+    assert older(current) == {"ko": True, "en": True, "ja": False}
+    assert (await pipeline.overview())["rows"][0]["older_than_source"] is True
+
+    # Editing a localization does not make it newer: it is still from the old text.
+    await pipeline.save_edit(
+        "post.ko.md", "# 제목\n\n고친 본문입니다. [링크](https://example.com)"
+    )
+    assert older(await pipeline.session_state())["ko"] is True
+
+    # Localized again from the text as it is now, the mark is gone.
+    again = await localized(await pipeline.session_state())
+    assert older(again) == {"ko": False, "en": False, "ja": False}
+    # A different article in the session keeps no record of the old one.
+    assert state.LOCALIZED_FROM in state.DERIVED_FROM_SEED

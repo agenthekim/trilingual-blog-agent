@@ -37,9 +37,7 @@ from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 
 from app import deck_sync, google_slides, platforms, policy, state
-from app.markdown_checks import check_fidelity
 from app.observability import log_event
-from app.persistence import get_article_store
 from app.policy import API_PLATFORMS, PLATFORM_NAMES
 from app.redaction import find_secrets, redact_credentials
 from app.settings import (
@@ -53,6 +51,7 @@ from app.settings import (
 )
 from app.structurer import auto_structure_markdown, needs_markdown_structuring
 from app.tools.articles import (
+    apply_post_edit,
     fetch_published_article_markdown,
     finalize_seed_article,
     has_title_line,
@@ -84,7 +83,6 @@ from app.tools.slides import (
 __all__ = ["API_PLATFORMS", "PLATFORM_NAMES", "ArticlePipeline"]
 
 _EDITABLE_FILE = re.compile(r"^(post|slides)\.(ko|en|ja)\.md$")
-MAX_TITLE_CHARS = 120
 MIN_DRAFT_CHARS = 50  # what the seed tool accepts as a whole article
 USER_ID = "pipeline"
 CONFIRMATION_CALL = "adk_request_confirmation"
@@ -118,6 +116,7 @@ MERGED_KEYS = frozenset(
         state.FIDELITY_REPORT,
         state.FINALIZED_POSTS,
         state.FINALIZATIONS_ASKED,
+        state.LOCALIZED_FROM,
         state.PUBLICATIONS,
         state.SLIDE_PLANS,
         state.SLIDE_TIMING,
@@ -233,6 +232,9 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 # its 'original' step so it is never re-posted to its blog.
                 "can_edit": has_text
                 and step in ("original", "review", "post", "paste"),
+                # A localization made from an earlier text of the source
+                # (WEB-15). Editing the source keeps it; this says so.
+                "older_than_source": state.older_than_source(session_state, language),
                 "slides_file": existing(slide_plan_file(language))
                 if language in plans
                 else None,
@@ -1314,13 +1316,21 @@ class ArticlePipeline:
     ) -> dict[str, Any]:
         """Save a person's edit of a generated file and make the agent use it.
 
-        A localized article is stored in the session state, the article store
-        and the file, so a later post is made from the edited text. Changing
-        the text or the title undoes the post's finalization (the digest no
-        longer matches). The structure check is run again and returned; it
-        does not block the save, because the person editing has the final
-        say. The seed itself is not editable here: changing it would
-        invalidate both localizations.
+        A slide plan (``slides.<lang>.md``) replaces the plan of record. A
+        post (``post.<lang>.md``) is changed through ``apply_post_edit``, the
+        one function every change to a post goes through (PUB-11): it keeps
+        a version, writes the file and, for the Korean post, the Naver file.
+        Changing the text or the title undoes the post's finalization (the
+        digest no longer matches). For a localization the structure check is
+        run again and returned; it does not block the save, because the
+        person editing has the final say.
+
+        The source-language post can be edited as well, also when it was
+        read from its blog platform: the copy here changes, the platform is
+        never written to (INV-4). The localizations and slide plans made
+        from the earlier text stay and are shown as older than the source
+        (SRC-6, WEB-15). A post that is public, and a file left from an
+        earlier text, cannot be saved.
         """
         current = await self.session_state()
         project_id = current.get(state.PROJECT_ID) or ""
@@ -1343,46 +1353,10 @@ class ArticlePipeline:
         if kind == "slides":
             return await self._save_slide_plan(path, text, language)
 
-        if language == current.get(state.SOURCE_LANGUAGE):
-            check = {"passed": True, "errors": [], "warnings": [], "stats": {}}
-            delta: dict[str, Any] = {state.SEED_MARKDOWN: text}
-            if title and title.strip():
-                clean_title = title.strip()[:MAX_TITLE_CHARS]
-                delta[state.SEED_TITLE] = clean_title
-                delta[state.LOCALIZED_TITLES] = {
-                    **(current.get(state.LOCALIZED_TITLES) or {}),
-                    language: clean_title,
-                }
-                get_article_store().save_project(project_id, {"title": clean_title})
-        else:
-            check = check_fidelity(current.get(state.SEED_MARKDOWN) or "", text)
-            delta = {
-                state.localized_key(language): text,
-                state.FIDELITY_REPORT: {
-                    **(current.get(state.FIDELITY_REPORT) or {}),
-                    language: check,
-                },
-            }
-            if title and title.strip():
-                delta[state.LOCALIZED_TITLES] = {
-                    **(current.get(state.LOCALIZED_TITLES) or {}),
-                    language: title.strip()[:MAX_TITLE_CHARS],
-                }
-        await self._update_state(delta, current)
-        get_article_store().add_version(project_id, language, "edited", text)
-        path.write_text(text, encoding="utf-8")
-        if (
-            PLATFORM_FOR_LANGUAGE[language] == "naver_blog"
-            and policy.publication(current, "naver_blog").get("state")
-            != "existing_source"
-        ):
-            # The paste file follows the text, by the same rules as any export:
-            # a text the export refuses (credential-looking values nobody
-            # accepted) leaves no file behind to be pasted by mistake.
-            if _failure(await self.act(export_naver_blog_paste_ready_html)):
-                (workspace_dir() / project_id / "naver_blog.html").unlink(
-                    missing_ok=True
-                )
+        result = await self.act(apply_post_edit, language, title or "", text)
+        if failure := _failure(result):
+            raise ValueError(failure)
+        check = result["check"]
         self.log(f">>> edited {name} by hand ({len(text)} characters)")
         return {
             "saved": name,

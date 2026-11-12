@@ -10,7 +10,8 @@ from urllib.parse import urlparse
 from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
-from app import platforms, state
+from app import platforms, policy, state
+from app.markdown_checks import check_fidelity
 from app.persistence import get_article_store
 from app.schemas import (
     CodeMode,
@@ -18,6 +19,8 @@ from app.schemas import (
     FetchArticleOutput,
     LanguageCode,
     LoadDraftInput,
+    PassageReplacementInput,
+    PostTitleInput,
     PublicationRecord,
     SaveSeedInput,
     SeedSavedOutput,
@@ -27,8 +30,10 @@ from app.schemas import (
 )
 from app.settings import (
     ALLOWED_ARTICLE_HOSTS,
+    LANGUAGE_NAMES,
     LANGUAGES,
     MAX_ARTICLE_CHARS,
+    MAX_TITLE_CHARS,
     PLATFORM_FOR_LANGUAGE,
     workspace_dir,
 )
@@ -492,67 +497,118 @@ def read_article_post(
     }
 
 
-def update_article_post(
-    language: LanguageCode,
-    title: str,
-    markdown: str,
-    tool_context: ToolContext,
-) -> dict[str, Any]:
-    """Change the title, the Markdown text, or both, of one language's blog post.
+_HEADING_LINE = re.compile(r"^(#\s+)(\S.*?)\s*$")
 
-    Use this when the user asks for a change to a post that exists. The change
-    is saved to the session and to post.<lang>.md, and a version is kept. A
-    change to a post undoes the user's sign-off of it.
 
-    Args:
-        language: Which post to change: 'ko', 'en' or 'ja'.
-        title: The new title, or an empty string '' to keep the title as it is.
-        markdown: The whole new Markdown text of the post, not a diff or an
-            excerpt, or an empty string '' to keep the text and change only
-            the title.
+def _with_heading_renamed(markdown: str, old_title: str, new_title: str) -> str:
+    """The text with its first heading line renamed, when that line is the old title.
 
-    Returns:
-        On success: status, language, title, file and markdown_chars. On
-        failure: status 'error' with error_code, message and
-        recovery_instruction.
+    The first level-1 heading outside front matter and code blocks is the
+    title line (see ``title_of_draft``). A heading that says something else
+    than the old title was written on purpose and is left as it is.
     """
-    from app.markdown_checks import check_fidelity
+    front = _FRONT_MATTER.match(markdown)
+    start = front.end() if front else 0
+    lines = markdown[start:].splitlines(keepends=True)
+    fence = None
+    for index, line in enumerate(lines):
+        marker = _FENCE.match(line)
+        if marker and fence is None:
+            fence = marker.group(1)
+        elif marker and marker.group(1) == fence:
+            fence = None
+        elif fence is None and (heading := _HEADING_LINE.match(line.rstrip("\r\n"))):
+            if heading.group(2) == old_title:
+                ending = line[len(line.rstrip("\r\n")) :]
+                lines[index] = heading.group(1) + new_title + ending
+            break
+    return markdown[:start] + "".join(lines)
 
-    max_title_chars = 120
 
-    checked = checked_language(language)
-    if isinstance(checked, dict):
-        return checked
-    language = checked
+def _post_that_may_change(
+    tool_context: ToolContext, language: str
+) -> tuple[str, str, str] | dict[str, Any]:
+    """(project_id, title, text) of a post that may be changed, or a ToolError.
+
+    A post that is public is settled: changing the copy here would make it
+    differ from what readers see. Whether it is public is decided by the
+    publishing rules in ``app/policy.py``.
+    """
     project_id = tool_context.state.get(state.PROJECT_ID) or ""
-    old_text = state.article_markdown(tool_context.state, language) or ""
-    if not project_id or not old_text:
+    text = state.article_markdown(tool_context.state, language) or ""
+    if not project_id or not text:
         return tool_error(
             "NO_POST_FOR_LANGUAGE",
             f"There is no {language} post in this session yet.",
             "Localize the seed article first.",
         )
-    old_title = state.article_title(tool_context.state, language)
-    new_title = (
-        title.strip()[:max_title_chars] if title and title.strip() else old_title
-    )
-    new_text = (markdown.rstrip() + "\n") if markdown and markdown.strip() else old_text
-    if new_title != old_title and not (markdown and markdown.strip()):
-        new_text = re.sub(r"\A(\s*#\s+)[^\n]+", rf"\g<1>{new_title}", new_text, count=1)
+    if policy.next_step(tool_context.state, language) == "public":
+        platform = policy.PLATFORM_NAMES[PLATFORM_FOR_LANGUAGE[language]]
+        return tool_error(
+            "POST_IS_PUBLIC",
+            f"The {LANGUAGE_NAMES[language]} post is already public on {platform}; "
+            "it can no longer be changed here.",
+            "Do not try again. Tell the user to edit the public post on the site.",
+        )
+    return project_id, state.article_title(tool_context.state, language), text
 
-    titles = dict(tool_context.state.get(state.LOCALIZED_TITLES) or {})
-    titles[language] = new_title
-    tool_context.state[state.LOCALIZED_TITLES] = titles
 
-    if language == tool_context.state.get(state.SOURCE_LANGUAGE):
-        tool_context.state[state.SEED_TITLE] = new_title
-        tool_context.state[state.SEED_MARKDOWN] = new_text
-        get_article_store().save_project(project_id, {"title": new_title})
+def apply_post_edit(
+    language: str, title: str, markdown: str, tool_context: ToolContext
+) -> dict[str, Any]:
+    """Change the title, the text, or both, of one language's post (PUB-11).
+
+    Every change to a post that exists goes through here, whoever makes it:
+    the editor page and the script (``ArticlePipeline.save_edit``) and the
+    agent's tools (``set_article_post_title``,
+    ``replace_passage_in_article_post``). In this one place a public post is
+    refused, the structure of a localization is checked again, a version is
+    kept, the file is written, and for the Korean post the Naver file is
+    written again or removed. A change undoes the post's finalization by
+    itself: the digest a person signed no longer matches (``app/policy.py``).
+
+    An empty ``title`` keeps the title, an empty ``markdown`` keeps the text.
+    When only the title is given and the first heading line of the text is
+    the old title, that line gets the new title; a text that was handed in
+    is stored as it was handed in.
+
+    Editing the source-language post changes the seed text and keeps the
+    localizations and slide plans (SRC-6); they are then shown as older than
+    the source (``state.older_than_source``).
+
+    Returns a tool result: status 'success' with language, title, file,
+    markdown_chars, check (the structure check) and naver_file ('written',
+    'removed' or None), or a ``ToolError``.
+    """
+    found = _post_that_may_change(tool_context, language)
+    if isinstance(found, dict):
+        return found
+    project_id, old_title, old_text = found
+
+    new_title = title.strip()[:MAX_TITLE_CHARS] if title and title.strip() else ""
+    new_title = new_title or old_title
+    if markdown and markdown.strip():
+        new_text = markdown.rstrip() + "\n"
+    elif new_title != old_title:
+        new_text = _with_heading_renamed(old_text, old_title, new_title)
     else:
-        tool_context.state[state.localized_key(language)] = new_text
+        new_text = old_text
+
+    if new_title != old_title:
+        titles = dict(tool_context.state.get(state.LOCALIZED_TITLES) or {})
+        titles[language] = new_title
+        tool_context.state[state.LOCALIZED_TITLES] = titles
+    if language == tool_context.state.get(state.SOURCE_LANGUAGE):
+        check = {"passed": True, "errors": [], "warnings": [], "stats": {}}
+        tool_context.state[state.SEED_MARKDOWN] = new_text
+        if new_title != old_title:
+            tool_context.state[state.SEED_TITLE] = new_title
+            get_article_store().save_project(project_id, {"title": new_title})
+    else:
         check = check_fidelity(
             tool_context.state.get(state.SEED_MARKDOWN) or "", new_text
         )
+        tool_context.state[state.localized_key(language)] = new_text
         reports = dict(tool_context.state.get(state.FIDELITY_REPORT) or {})
         reports[language] = check
         tool_context.state[state.FIDELITY_REPORT] = reports
@@ -565,4 +621,132 @@ def update_article_post(
         "title": new_title,
         "file": file,
         "markdown_chars": len(new_text),
+        "check": check,
+        "naver_file": _naver_file_follows(tool_context, project_id, language),
     }
+
+
+def _naver_file_follows(
+    tool_context: ToolContext, project_id: str, language: str
+) -> str | None:
+    """Write the Naver paste file again after a change to the Korean post (PUB-7).
+
+    By the same rules as any export: a text the export refuses (for example
+    credential-looking values nobody accepted) leaves no file behind to be
+    pasted by mistake. Returns 'written', 'removed', or None when the post
+    has no Naver file (another language, or Naver is where it was read from).
+    """
+    # Imported here: app.tools.publish builds on this module.
+    from app.tools.publish import export_naver_blog_paste_ready_html
+
+    if (
+        PLATFORM_FOR_LANGUAGE[language] != "naver_blog"
+        or policy.publication(tool_context.state, "naver_blog").get("state")
+        == "existing_source"
+    ):
+        return None
+    exported = export_naver_blog_paste_ready_html(tool_context)
+    if exported.get("status") == "success":
+        return "written"
+    (workspace_dir() / project_id / "naver_blog.html").unlink(missing_ok=True)
+    return "removed"
+
+
+def set_article_post_title(
+    language: LanguageCode, title: str, tool_context: ToolContext
+) -> dict[str, Any]:
+    """Set a new title for one language's blog post, leaving its text as it is.
+
+    Use this when the user asks for another title of a post that exists. When
+    the first heading line of the text is the old title, that line gets the
+    new title too; nothing else in the text changes. A version is kept, and
+    the change undoes the user's sign-off of the post. A post that is already
+    public is not changed.
+
+    Args:
+        language: Which post to retitle: 'ko', 'en' or 'ja'.
+        title: The new title, one line, at most 120 characters.
+
+    Returns:
+        On success: status, language, title, file, markdown_chars, check (the
+        structure check of the post) and naver_file ('written' or 'removed'
+        for the Korean post, else null). On failure: status 'error' with
+        error_code, message and recovery_instruction.
+    """
+    try:
+        request = PostTitleInput(language=language, title=title)
+    except ValidationError as exc:
+        return validation_error(
+            exc,
+            "Call again with language set to 'ko', 'en' or 'ja' and a title of "
+            f"one line, 1 to {MAX_TITLE_CHARS} characters.",
+        )
+    return apply_post_edit(request.language, request.title, "", tool_context)
+
+
+def replace_passage_in_article_post(
+    language: LanguageCode, passage: str, replacement: str, tool_context: ToolContext
+) -> dict[str, Any]:
+    """Replace one quoted passage of one language's blog post with another passage.
+
+    Use this when the user asks for a change to the text of a post that
+    exists. Call read_article_post first and quote the passage exactly as it
+    is written there, character for character. The passage is replaced only
+    when it occurs exactly once in the post; the rest of the post stays as it
+    is. Call once for each passage that changes; never retype a whole post. A
+    version is kept, and the change undoes the user's sign-off of the post. A
+    post that is already public is not changed.
+
+    Args:
+        language: Which post to change: 'ko', 'en' or 'ja'.
+        passage: The passage to replace, quoted exactly from the post and
+            long enough to occur only once in it.
+        replacement: What to put in its place. An empty string '' removes the
+            passage.
+
+    Returns:
+        On success: status, language, title, file, markdown_chars, check (the
+        structure check of the post) and naver_file ('written' or 'removed'
+        for the Korean post, else null). On failure: status 'error' with
+        error_code, message and recovery_instruction; when the passage was
+        not found once, the message says how many times it occurs.
+    """
+    try:
+        request = PassageReplacementInput(
+            language=language, passage=passage, replacement=replacement
+        )
+    except ValidationError as exc:
+        return validation_error(
+            exc,
+            "Call again with language set to 'ko', 'en' or 'ja', passage quoted "
+            "exactly from read_article_post, and a replacement that differs from it.",
+        )
+    found = _post_that_may_change(tool_context, request.language)
+    if isinstance(found, dict):
+        return found
+    _, _, text = found
+    name = LANGUAGE_NAMES[request.language]
+    count = text.count(request.passage)
+    if count != 1:
+        times = "does not occur" if count == 0 else f"occurs {count} times"
+        return tool_error(
+            "PASSAGE_NOT_FOUND" if count == 0 else "PASSAGE_NOT_UNIQUE",
+            f"The quoted passage {times} in the {name} post (occurrences: {count}); "
+            "it has to occur exactly once. Nothing was changed.",
+            "Call read_article_post and quote a longer passage, exactly as it is "
+            "written there, so that it occurs once in the post. Then call again."
+            if count
+            else "Call read_article_post and quote the passage exactly as it is "
+            "written there, character for character, long enough to occur once "
+            "in the post. Then call again.",
+        )
+    changed = text.replace(request.passage, request.replacement, 1)
+    if not changed.strip() or len(changed) > MAX_ARTICLE_CHARS:
+        return tool_error(
+            "POST_SIZE_OUT_OF_RANGE",
+            f"After the replacement the {name} post would have {len(changed.strip())} "
+            f"characters; a post has 1 to {MAX_ARTICLE_CHARS}.",
+            "Use a replacement that leaves a post of that size, or tell the user "
+            "why the change cannot be made.",
+        )
+    return apply_post_edit(request.language, "", changed, tool_context)
