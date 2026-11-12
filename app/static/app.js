@@ -115,6 +115,33 @@ function keep(key, attrs) {
   return input;
 }
 
+// The mark of each phase of the slides lane, next to the code of a language
+// in the slides step (WEB-3); its words are the texts slidePhase.<phase>.
+const SLIDE_MARK = {waiting: "–", planning: "…", creating: "…", done: "✓", failed: "✗"};
+// When a PDF was exported, as the browser writes a date in the page's language.
+function exportTime(iso) {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? iso : at.toLocaleString(currentUiLang, {dateStyle: "medium", timeStyle: "short"});
+}
+// One thing the Slides column offers, by the name the server gives it.
+function slideAction(row, action, slidesBusy) {
+  const link = (href, text, attrs) => el("a", {href, target: "_blank", rel: "noopener", ...attrs}, text);
+  const button = (text, run) => el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: run}, text);
+  if (action === "create_slides") return el("div", {}, button(t("createSlidesBtn"), () => requestSlides(row)));
+  if (action === "open_deck") return el("div", {}, link(row.deck.url, "Google Slides", {style: "font-weight:600"}));
+  if (action === "notes") return el("div", {class: "muted small"}, link(fileUrl(row.slides_file), t("speakerNotes"), {title: row.slides_file}));
+  if (action === "create_deck") return el("div", {}, button(t("createDeckBtn"), () => createDeck(row)));
+  if (action === "pdf") return el("div", {class: "small"}, link(fileUrl(row.slides_pdf), "PDF", {title: row.slides_pdf}),
+    el("span", {class: "muted"}, t("pdfExportedAt", {time: exportTime(row.pdf_exported_at)})));
+  if (action === "export_pdf") return el("div", {}, button(t("exportPdfBtn"), () => exportPdf(row)));
+  // A new plan and a new deck: the same approval as the first time (INV-6).
+  if (action === "recreate") return el("div", {}, button(t("recreateDeckBtn"), () => requestSlides(row)));
+  // The speaker notes changed after the deck was made: the editor of the
+  // notes opens and asks, listing the slides, before the deck is written.
+  if (action === "update_deck") return el("div", {}, link(`/edit?job=${jobId}&file=${encodeURIComponent(row.slides_file)}&push=1`, t("updateDeckBtn")));
+  return null;
+}
+
 // slidesBusy and pBusy: whether the slides lane and the main lane are working.
 // A button is held back only while its own lane works.
 function languageRow(row, slidesBusy, pBusy) {
@@ -128,20 +155,11 @@ function languageRow(row, slidesBusy, pBusy) {
   const files = el("td", {class: "files"}, ...row.files.map((name) => el("div", {},
     el("a", {href: fileUrl(name), target: "_blank", rel: "noopener"}, name))));
 
-  // Slides: the deck and the speaker notes of this language, nothing of another.
-  const slideItems = [];
-  if (row.deck && row.deck.url) slideItems.push(el("div", {},
-    el("a", {href: row.deck.url, target: "_blank", rel: "noopener", style: "font-weight:600"}, "Google Slides")));
-  if (row.slides_file) {
-    slideItems.push(el("div", {class: "muted small"},
-      el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, t("speakerNotes"))));
-    if (!(row.deck && row.deck.url)) slideItems.push(el("div", {},
-      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => createDeck(row)}, t("createDeckBtn"))));
-  } else {
-    // No plan yet: slides are asked for here, with a person's approval (INV-6).
-    slideItems.push(el("div", {},
-      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => requestSlides(row)}, t("createSlidesBtn"))));
-  }
+  // Slides: what the server says the state of this language allows, and
+  // nothing else (WEB-5); while the slides lane works on it, where it is.
+  const slideItems = row.slides_progress
+    ? [el("div", {class: "muted small"}, el("span", {class: "spinner"}), t("slidePhase." + row.slides_progress))]
+    : (row.slides_actions || []).map((action) => slideAction(row, action, slidesBusy)).filter(Boolean);
   const slidesCol = el("td", {class: "slides-col"}, ...slideItems);
 
   // Next step: review, finalize, approve, post. Only the one that is next is shown.
@@ -218,6 +236,14 @@ function render(data) {
     return el("li", {class: step.done ? "done" : (isNow ? "now" : "")}, (step.done ? "✓ " : "") + stepText(step.name));
   };
   const spacerLi = () => el("li", {class: "spacer"}, "");
+  // The slides step says where each language asked for stands (WEB-3).
+  const slidesLi = (step) => {
+    const li = stepLi(step, slidesBusy && !step.done);
+    const marks = (data.slides_progress || []).map((entry) => el("span", {class: "slide-lang " + entry.phase, title: t("slidePhase." + entry.phase)},
+      `${entry.language.toUpperCase()} ${SLIDE_MARK[entry.phase] || ""}`));
+    if (marks.length) li.append(el("div", {class: "slide-langs"}, ...marks));
+    return li;
+  };
 
   if (data.progress.length >= 5 && postSteps.length >= 5) {
     // Row 1: Source document | Transform | Prepare posts | Summarize | Review & edit
@@ -232,7 +258,7 @@ function render(data) {
     $("slideSteps").replaceChildren(
       spacerLi(),
       spacerLi(),
-      stepLi(data.progress[3], slidesBusy && !data.progress[3].done),
+      slidesLi(data.progress[3]),
       spacerLi(),
       spacerLi()
     );
@@ -432,6 +458,10 @@ async function createDeck(row) {
     summary: [[t("fromLabel"), row.slides_file || t("deckFromNotes")], [t("whereLabel"), whereDesc], [t("containsLabel"), t("deckContainsValue")]],
     okLabel: t("deckOk")});
   if (ok) act("deck", {language: row.language, approved: true});
+}
+// The deck as slides.<lang>.pdf, a file on this machine: nothing leaves it.
+function exportPdf(row) {
+  act("pdf", {language: row.language});
 }
 
 const MAX_FILE_BYTES = 80000;

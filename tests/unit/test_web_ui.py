@@ -31,6 +31,7 @@ class FakePipeline:
         self.approvals: list[dict[str, Any]] = []
         self.said: list[str] = []
         self.last_reply = ""
+        self.slide_phases: dict[str, str] = {}
 
     async def overview(self) -> dict[str, Any]:
         return {
@@ -957,3 +958,93 @@ def test_a_preview_is_shown_in_the_language_of_the_page(client) -> None:
     # The file itself is shown as it is, whatever the language of the page.
     raw = client.get(address, params={"raw": 1, "lang": "ja"}).text
     assert raw == client.get(address, params={"raw": 1}).text
+
+
+def test_each_row_offers_the_slide_action_its_state_allows(real, monkeypatch) -> None:
+    """WEB-5: the server says what the Slides column offers, per language."""
+    import asyncio
+    import copy
+
+    from app import google_slides, state
+    from app.pipeline import SLIDE_ACTIONS, slide_actions
+    from tests.unit.test_pipeline import _plan
+
+    client, job = real
+    base = f"/api/jobs/{job.id}"
+
+    def offered(language: str) -> list[str]:
+        return _row(client.get(base).json(), language)["slides_actions"]
+
+    # Without a plan: slides can be asked for, and nothing else.
+    assert offered("en") == offered("ko") == offered("ja") == ["create_slides"]
+
+    # With a plan: its speaker notes, and a deck from it.
+    plans = {"en": _plan("en"), "ja": _plan("ja")}
+    asyncio.run(job.pipeline._update_state({state.SLIDE_PLANS: plans}))
+    assert offered("en") == offered("ja") == ["notes", "create_deck"]
+    assert offered("ko") == ["create_slides"]
+
+    # With a deck: the deck, the notes, a PDF to export, and making it again.
+    async def fake_create(plan, allowed_images):
+        return {"presentation_id": "abc", "url": google_slides.deck_url("abc")}
+
+    async def fake_export_pdf(presentation_id: str) -> bytes:
+        return b"%PDF-1.4\n%fake-deck-pdf\n"
+
+    monkeypatch.setattr(google_slides, "create_deck", fake_create)
+    monkeypatch.setattr(google_slides, "export_deck_pdf", fake_export_pdf)
+    client.post(f"{base}/deck", json={"language": "ja", "approved": True})
+    assert _wait(client, job.id)["notice"] is None
+    assert offered("ja") == ["open_deck", "notes", "export_pdf", "recreate"]
+    assert offered("en") == ["notes", "create_deck"]  # another language's deck
+
+    # Once exported, the PDF with its time takes the place of "Export PDF".
+    client.post(f"{base}/pdf", json={"language": "ja"})
+    row = _row(_wait(client, job.id), "ja")
+    assert row["slides_actions"] == ["open_deck", "notes", "pdf", "recreate"]
+    assert row["slides_pdf"] == "slides.ja.pdf" and row["pdf_exported_at"]
+
+    # The speaker notes changed after the deck was made: the deck can be updated.
+    changed = copy.deepcopy(plans)
+    changed["ja"]["slides"][0]["title"] = "A title written later"
+    asyncio.run(job.pipeline._update_state({state.SLIDE_PLANS: changed}))
+    row = _row(client.get(base).json(), "ja")
+    assert row["deck_outdated"] is True
+    assert row["slides_actions"] == [
+        "open_deck",
+        "notes",
+        "pdf",
+        "recreate",
+        "update_deck",
+    ]
+
+    # While the slides lane works on a language its row offers nothing and
+    # says where the lane is; the other rows keep what they offer.
+    job.pipeline.slide_phases["en"] = "planning"
+    job.lanes["slides"].busy = True
+    status = client.get(base).json()
+    assert _row(status, "en")["slides_progress"] == "planning"
+    assert _row(status, "en")["slides_actions"] == []
+    assert _row(status, "ja")["slides_progress"] is None
+    assert _row(status, "ja")["slides_actions"][-1] == "update_deck"
+    # A phase left from work that ended is not shown as work under way.
+    job.lanes["slides"].busy = False
+    status = client.get(base).json()
+    assert _row(status, "en")["slides_progress"] is None
+    assert _row(status, "en")["slides_actions"] == ["notes", "create_deck"]
+
+    # Every state offers only actions that have a name, and the page knows
+    # each name and no other: it renders the list and decides nothing.
+    for slides_state in ("none", "plan", "deck"):
+        for outdated in (False, True):
+            for has_pdf in (False, True):
+                assert set(slide_actions(slides_state, outdated, has_pdf)) <= set(
+                    SLIDE_ACTIONS
+                )
+    script = (web_ui.STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert sorted(re.findall(r'action === "(\w+)"', script)) == sorted(SLIDE_ACTIONS)
+    # "Re-create…" asks for slides behind the same approval as the first time,
+    # "Export PDF" uses the PDF route, "Update deck…" opens the notes' editor.
+    assert re.search(r'"recreate"\)[^\n]*requestSlides\(row\)', script)
+    assert 'act("pdf", {language: row.language})' in script
+    assert re.search(r'"update_deck"\)[^\n]*/edit\?job=[^\n]*&push=1', script)

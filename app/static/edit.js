@@ -53,6 +53,8 @@ async function load() {
     say(hasTitle ? t("editor.savingPost") : hasDeck ? t("editor.savingPlanWithDeck") : t("editor.savingPlanNoDeck"));
     // Start at the top: focusing alone would put the caret, and the view, at the end.
     $("text").focus(); $("text").setSelectionRange(0, 0); $("text").scrollTop = 0;
+    // Opened by "Update deck…" of the page: ask at once what "Update deck…" here asks.
+    if (hasDeck && params.get("push") === "1") await pushToDeck(false);
   } catch (error) { say(error.message, true); }
 }
 

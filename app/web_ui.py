@@ -54,6 +54,7 @@ from app.pipeline import (
     post_progress,
     progress,
     project_file,
+    slides_progress,
 )
 from app.schemas import DevtoDraftInput, QiitaDraftInput
 from app.settings import (
@@ -491,6 +492,16 @@ async def job_status(job_id: str) -> dict[str, Any]:
     view = overview(current)
     if job.source_text:
         view["source_text"] = job.source_text
+    # Where each language slides were asked for stands; the rows of the
+    # languages the slides lane works on right now say so too (WEB-3, WEB-5).
+    slides = slides_progress(
+        view,
+        job.pipeline.slide_phases,
+        job.talk_languages,
+        job.wants_decks,
+        slides_busy=job.lanes[runs.SLIDES].busy,
+        slides_to_come=job.lanes[runs.MAIN].action == "run_posts",
+    )
     return {
         # Whether anything runs at all; what may be started depends on the lane.
         "busy": job.busy,
@@ -501,7 +512,12 @@ async def job_status(job_id: str) -> dict[str, Any]:
         "log": job.log,
         "approvals": job.pipeline.approvals,
         "overview": view,
-        "progress": progress(current, job.talk_languages, job.wants_decks),
+        # The slides step is there for every language slides were asked for,
+        # in the run options or later.
+        "progress": progress(
+            current, [entry["language"] for entry in slides], job.wants_decks
+        ),
+        "slides_progress": slides,
         "post_progress": post_progress(current, job.talk_languages),
     }
 

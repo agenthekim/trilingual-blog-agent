@@ -161,9 +161,9 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | :--- | :--- |
 | WEB-1 | 페이지는 하나이다. 헤딩은 "Trilingual Blog Agent"이고, 그 아래에 "Automatically transform an article into blog posts and presentation slides across three languages."가 온다. 이 문장은 페이지의 다른 문구와 마찬가지로 화면 언어로 보여 준다 (WEB-13) |
 | WEB-2 | 폼: 힌트 "Share a post URL, a .md file, or your document."가 붙은 "Source document", 파일 첨부 또는 끌어다 놓기, "Choose the slide length to create Google Slides in your configured Google Drive."가 붙은 "Slide options", Length, Languages(체크박스, 모두 선택됨), Audience(SLD-1), Run 버튼 하나 |
-| WEB-3 | 진행 상황 카드: 글 제목 아래에 상태 줄(작업 중일 때는 경과 시간과 최근 활동, 끝났을 때는 `manifest.md` 링크)이 오고, 그 아래에 5단계 진행 막대 두 줄이 온다. 첫 번째 막대(자동 생성): "Source document", "Transform", "Prepare posts", "Prepare slides"(슬라이드를 요청했을 때), "Summarize". 두 번째 막대(Summarize 이후 검토 및 게시): "Review & edit", "Finalize posts", "Approve & draft", "Publish posts", "Verify & complete". 각 단계의 완료 여부는 서버 상태로 계산하며 새로고침 전후가 같다 |
+| WEB-3 | 진행 상황 카드: 글 제목 아래에 상태 줄(작업 중일 때는 경과 시간과 최근 활동, 끝났을 때는 `manifest.md` 링크)이 오고, 그 아래에 단계가 세 행으로 온다. 1행: "Source document", "Transform", "Prepare posts", "Summarize", "Review & edit". 2행은 "Prepare posts" 아래의 "Prepare slides"(슬라이드를 요청했을 때)이며, 이 슬라이드 단계는 요청한 언어마다 대기, 계획 중, 덱 생성 중, 완료, 실패 가운데 하나를 표시한다. 3행: "Finalize posts", "Approve & draft", "Publish posts", "Verify & complete". 각 단계의 완료 여부는 서버 상태로 계산하며 새로고침 전후가 같다 |
 | WEB-4 | 결과 표는 입력 글의 언어(원본 언어)를 맨 먼저 두고, 열은 작업 순서대로 Language(이름, 그 아래 상태 배지), Title, Files, Slides, Next step이다. 표 아래에는 아무것도 나열하지 않는다 |
-| WEB-5 | Files: `post.<lang>.md`, 그리고 한국어에는 `naver_blog.html`이 있으며 각각 미리보기를 연다. Slides: "Google Slides"(해당 언어의 덱만), "Speaker notes"(`slides.<lang>.md`), 그리고 "PDF"(내보낸 뒤에는 `slides.<lang>.pdf` 링크, 내보내기 전에는 "Export PDF")가 있다. 계획은 있고 덱은 없는 언어에서는 덱 생성을 제안한다 |
+| WEB-5 | Files: `post.<lang>.md`, 그리고 한국어에는 `naver_blog.html`이 있으며 각각 미리보기를 연다. Slides: 언어마다 그 상태에서 할 수 있는 것만 보여 준다. 계획이 없으면 "Create slides…", 계획이 있으면 "Speaker notes"와 "Create deck…", 덱이 있으면 여기에 더해 "Google Slides", 내보낸 시각이 붙은 "PDF" 또는 "Export PDF", 그리고 "Re-create…"가 있다. 덱을 만든 뒤에 발표자 노트가 바뀌었으면 "Update deck…"이 있다 |
 | WEB-6 | Next step은 다음에 할 일 한 가지를 보여 준다. 블로그 플랫폼에서 읽어 온 기존 게시물(`existing_source`) → "Open original". 공개 → "Open post". 확정 전 → 검토할 대상과 "Finalize". 확정됨, API 플랫폼 → "Post…"(또는 "Update post…") 버튼이 나타나며, 클릭하면 제목, 태그 입력란(바로 아래에 해당 플랫폼의 태그 규칙 안내 표시), Draft / Public 선택지(Draft 기본 선택)가 있는 승인 대화상자가 열린다. 확정됨, Naver → 붙여 넣기 안내, URL 입력란, "Register URL" |
 | WEB-7 | 미리보기: 파일 이름, 파일을 편집할 수 있을 때의 "edit", "raw text"가 있다. Markdown은 렌더링한다. 글 본문에서 온 스크립트는 실행될 수 없고, 폼은 제출될 수 없으며, 기준 주소는 설정될 수 없다. Mermaid 블록은 운영자가 mermaid.ink를 허용했으면 그림으로 나타나고 그 아래에 소스가 붙는다. 그렇지 않으면 코드로 나타난다 |
 | WEB-8 | 편집기: 창 전체를 쓴다. 게시물에는 제목 입력란이 있다. Save가 있다. 저장하지 않은 변경 사항은 보호한다. 게시물을 저장하면 확정이 해제되고 그 사실을 알린다. 덱이 있는 슬라이드 계획의 경우, Save 후 덱과 내용이 다르면 동기화 대화상자가 열린다. "Update deck…"과 "Pull from deck…"은 항상 있다 |
@@ -428,9 +428,9 @@ flowchart TD
 | SYN-5 | `test_a_title_emptied_in_the_deck_is_not_pulled` |
 | WEB-1 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed`, `test_there_is_one_page_and_the_classic_layout_is_gone` |
 | WEB-2 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
-| WEB-3 | `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck`, `test_a_run_is_reopened_from_its_record_after_a_restart` |
+| WEB-3 | `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck`, `test_a_run_is_reopened_from_its_record_after_a_restart`, `test_the_slides_step_says_where_each_language_asked_for_stands` |
 | WEB-4 | `test_the_page_carries_the_wording_and_the_column_order_that_were_agreed` |
-| WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
+| WEB-5 | `test_overview_lists_titles_files_and_next_steps`, `test_a_deck_is_created_for_the_language_that_was_asked_for`, `test_each_row_offers_the_slide_action_its_state_allows` |
 | WEB-6 | `test_overview_lists_titles_files_and_next_steps`, `test_posting_from_the_page_needs_a_finalized_post_and_carries_the_persons_choice` |
 | WEB-7 | `test_preview_links_to_the_editor_only_for_files_a_person_may_change`, `test_mermaid_blocks_are_shown_as_images_drawn_once` |
 | WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again`, `test_draft_source_language_post_can_be_edited_before_finalizing` |

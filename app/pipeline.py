@@ -253,6 +253,15 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 # Where the slides stand: 'none', 'plan' or 'deck'. What the
                 # slides lane is doing right now is not part of it.
                 "slides_state": slides_state(session_state, language),
+                # What the Slides column offers in that state (WEB-5).
+                "slides_actions": slide_actions(
+                    slides_state(session_state, language),
+                    deck_outdated(session_state, language),
+                    exported_pdf(session_state, language) is not None,
+                ),
+                # The phase the slides lane is in with this language, while it
+                # works on it; set by ``slides_progress`` from what the run holds.
+                "slides_progress": None,
                 # The plan's text differs from what deck and plan last agreed on.
                 "deck_outdated": deck_outdated(session_state, language),
                 # The PDF of the deck there is now, and when it was exported
@@ -288,6 +297,97 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
         "editable": editable,
         "manifest": existing("manifest.md"),
     }
+
+
+# What the Slides column may offer for a language (WEB-5); the page shows
+# these, in this order, and nothing else.
+SLIDE_ACTIONS = (
+    "create_slides",  # "Create slides…": a plan and its deck, behind an approval
+    "open_deck",  # "Google Slides": the deck of this language
+    "notes",  # "Speaker notes": slides.<lang>.md
+    "create_deck",  # "Create deck…": a deck from the plan as it is
+    "pdf",  # "PDF", with the time it was exported
+    "export_pdf",  # "Export PDF"
+    "recreate",  # "Re-create…": a new plan and a new deck, behind an approval
+    "update_deck",  # "Update deck…": the changed speaker notes into the deck
+)
+# Where the slides lane is with one language (WEB-3). The first three are
+# work under way; the last two say how it ended.
+SLIDE_PHASES = ("waiting", "planning", "creating", "done", "failed")
+_PHASES_AT_WORK = frozenset({"waiting", "planning", "creating"})
+
+
+def slide_actions(slides_state: str, deck_outdated: bool, has_pdf: bool) -> list[str]:
+    """What the Slides column offers for a language in this state (WEB-5).
+
+    ``slides_state`` is 'none', 'plan' or 'deck' (see ``slides_state`` in
+    ``app.tools.slides``). What the state does not allow is not offered: no
+    deck without a plan, no PDF without a deck, no update of a deck that
+    already has the text of its speaker notes.
+    """
+    if slides_state == "plan":
+        return ["notes", "create_deck"]
+    if slides_state == "deck":
+        offered = ["open_deck", "notes", "pdf" if has_pdf else "export_pdf", "recreate"]
+        if deck_outdated:
+            offered.append("update_deck")
+        return offered
+    return ["create_slides"]
+
+
+def slides_progress(
+    view: dict[str, Any],
+    phases: dict[str, str],
+    talk_languages: list[str],
+    wants_decks: bool,
+    *,
+    slides_busy: bool,
+    slides_to_come: bool,
+) -> list[dict[str, str]]:
+    """Where each language slides were asked for stands, for the slides step.
+
+    ``view`` is an overview; ``phases`` is what the slides lane said about
+    the languages it worked on (``ArticlePipeline.slide_phases``), kept in
+    memory only. A language was asked for when the run options name it, when
+    the lane worked on it, or when it has a plan. Each gets one of
+    SLIDE_PHASES:
+
+    - what the lane said, while it works and for how its work ended;
+    - with nothing said (after a restart): 'done' when what was asked for is
+      there, 'waiting' when the slides of the run are still to be started
+      (``slides_to_come``), else 'failed': asked for and not there.
+
+    A row whose language the lane is working on right now gets that phase as
+    ``slides_progress`` and offers no action meanwhile (WEB-5).
+    """
+    entries = []
+    for row in view["rows"]:
+        language = row["language"]
+        phase = phases.get(language)
+        if phase in _PHASES_AT_WORK and not slides_busy:
+            phase = None  # left from work that ended without saying how
+        row["slides_progress"] = phase if phase in _PHASES_AT_WORK else None
+        if row["slides_progress"]:
+            row["slides_actions"] = []
+        asked = language in talk_languages
+        if not (asked or phase or row["slides_state"] != "none"):
+            continue
+        if phase is None:
+            wanted = "deck" if asked and wants_decks else "plan"
+            if row["slides_state"] in ("deck", wanted):
+                phase = "done"
+            else:
+                phase = "waiting" if slides_to_come else "failed"
+        entries.append({"language": language, "phase": phase})
+    # In the order they were asked for; a language asked for later comes after.
+    entries.sort(
+        key=lambda entry: (
+            talk_languages.index(entry["language"])
+            if entry["language"] in talk_languages
+            else len(talk_languages)
+        )
+    )
+    return entries
 
 
 def progress(
@@ -534,6 +634,10 @@ class ArticlePipeline:
         self.log = log or self._log_activity
         self._pending: list[Approval] = []
         self.last_reply = ""
+        # Where the slides lane is with each language it worked on, one of
+        # SLIDE_PHASES (WEB-3). Kept here and not in the record: the record is
+        # not written to while the planners work (RUN-2).
+        self.slide_phases: dict[str, str] = {}
         # The record has one writer at a time (RUN-2): an agent turn holds
         # this for the whole turn, a write by code for one read and one write.
         self._write_lock = asyncio.Lock()
@@ -941,6 +1045,9 @@ class ArticlePipeline:
         """
         planning = asyncio.Semaphore(slide_parallelism())
         one_deck_at_a_time = asyncio.Lock()
+        # Every language asked for waits until its turn comes (WEB-3).
+        for language in languages:
+            self.slide_phases[language] = "waiting"
 
         async def one(language: str) -> list[str]:
             name = LANGUAGE_NAMES.get(language, language)
@@ -951,13 +1058,19 @@ class ArticlePipeline:
                 async with planning:
                     made, note = await self.plan_slides(language, length, audience)
                 notes = [note] if note else []
+                failed = not made
                 if made and create_deck:
+                    # Its plan is there; it waits for the deck before it.
+                    self.slide_phases[language] = "waiting"
                     async with one_deck_at_a_time:
                         self.log(f">>> {name} deck: approved with the slide request")
                         if failure := await self.create_deck(language, summarize=False):
                             notes.append(failure)
+                            failed = True
+                self.slide_phases[language] = "failed" if failed else "done"
                 return notes
             except Exception as exc:  # this language's; the others go on
+                self.slide_phases[language] = "failed"
                 log_event(
                     "slides for one language failed",
                     event_phase="SLIDES",
@@ -989,6 +1102,7 @@ class ArticlePipeline:
         when it was not or when the person should look at something.
         """
         name = LANGUAGE_NAMES.get(language, language)
+        self.slide_phases[language] = "planning"
         record = await self.session_state()
         # A request that gives no length or audience keeps what there is.
         minutes = slide_length(record, language, minutes)
@@ -1135,10 +1249,13 @@ class ArticlePipeline:
             event_phase="HUMAN_APPROVAL",
             language=language,
         )
+        self.slide_phases[language] = "creating"
         result = await self.act(
             create_google_slides_deck_with_speaker_notes, language, approval={}
         )
-        if failure := _failure(result):
+        failure = _failure(result)
+        self.slide_phases[language] = "failed" if failure else "done"
+        if failure:
             return (
                 f"The {LANGUAGE_NAMES.get(language, language)} Google Slides deck "
                 f"was not created. {failure}"

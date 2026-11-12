@@ -14,6 +14,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from app import policy, web_ui
+from app.pipeline import SLIDE_PHASES
 from app.settings import LANGUAGES
 
 STATIC = web_ui.STATIC_DIR
@@ -24,9 +25,6 @@ _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 _KOREAN_OR_JAPANESE = re.compile(
     r"[\u1100-\u11ff\u3040-\u30ff\u3130-\u318f\u4e00-\u9fff\uac00-\ud7a3]"
 )
-# A text of the catalog that nothing asks for yet: the label WP-12 puts on the
-# button that makes slides again.
-_KEPT_FOR_LATER = {"recreateDeckBtn"}
 # Names, not sentences: the product, and the title of the editor's tab until
 # the script has named the file.
 _NAMES_IN_PAGES = {"Trilingual Blog Agent", "Edit"}
@@ -195,6 +193,7 @@ def test_every_text_the_page_asks_for_exists() -> None:
         "lang.": set(LANGUAGES),
         "tagRule.": set(policy.API_PLATFORMS),
         "prompt.": {str(number) for number in range(6)},
+        "slidePhase.": set(SLIDE_PHASES),
     }
     assert families == set(expected)
     for family, values in expected.items():
@@ -205,9 +204,7 @@ def test_every_text_the_page_asks_for_exists() -> None:
     unused = sorted(
         key
         for key in english
-        if key not in asked
-        and not any(key.startswith(family) for family in families)
-        and key not in _KEPT_FOR_LATER
+        if key not in asked and not any(key.startswith(family) for family in families)
     )
     assert not unused, f"in en.json but never asked for: {unused}"
 
