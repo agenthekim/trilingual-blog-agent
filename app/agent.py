@@ -2,8 +2,8 @@
 
 Structure (see README for the diagram):
 
-    trilingual_blog_agent              coordinator, FAST model, owns the tools
-    ├── seed_editor_agent              REASONING model, revises the draft
+    trilingual_blog_agent              coordinator, FAST model (Flash tier), owns the tools
+    ├── seed_editor_agent              REASONING model (Pro-class tier), revises the draft
     ├── localization_pipeline          SequentialAgent, gated on a finalized seed
     │   ├── localization_fanout        ParallelAgent: ko / en / ja localizers + titles
     │   ├── localization_review_loop   LoopAgent: check -> critic -> gate -> refine
@@ -14,7 +14,8 @@ Structure (see README for the diagram):
 
 The coordinator runs one stage per user request; the user reviews the result
 before the next stage starts. Model choice per agent comes from
-``app.models.MODEL_ROUTES``.
+``app.models.MODEL_ROUTES``: the FAST model is the Flash tier, the REASONING
+model the Pro-class tier.
 """
 
 from __future__ import annotations
