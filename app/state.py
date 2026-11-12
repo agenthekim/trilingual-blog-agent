@@ -30,9 +30,28 @@ FINALIZATIONS_ASKED = "finalizations_asked"
 PRESENTATION_BRIEF = "presentation_brief"  # language, audience, minutes
 SLIDE_DECK_PLAN = "slide_deck_plan"  # the planner model's latest draft
 SLIDE_DRAFT_TIMING = "slide_timing_report"  # timing check of that draft
+
+# Where the session is driven from. The page sets "web": slides are then asked
+# for with request_approval_to_create_slide_decks and made by the run's slides
+# lane, not by the coordinator in this session (INV-6, RUN-1).
+SURFACE = "surface"
+SURFACE_WEB = "web"
+# What a run was started with (talk length, audience), for requests that do
+# not say them.
+RUN_OPTIONS = "run_options"
+# A slide request a person approved, waiting for the run's slides lane to
+# take it: languages, minutes per language, audience.
+SLIDE_REQUEST = "slide_request"
+
 # A planning run started by the pipeline gets a working session of its own
 # (SLD-5); these keys are not copied into it and never come back from it.
-PLANNING_WORKING_AREA = (PRESENTATION_BRIEF, SLIDE_DECK_PLAN, SLIDE_DRAFT_TIMING)
+PLANNING_WORKING_AREA = (
+    PRESENTATION_BRIEF,
+    SLIDE_DECK_PLAN,
+    SLIDE_DRAFT_TIMING,
+    SURFACE,
+    SLIDE_REQUEST,
+)
 
 # The record, per language. Everything outside the planning loop reads these.
 SLIDE_PLANS = "slide_plans"  # the plan of record
@@ -58,6 +77,7 @@ DERIVED_FROM_SEED = (
     SLIDE_TIMING,
     GOOGLE_SLIDES_DECKS,
     DECK_TEXT_BASELINE,
+    SLIDE_REQUEST,
 )
 
 

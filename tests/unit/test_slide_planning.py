@@ -76,7 +76,9 @@ class PlannerModel(BaseLlm):
                 await asyncio.sleep(0)  # let the other languages start
             if code in self.fails_for:
                 raise RuntimeError("429 RESOURCE_EXHAUSTED: quota used up")
-            plan = json.dumps(_plan(code), ensure_ascii=False)
+            asked = re.search(r"exactly (\d+) slides", instruction)
+            slides = int(asked.group(1)) if asked else 3
+            plan = json.dumps(_plan(code, slides=slides), ensure_ascii=False)
         finally:
             self._at_work -= 1
         yield LlmResponse(

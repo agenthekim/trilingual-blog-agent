@@ -159,9 +159,22 @@ class DeckRequest(BaseModel):
     language: Language
     # True only when a person pressed the approve button for this deck.
     approved: bool = False
-    replan: bool = False
-    minutes: int = 15
-    audience: str = "software engineers"
+
+
+class SlidesRequest(BaseModel):
+    # Slides for several languages are one request (SLD-14).
+    languages: list[Language] = Field(min_length=1, max_length=3)
+    # 0 and "" keep the length and the audience each language has.
+    minutes: int = Field(default=0, ge=0, le=60)
+    audience: str = Field(default="", max_length=200)
+    # True only when a person, shown the languages, the length, the audience
+    # and the account, pressed the approve button of the dialog (INV-6).
+    approved: bool = False
+
+    @field_validator("languages")
+    @classmethod
+    def _each_once(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(value))
 
 
 class DeckPdfRequest(BaseModel):
@@ -491,30 +504,37 @@ async def post_draft(job_id: str, request: DraftRequest) -> dict[str, bool]:
 
 @web.post("/api/jobs/{job_id}/deck")
 async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
-    """Create or recreate the Google Slides deck of one language, approved by a person."""
+    """Create the Google Slides deck of one language from the plan it has,
+    approved by a person. The plan is left as it is."""
     job = _job(job_id)
     if not request.approved:
         raise HTTPException(400, "A deck is created only with a person's approval.")
-    if request.replan:
-        _start(
-            job,
-            runs.SLIDES,
-            lambda: job.pipeline.prepare_slides_and_deck(
-                request.language,
-                minutes=request.minutes,
-                audience=request.audience,
-                create_deck=True,
-                replan=True,
-            ),
-            "create_deck",
-        )
-    else:
-        _start(
-            job,
-            runs.SLIDES,
-            lambda: job.pipeline.create_deck(request.language),
-            "create_deck",
-        )
+    _start(
+        job,
+        runs.SLIDES,
+        lambda: job.pipeline.create_deck(request.language),
+        "create_deck",
+    )
+    return {"accepted": True}
+
+
+@web.post("/api/jobs/{job_id}/slides")
+async def request_slides(job_id: str, request: SlidesRequest) -> dict[str, bool]:
+    """Plan the slides of the languages asked for and create their decks.
+
+    The request is the approval of the person who pressed the button of the
+    dialog that named the languages, the length, the audience and the
+    account. Everything runs in the slides lane; the posts stay usable.
+    """
+    job = _job(job_id)
+    if not request.approved:
+        raise HTTPException(400, "Slides are made only with a person's approval.")
+    log_event(
+        "slide request approved in the web ui",
+        event_phase="HUMAN_APPROVAL",
+        languages=",".join(request.languages),
+    )
+    runs.start_slides(job, list(request.languages), request.minutes, request.audience)
     return {"accepted": True}
 
 
@@ -596,91 +616,28 @@ async def record_url(job_id: str, request: UrlRequest) -> dict[str, bool]:
     return {"accepted": True}
 
 
-_LANG_MENTIONS: dict[str, tuple[str, ...]] = {
-    "ko": ("korean", "한국어", "국문", "韓国語"),
-    "en": ("english", "영어", "영문", "英語"),
-    "ja": ("japanese", "일본어", "일문", "日本語"),
-}
-
-
-def _requested_slide_languages(text: str) -> list[str]:
-    lower = text.lower()
-    if any(
-        w in lower
-        for w in (
-            "all three",
-            "all languages",
-            "모든 언어",
-            "전체 언어",
-            "3개 국어",
-            "3言語",
-            "すべて",
-        )
-    ):
-        return ["en", "ko", "ja"]
-    found: list[str] = []
-    for lang, words in _LANG_MENTIONS.items():
-        if any(w in lower for w in words):
-            found.append(lang)
-    return found
-
-
 @web.post("/api/jobs/{job_id}/message")
 async def send_message(job_id: str, request: MessageRequest) -> dict[str, bool]:
     job = _job(job_id)
 
     async def work() -> str | None:
         dropped = len(job.pipeline.approvals)
-        before_state = await job.pipeline.session_state()
-        before_plans = dict(before_state.get(state.SLIDE_PLANS) or {})
+        await job.pipeline.mark_surface()
         await job.pipeline.say(request.text)
-        after_state = await job.pipeline.session_state()
-        after_plans = dict(after_state.get(state.SLIDE_PLANS) or {})
-        lower_msg = request.text.lower()
-        wants_deck_now = (
-            job.wants_decks
-            or "deck" in lower_msg
-            or "google slides" in lower_msg
-            or "슬라이드" in request.text
-            or "スライド" in request.text
-        )
-        updated_slide_langs = [
-            lang
-            for lang, plan in after_plans.items()
-            if plan and plan != before_plans.get(lang)
-        ]
-        if wants_deck_now and hasattr(job.pipeline, "create_deck"):
-            for lang in updated_slide_langs:
-                await job.pipeline.create_deck(lang, summarize=True)
-        # An ADK slide_planning_pipeline turn plans one language and ends; if
-        # the person asked for multiple languages in one sentence, run the rest.
-        if updated_slide_langs and hasattr(job.pipeline, "prepare_slides_and_deck"):
-            brief = after_state.get(state.PRESENTATION_BRIEF) or {}
-            minutes = int(brief.get("minutes") or 15)
-            audience = str(brief.get("audience") or "software engineers")
-            replies = [job.pipeline.last_reply] if job.pipeline.last_reply else []
-            for lang in _requested_slide_languages(request.text):
-                if lang not in updated_slide_langs:
-                    await job.pipeline.prepare_slides_and_deck(
-                        lang,
-                        minutes=minutes,
-                        audience=audience,
-                        create_deck=wants_deck_now,
-                        replan=True,
-                    )
-                    if job.pipeline.last_reply:
-                        replies.append(job.pipeline.last_reply)
-            if len(replies) > 1:
-                job.pipeline.last_reply = "\n\n".join(replies)
         job.reply = job.pipeline.last_reply[:2000] or (
             "The agent finished without a reply; see the activity log."
         )
+        notes = []
         if dropped:
-            return (
+            notes.append(
                 f"{dropped} request(s) the agent was waiting on were left "
                 "unanswered by this message and are gone. Ask again for those."
             )
-        return None
+        # A slide request can only have been approved in an approval turn,
+        # but one left from an earlier turn is not left lying either.
+        if not_started := await runs.start_requested_slides(job):
+            notes.append(not_started)
+        return " ".join(notes) or None
 
     _start(job, runs.MAIN, work, "message")
     return {"accepted": True}
@@ -698,12 +655,16 @@ async def answer_approval(job_id: str, request: ApprovalRequest) -> dict[str, bo
         job.reply = job.pipeline.last_reply[:2000] or None
         if request.confirmed and not job.pipeline.approvals:
             await job.pipeline.summarize()  # something may have been posted
+        notes = []
         if declined:
-            return (
+            notes.append(
                 f"{declined} other request(s) the agent was waiting on were "
                 "declined: one answer goes to one request. Ask again for those."
             )
-        return None
+        # An approved slide request is run by code, in the slides lane.
+        if not_started := await runs.start_requested_slides(job):
+            notes.append(not_started)
+        return " ".join(notes) or None
 
     _start(job, runs.MAIN, work, "approval")
     return {"accepted": True}

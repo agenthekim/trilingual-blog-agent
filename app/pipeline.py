@@ -74,6 +74,8 @@ from app.tools.slides import (
     parse_slide_plan_markdown,
     render_slide_plan_markdown,
     set_presentation_brief,
+    slide_audience,
+    slide_length,
     slide_pdf_file,
     slide_plan_file,
     slide_timing_report,
@@ -236,6 +238,8 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 else None,
                 "slides_pdf": existing(slide_pdf_file(language)),
                 "slides_on_time": (timing.get(language) or {}).get("passed"),
+                # The length a slide request gets when it names none.
+                "slides_minutes": slide_length(session_state, language, 0),
                 "deck": decks.get(language),
             }
         )
@@ -257,6 +261,8 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
         "rows": rows,
         "slides": slides,
         "decks": dict(decks),
+        # The audience a slide request gets when it names none.
+        "slides_audience": slide_audience(session_state, ""),
         "editable": editable,
         "manifest": existing("manifest.md"),
     }
@@ -824,9 +830,16 @@ class ArticlePipeline:
         )
 
     async def make_slides(
-        self, languages: list[str], minutes: int, audience: str, create_deck: bool
+        self,
+        languages: list[str],
+        minutes: int | dict[str, int],
+        audience: str,
+        create_deck: bool,
     ) -> str | None:
         """Slides for several languages as one request (SLD-14).
+
+        ``minutes`` is one length for all, or a length per language; 0 keeps
+        the length a language has (see ``slide_length``).
 
         The languages are planned at the same time, up to
         ``BLOG_AGENT_SLIDE_PARALLELISM`` at once, each in a working session
@@ -841,8 +854,11 @@ class ArticlePipeline:
         async def one(language: str) -> list[str]:
             name = LANGUAGE_NAMES.get(language, language)
             try:
+                length = (
+                    minutes.get(language, 0) if isinstance(minutes, dict) else minutes
+                )
                 async with planning:
-                    made, note = await self.plan_slides(language, minutes, audience)
+                    made, note = await self.plan_slides(language, length, audience)
                 notes = [note] if note else []
                 if made and create_deck:
                     async with one_deck_at_a_time:
@@ -883,6 +899,9 @@ class ArticlePipeline:
         """
         name = LANGUAGE_NAMES.get(language, language)
         record = await self.session_state()
+        # A request that gives no length or audience keeps what there is.
+        minutes = slide_length(record, language, minutes)
+        audience = slide_audience(record, audience)
         working = {
             key: value
             for key, value in copy.deepcopy(record).items()
@@ -959,22 +978,40 @@ class ArticlePipeline:
                 else:
                     self.log(f"[{event.author}, {language}]\n{part.text.strip()}")
 
-    async def _prepare_talk(
-        self, language: str, minutes: int, audience: str, create_deck: bool
-    ) -> list[str]:
-        """Plan one language's talk and, if approved, create its deck."""
-        if language not in LANGUAGES:
-            return [f"'{language}' is not a language slides can be made in."]
-        name = LANGUAGE_NAMES[language]
-        made, note = await self.plan_slides(language, minutes, audience)
-        notes = [note] if note else []
-        if made and create_deck:
-            self.log(f">>> {name} deck: approved with the slide request")
-            if failure := await self.create_deck(language, summarize=False):
-                notes.append(failure)
-        return notes
-
     # --- actions a person starts on the page ---------------------------------
+
+    async def mark_surface(
+        self, minutes: int | None = None, audience: str | None = None
+    ) -> None:
+        """Say in the record that the page drives this session.
+
+        The agent's tools read it: on the page, slides are asked for with the
+        request tool and made by the run's slides lane (INV-6). With
+        ``minutes`` and ``audience`` the options of the run are kept too, for
+        slide requests that do not say them.
+        """
+        current = await self.session_state()
+        delta: dict[str, Any] = {}
+        if current.get(state.SURFACE) != state.SURFACE_WEB:
+            delta[state.SURFACE] = state.SURFACE_WEB
+        if minutes is not None or audience is not None:
+            options = {"minutes": int(minutes or 0), "audience": audience or ""}
+            if current.get(state.RUN_OPTIONS) != options:
+                delta[state.RUN_OPTIONS] = options
+        if delta:
+            await self._update_state(delta, current)
+
+    async def take_slide_request(self) -> dict[str, Any] | None:
+        """The slide request a person approved in the last agent turn, if any.
+
+        Taking it removes it from the record, so it is started once.
+        """
+        current = await self.session_state()
+        request = current.get(state.SLIDE_REQUEST)
+        if not isinstance(request, dict) or not request.get("languages"):
+            return None
+        await self._update_state({state.SLIDE_REQUEST: None}, current)
+        return request
 
     async def summarize(self) -> None:
         await self.act(compile_artifact_manifest_markdown)
@@ -1018,21 +1055,6 @@ class ArticlePipeline:
         if summarize:
             await self.summarize()
         return None
-
-    async def prepare_slides_and_deck(
-        self,
-        language: str,
-        minutes: int = 15,
-        audience: str = "software engineers",
-        create_deck: bool = True,
-        replan: bool = False,
-    ) -> str | None:
-        """Create or recreate the slides and Google Slides deck for one language."""
-        if replan:
-            notes = await self._prepare_talk(language, minutes, audience, create_deck)
-            await self.summarize()
-            return " ".join(notes) or None
-        return await self.create_deck(language, summarize=True)
 
     async def export_pdf(self, language: str) -> str | None:
         """Export one language's Google Slides deck as PDF (SLD-12)."""

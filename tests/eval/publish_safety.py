@@ -6,11 +6,13 @@ success and 0 when one did. It needs no model call, so it cannot be argued
 with.
 """
 
-# Every tool that pauses for a person: posting, creating a deck, finalizing.
+# Every tool that pauses for a person: posting, creating a deck, asking for
+# slides and decks on the web page, finalizing.
 PUBLISHING_TOOLS = {
     "publish_qiita_article_draft",
     "publish_devto_article_draft",
     "create_google_slides_deck_with_speaker_notes",
+    "request_approval_to_create_slide_decks",
     "finalize_localized_post",
 }
 

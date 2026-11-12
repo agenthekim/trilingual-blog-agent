@@ -755,9 +755,13 @@ function languageRow(row, slidesBusy, pBusy) {
     slideItems.push(el("div", {class: "muted small"},
       el("a", {href: fileUrl(row.slides_file), target: "_blank", rel: "noopener", title: row.slides_file}, t.speakerNotes || "Speaker notes")));
     if (!(row.deck && row.deck.url)) slideItems.push(el("div", {},
-      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => createDeck(row, false)}, t.createDeckBtn || "Create deck…")));
+      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => createDeck(row)}, t.createDeckBtn || "Create deck…")));
+  } else {
+    // No plan yet: slides are asked for here, with a person's approval (INV-6).
+    slideItems.push(el("div", {},
+      el("button", {type: "button", class: "ghost", disabled: slidesBusy, onclick: () => requestSlides(row)}, t.createSlidesBtn || "Create slides…")));
   }
-  const slidesCol = el("td", {class: "slides-col"}, ...(slideItems.length > 0 ? slideItems : [el("span", {class: "muted"}, "–")]));
+  const slidesCol = el("td", {class: "slides-col"}, ...slideItems);
 
   // Next step: review, finalize, approve, post. Only the one that is next is shown.
   const next = el("div", {class: "next"});
@@ -1027,30 +1031,39 @@ async function loadConfig() {
   if (!config) config = await api("/api/config");
   return config;
 }
-async function createDeck(row, replan = false) {
+// Slides for a language: a plan and its deck. The dialog is the approval; it
+// names the language, the length, the audience and the account (INV-6), and
+// says what an approval replaces.
+async function requestSlides(row) {
+  let account = null;
+  try { account = (await loadConfig()).slides_account; } catch (e) {}
+  const hasPlan = Boolean(row.slides_file), hasDeck = Boolean(row.deck && row.deck.url);
+  const summary = [
+    ["Language", row.language_name],
+    ["Length", `${row.slides_minutes} minutes, one slide per minute`],
+    ["Audience", (state && state.overview && state.overview.slides_audience) || "software engineers"],
+    ["From", `the latest post.${row.language}.md`],
+    ["Where", account ? `a new file in the Google Drive of ${account}` : "a new file in your Google Drive"],
+  ];
+  if (hasPlan) summary.push(["Plan", "there is a plan already; what was changed in its speaker notes is replaced by the new plan"]);
+  if (hasDeck) summary.push(["Deck", "there is a deck already; a new file is made and the earlier deck stays in Drive"]);
+  const ok = await confirmAction({
+    title: hasPlan ? `Make the ${row.language_name} slides and deck again?` : `Make ${row.language_name} slides and a Google Slides deck?`,
+    summary: summary,
+    okLabel: hasPlan ? "Approve and make again" : "Approve and make"});
+  if (ok) act("slides", {languages: [row.language], minutes: 0, audience: "", approved: true});
+}
+// A deck from the plan as it is; the plan is not touched.
+async function createDeck(row) {
   // Name the account, so a deck never lands in a Drive nobody expected.
   let account = null;
   try { account = (await loadConfig()).slides_account; } catch (e) {}
-  const hasPlan = Boolean(row.slides_file);
-  const willReplan = replan || !hasPlan;
-  const isRecreating = willReplan && row.deck && row.deck.url;
-
-  let title = `Create the ${row.language_name} Google Slides deck?`;
-  let okLabel = "Approve and create";
-  if (isRecreating) {
-    title = `Re-create the ${row.language_name} slides and deck?`;
-    okLabel = "Approve and re-create";
-  } else if (willReplan) {
-    title = `Generate slides and create the ${row.language_name} deck?`;
-  }
-
-  const fromDesc = willReplan ? `the latest post.${row.language}.md` : (row.slides_file || "speaker notes");
   const whereDesc = account ? `a new file in the Google Drive of ${account}` : "a new file in your Google Drive";
   const ok = await confirmAction({
-    title: title,
-    summary: [["From", fromDesc], ["Where", whereDesc], ["Contains", "one slide per minute, script in the speaker notes"]],
-    okLabel: okLabel});
-  if (ok) act("deck", {language: row.language, approved: true, replan: willReplan});
+    title: `Create the ${row.language_name} Google Slides deck?`,
+    summary: [["From", row.slides_file || "speaker notes"], ["Where", whereDesc], ["Contains", "one slide per minute, script in the speaker notes"]],
+    okLabel: "Approve and create"});
+  if (ok) act("deck", {language: row.language, approved: true});
 }
 function exportPdf(row) {
   act("pdf", {language: row.language});

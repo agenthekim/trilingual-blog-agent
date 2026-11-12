@@ -269,6 +269,28 @@ class PresentationBriefInput(BaseModel):
     minutes: int = Field(ge=1, le=60, description="Talk length; one slide per minute.")
 
 
+class SlideRequestInput(BaseModel):
+    """Slides for one or several languages, asked for as one request."""
+
+    languages: list[LanguageCode] = Field(min_length=1, max_length=3)
+    minutes: int = Field(
+        ge=0, le=60, description="Talk length; 0 keeps the length each language has."
+    )
+    audience: str = Field(
+        max_length=200, description="Who will watch; empty keeps the audience."
+    )
+
+    @field_validator("languages")
+    @classmethod
+    def _each_once(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(value))
+
+    @field_validator("audience")
+    @classmethod
+    def _stripped(cls, value: str) -> str:
+        return value.strip()
+
+
 class SlideSpec(BaseModel):
     number: int = Field(ge=1, le=60)
     title: str = Field(description="Slide title, at most about 10 words.")

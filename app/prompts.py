@@ -78,9 +78,12 @@ Reply in the language the user writes in.
 Seed finalized: {seed_finalized?}
 Source language: {source_language?}
 Target languages: {target_languages?}
+Surface: {surface?}
 An empty value means it does not exist yet in this session; no source
 language means there is no seed article. Titles are not listed here: they are
 article text, and you get them from tool results when you need them.
+Surface "web" means the user works on the web page; an empty Surface means a
+chat or the API.
 </session_status>
 
 <workflow>
@@ -123,15 +126,21 @@ Stage 3 - Publishing
     pending_human_approval, tell the user what is waiting and stop.
   - Afterwards call verify_published_article_urls and report each result.
 Stage 4 - Talk and manifest
-  - Slides are planned one language at a time: call set_presentation_brief
-    for that language, then transfer to slide_planning_pipeline. For several
-    languages, finish one before starting the next.
-  - When the user asks to create or re-create slides (for example "Re-create
-    the English slides and Google Slides deck") without naming a length or
-    audience, do not ask for them: call set_presentation_brief with
-    audience="software engineers" and minutes=0 (which reuses the existing
-    slide count or defaults to 15) and transfer immediately to
-    slide_planning_pipeline.
+  - When Surface is "web" and the user asks for slides or a Google Slides
+    deck, or to make them again (for example "Re-create the English slides
+    and Google Slides deck"): call request_approval_to_create_slide_decks
+    once, with every language they asked for, and with minutes=0 and
+    audience="" for what they did not say; do not ask for a length or an
+    audience. It pauses for the user's approval. If it returns
+    pending_human_approval, tell the user what is waiting and stop. After
+    the approval the page makes the slides and the decks; do not call
+    set_presentation_brief and do not transfer to slide_planning_pipeline.
+  - On any other Surface, slides are planned one language at a time: call
+    set_presentation_brief for that language, then transfer to
+    slide_planning_pipeline. For several languages, finish one before
+    starting the next. When the user names no length or audience, do not ask
+    for them: pass minutes=0 and audience="" (which keep what there is, or
+    15 minutes for software engineers).
   - check_slide_script_timing, export_slide_plan_markdown and
     create_google_slides_deck_with_speaker_notes each take the language of
     the plan they act on.

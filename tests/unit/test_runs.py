@@ -26,6 +26,9 @@ class FakePipeline:
         self.slides_may_end = asyncio.Event()
         self.calls: list[Any] = []
 
+    async def mark_surface(self, minutes=None, audience=None) -> None:
+        self.calls.append(("surface", minutes, audience))
+
     async def run_posts(self, source_text: str) -> tuple[bool, str | None]:
         self.calls.append(("posts", source_text))
         return self.ready, self.notice
@@ -130,6 +133,7 @@ async def test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_the
     await slides.task
     assert not job.busy and job.notice is None and job.error is None
     assert pipeline.calls == [
+        ("surface", 5, "engineers"),  # the page drives this session
         ("posts", "# 글\n\n본문"),
         ("slides", ["en", "ja"], 5, "engineers", True),
     ]
@@ -144,14 +148,15 @@ async def test_no_slides_are_started_when_the_posts_did_not_come_out(
     runs.start_run(job, "# 글\n\n본문", 5, ["en"], "engineers")
     await job.lanes[runs.MAIN].task
     assert not job.busy and job.notice == "No English text was written."
-    assert pipeline.calls == [("posts", "# 글\n\n본문")]
+    assert [call[0] for call in pipeline.calls] == ["surface", "posts"]
 
     # Nor when no slides were asked for.
     pipeline = FakePipeline()
     job = _job(pipeline)
     runs.start_run(job, "# 글\n\n본문", 0, [], "engineers")
     await job.lanes[runs.MAIN].task
-    assert not job.busy and [call[0] for call in pipeline.calls] == ["posts"]
+    assert not job.busy
+    assert [call[0] for call in pipeline.calls] == ["surface", "posts"]
 
 
 def test_a_record_written_before_there_were_lanes_is_still_opened(

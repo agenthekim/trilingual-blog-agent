@@ -164,12 +164,40 @@ def test_a_failed_draft_is_named_to_the_planner_only_within_the_same_run() -> No
 def test_no_title_is_written_into_the_coordinators_instruction() -> None:
     """ADK fills {placeholders} with raw state; a fetched title must not get there."""
     placeholders = set(re.findall(r"\{(\w+)\??\}", prompts.COORDINATOR_INSTRUCTION))
-    # Only values that code sets from a closed list: a flag and language codes.
+    # Only values that code sets from a closed list: a flag, language codes
+    # and the name of the surface the session is driven from.
     assert placeholders == {
         state.SEED_FINALIZED,
         state.SOURCE_LANGUAGE,
         state.TARGET_LANGUAGES,
+        state.SURFACE,
     }
+
+
+def test_the_coordinator_is_told_how_slides_are_asked_for_on_each_surface() -> None:
+    text = prompts.COORDINATOR_INSTRUCTION
+    stage = text.split("Stage 4 - Talk and manifest", 1)[1].split("</workflow>", 1)[0]
+    # On the page: one call for every language, which pauses for the person.
+    assert 'When Surface is "web"' in stage
+    assert (
+        "call request_approval_to_create_slide_decks\n    once, with every language they asked for"
+        in stage
+    )
+    assert (
+        "do not call\n    set_presentation_brief and do not transfer to slide_planning_pipeline"
+        in stage
+    )
+    # Elsewhere: one language at a time, as before.
+    assert "On any other Surface, slides are planned one language at a time" in stage
+    # The five sections of the instruction are all still there.
+    for section in (
+        "role",
+        "domain_knowledge",
+        "session_status",
+        "workflow",
+        "constraints",
+    ):
+        assert f"<{section}>" in text and f"</{section}>" in text
 
 
 def _inside_markers(text: str, needle: str) -> bool:

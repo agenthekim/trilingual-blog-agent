@@ -58,6 +58,7 @@ from app.tools.slides import (
     create_google_slides_deck_with_speaker_notes,
     export_google_slides_pdf,
     export_slide_plan_markdown,
+    request_approval_to_create_slide_decks,
     set_presentation_brief,
 )
 from app.workflow_agents import (
@@ -268,6 +269,7 @@ root_agent = Agent(
         record_manually_posted_url,
         verify_published_article_urls,
         set_presentation_brief,
+        request_approval_to_create_slide_decks,
         check_slide_script_timing,
         export_slide_plan_markdown,
         create_google_slides_deck_with_speaker_notes,

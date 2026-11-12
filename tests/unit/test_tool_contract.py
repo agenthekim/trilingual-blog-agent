@@ -26,12 +26,8 @@ ENUMERATED: dict[str, Any] = {
     "source_language": LanguageCode,
     "platform": PlatformName,
     "code_mode": CodeMode,
+    "languages": list[LanguageCode],
 }
-
-# ``set_presentation_brief`` loses its defaults in WP-05 of the version 1
-# plan; until then it is the one exception, and the test below fails when the
-# exception is no longer needed so that it is not left behind.
-DEFAULTS_ALLOWED_FOR_NOW = {"set_presentation_brief"}
 
 
 def _agent_tools() -> dict[str, Callable[..., Any]]:
@@ -118,10 +114,7 @@ def test_tools_take_typed_arguments_and_no_defaults(name: str) -> None:
             assert hints[argument] == ENUMERATED[argument], (
                 f"{name}: '{argument}' must be declared as the enumeration"
             )
-    if name in DEFAULTS_ALLOWED_FOR_NOW:
-        assert with_defaults, f"{name} no longer needs to be an exception"
-    else:
-        assert not with_defaults, f"{name}: defaults on {with_defaults}"
+    assert not with_defaults, f"{name}: defaults on {with_defaults}"
 
 
 def test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes() -> None:
@@ -133,15 +126,22 @@ def test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes() -> 
         assert set(properties) == set(_arguments(tool)), name
         for argument, schema in properties.items():
             if argument in ENUMERATED:
-                allowed = list(typing.get_args(ENUMERATED[argument]))
+                declared = ENUMERATED[argument]
+                if typing.get_origin(declared) is list:  # a list of them
+                    (declared,) = typing.get_args(declared)
+                    schema = schema.get("items") or {}
+                allowed = list(typing.get_args(declared))
                 assert schema.get("enum") == allowed, f"{name}.{argument}"
                 shown.setdefault(argument, set()).add(name)
     # Each of the three kinds is in use, so the check above checked something.
     assert shown["language"] and shown["platform"] and shown["code_mode"]
+    assert shown["languages"]
 
 
 def _wrong(argument: str, annotation: Any) -> Any:
     """A value of the right Python type that the tool must not accept."""
+    if argument == "languages":
+        return ["en", "fr"]
     if argument in ENUMERATED:
         return "fr"
     if annotation is str:

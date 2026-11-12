@@ -22,6 +22,7 @@ from app.schemas import (
     LanguageCode,
     PresentationBriefInput,
     SlideDeckPlan,
+    SlideRequestInput,
     checked_language,
     tool_error,
     validation_error,
@@ -39,44 +40,74 @@ MIN_SLIDE_SECONDS = 45
 MAX_SLIDE_SECONDS = 75
 
 
+DEFAULT_TALK_MINUTES = 15
+DEFAULT_AUDIENCE = "software engineers"
+
+
+def slide_length(session_state: Any, language: str, minutes: int) -> int:
+    """How long the talk of ``language`` is when a request says ``minutes``.
+
+    A length that was given is used. A request that gives none (0) keeps the
+    length of that language's plan; without a plan it takes the length the
+    run was started with, and failing that 15 minutes. Code decides this, not
+    a model.
+    """
+    if minutes and minutes > 0:
+        return minutes
+    plan = (session_state.get(state.SLIDE_PLANS) or {}).get(language) or {}
+    options = session_state.get(state.RUN_OPTIONS) or {}
+    brief = session_state.get(state.PRESENTATION_BRIEF) or {}
+    return int(
+        len(plan.get("slides") or [])
+        or options.get("minutes")
+        or brief.get("minutes")
+        or DEFAULT_TALK_MINUTES
+    )
+
+
+def slide_audience(session_state: Any, audience: str) -> str:
+    """Who the talk is for when a request says ``audience``; empty keeps it."""
+    if audience and audience.strip():
+        return audience.strip()
+    options = session_state.get(state.RUN_OPTIONS) or {}
+    brief = session_state.get(state.PRESENTATION_BRIEF) or {}
+    return str(options.get("audience") or brief.get("audience") or DEFAULT_AUDIENCE)
+
+
 def set_presentation_brief(
     language: LanguageCode,
-    audience: str = "software engineers",
-    minutes: int = 15,
-    tool_context: ToolContext = None,  # type: ignore[assignment]
+    audience: str,
+    minutes: int,
+    tool_context: ToolContext,
 ) -> dict[str, Any]:
     """Record who the talk is for, in which language, and how long it runs.
 
     Call this before transferring to slide_planning_pipeline. The deck is planned at
-    one slide per minute, so 'minutes' is also the number of slides.
+    one slide per minute, so 'minutes' is also the number of slides. On the
+    web page this tool is not used: slides are asked for there with
+    request_approval_to_create_slide_decks, and this tool says so.
 
     Args:
         language: Language of the slides and speaker script: 'ko', 'en' or 'ja'.
-        audience: Who will watch, for example 'software engineers'. Defaults to
-            the previous brief's audience or 'software engineers'.
-        minutes: Length of the talk in minutes, 1 to 60. Defaults to the
-            existing plan's slide count or 15.
+        audience: Who will watch, for example 'software engineers'. An empty
+            string '' keeps the audience of the previous brief.
+        minutes: Length of the talk in minutes, 1 to 60. 0 keeps the length
+            this language's plan has now (15 when there is no plan).
 
     Returns:
         On success: status, the stored brief, and next_step. On failure: status
         'error' with error_code, message and recovery_instruction.
     """
-    prev_brief = tool_context.state.get(state.PRESENTATION_BRIEF) or {}
-    existing_plan = (tool_context.state.get(state.SLIDE_PLANS) or {}).get(
-        language
-    ) or {}
-    resolved_audience = (
-        audience.strip()
-        if audience and audience.strip()
-        else str(prev_brief.get("audience") or "software engineers")
-    )
-    resolved_minutes = (
-        minutes
-        if minutes and minutes > 0
-        else int(
-            len(existing_plan.get("slides") or []) or prev_brief.get("minutes") or 15
+    if tool_context.state.get(state.SURFACE) == state.SURFACE_WEB:
+        return tool_error(
+            "USE_THE_SLIDE_REQUEST_TOOL",
+            "On the web page slides are not planned in this conversation.",
+            "Call request_approval_to_create_slide_decks with every language "
+            "the user asked for, the length and the audience. It asks the user "
+            "to approve; the page then makes the slides and shows the progress.",
         )
-    )
+    resolved_audience = slide_audience(tool_context.state, audience)
+    resolved_minutes = slide_length(tool_context.state, language, minutes)
     try:
         brief = PresentationBriefInput(
             language=language, audience=resolved_audience, minutes=resolved_minutes
@@ -102,6 +133,157 @@ def set_presentation_brief(
         "status": "success",
         "brief": brief.model_dump(),
         "next_step": "Transfer to slide_planning_pipeline to draft the deck.",
+    }
+
+
+def slide_request_summary(
+    session_state: Any, languages: list[str], minutes: int, audience: str
+) -> dict[str, Any]:
+    """What a slide request will make, for the person who is asked to approve it.
+
+    The same summary is behind the dialog of the page's button and behind the
+    confirmation the agent's request tool pauses for (INV-6): the languages,
+    the length of each, the audience, the account whose Drive receives the
+    decks, and what an approval replaces.
+    """
+    plans = session_state.get(state.SLIDE_PLANS) or {}
+    decks = session_state.get(state.GOOGLE_SLIDES_DECKS) or {}
+    return {
+        "languages": list(languages),
+        "minutes": {
+            language: slide_length(session_state, language, minutes)
+            for language in languages
+        },
+        "audience": slide_audience(session_state, audience),
+        "account": google_slides.granted_account(),
+        "replaces_plans": [language for language in languages if language in plans],
+        "replaces_decks": [language for language in languages if language in decks],
+    }
+
+
+def slide_request_hint(summary: dict[str, Any]) -> str:
+    """One paragraph a person reads before approving a slide request."""
+    lengths = ", ".join(
+        f"{LANGUAGE_NAMES[language]} ({minutes} min)"
+        for language, minutes in summary["minutes"].items()
+    )
+    where = (
+        f"the Google Drive of {summary['account']}"
+        if summary["account"]
+        else "your Google Drive"
+    )
+    hint = (
+        f"Approve to make slides and a Google Slides deck for: {lengths}. "
+        f"Audience: {summary['audience']}. One slide per minute, with the "
+        f"script in the speaker notes. Each deck is a new file in {where}."
+    )
+    if summary["replaces_plans"]:
+        names = ", ".join(LANGUAGE_NAMES[code] for code in summary["replaces_plans"])
+        hint += (
+            f" {names}: there is a plan already; what was changed in its "
+            "speaker notes is replaced by the new plan."
+        )
+    if summary["replaces_decks"]:
+        names = ", ".join(LANGUAGE_NAMES[code] for code in summary["replaces_decks"])
+        hint += (
+            f" {names}: there is a deck already; a new file is made and the "
+            "earlier deck stays in Drive."
+        )
+    return hint
+
+
+def request_approval_to_create_slide_decks(
+    languages: list[LanguageCode],
+    minutes: int,
+    audience: str,
+    tool_context: ToolContext,
+) -> dict[str, Any]:
+    """Ask the user to approve making slides and Google Slides decks, on the web page.
+
+    Use this on the web page when the user asks, in words, for slides or a
+    deck in one or several languages, or to make them again. Pass every
+    language asked for in one call: slides for several languages are one
+    request. The first call makes nothing: it pauses and asks the user to
+    approve, naming the languages, the length, the audience and the Google
+    account. When the user approves, the request is handed to the page, which
+    plans the slides and creates the decks and shows the progress; you do not
+    plan or create them yourself, and you cannot approve for the user.
+
+    Args:
+        languages: The languages to make slides for, each 'ko', 'en' or 'ja'.
+        minutes: Length of the talk in minutes, 1 to 60, or 0 when the user
+            did not say: each language then keeps the length it has.
+        audience: Who will watch, or an empty string '' when the user did not
+            say: the audience of the run is kept.
+
+    Returns:
+        status 'pending_human_approval' while waiting, 'declined' if refused,
+        or 'success' with request (languages, minutes per language, audience)
+        once the user approved and the page took it over. On failure: status
+        'error' with error_code, message and recovery_instruction.
+    """
+    try:
+        request = SlideRequestInput(
+            languages=languages, minutes=minutes, audience=audience
+        )
+    except ValidationError as exc:
+        return validation_error(
+            exc,
+            "languages must be a list of 'ko', 'en' or 'ja'; minutes 0 to 60 "
+            "(0 when the user gave no length); audience a short text or ''.",
+        )
+    if tool_context.state.get(state.SURFACE) != state.SURFACE_WEB:
+        return tool_error(
+            "ONLY_ON_THE_WEB_PAGE",
+            "This tool hands a slide request to the web page; this "
+            "conversation is not on the web page.",
+            "Plan one language at a time instead: call set_presentation_brief, "
+            "transfer to slide_planning_pipeline, and call "
+            "create_google_slides_deck_with_speaker_notes when a deck is wanted.",
+        )
+    missing = [
+        LANGUAGE_NAMES[language]
+        for language in request.languages
+        if not state.article_markdown(tool_context.state, language)
+    ]
+    if missing:
+        return tool_error(
+            "ARTICLE_VERSION_MISSING",
+            f"There is no {' or '.join(missing)} version of the article to "
+            "build slides from.",
+            "Localize the article first, or ask for languages that exist.",
+        )
+    summary = slide_request_summary(
+        tool_context.state, request.languages, request.minutes, request.audience
+    )
+    confirmation = tool_context.tool_confirmation
+    if confirmation is None:
+        tool_context.request_confirmation(
+            hint=slide_request_hint(summary),
+            payload={"action": "slides", **summary},
+        )
+        return {
+            "status": "pending_human_approval",
+            "message": "Waiting for the user's approval before any slides are made.",
+        }
+    if not confirmation.confirmed:
+        return {
+            "status": "declined",
+            "message": "The user declined. No slides and no deck were made.",
+        }
+    accepted = {
+        "languages": summary["languages"],
+        "minutes": summary["minutes"],
+        "audience": summary["audience"],
+    }
+    # The run's slides lane takes this when the turn has ended (RUN-1); a
+    # request that was waiting and not yet taken is replaced, not added to.
+    tool_context.state[state.SLIDE_REQUEST] = accepted
+    return {
+        "status": "success",
+        "request": accepted,
+        "message": "Approved. The page is making the slides now and shows the "
+        "progress; tell the user that, and do not plan or create them here.",
     }
 
 

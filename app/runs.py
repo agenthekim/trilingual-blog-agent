@@ -323,6 +323,7 @@ def start_run(
     """
 
     async def posts() -> str | None:
+        await job.pipeline.mark_surface(talk_minutes, audience)
         ready, notice = await job.pipeline.run_posts(source_text)
         if ready and talk_minutes > 0 and talk_languages:
             try:
@@ -341,3 +342,49 @@ def start_run(
         return notice
 
     start(job, MAIN, posts, "run_posts")
+
+
+def start_slides(
+    job: Job,
+    languages: list[str],
+    minutes: int | dict[str, int],
+    audience: str,
+    what: str = "slides",
+) -> None:
+    """Start a slide request a person approved, in the slides lane (INV-6).
+
+    Plans and decks for all the languages asked for are one action of the
+    lane. Raises ``LaneBusy`` when the lane is working.
+    """
+    start(
+        job,
+        SLIDES,
+        lambda: job.pipeline.make_slides(languages, minutes, audience, True),
+        what,
+    )
+
+
+async def start_requested_slides(job: Job) -> str | None:
+    """After an agent turn: start the slide request a person approved in it.
+
+    The agent's request tool only records the approved request; running it is
+    this code's job, in the slides lane. Returns None when there was nothing
+    to start or it was started, else a sentence saying that it was not.
+    """
+    request = await job.pipeline.take_slide_request()
+    if request is None:
+        return None
+    try:
+        start_slides(
+            job,
+            list(request["languages"]),
+            dict(request.get("minutes") or {}),
+            str(request.get("audience") or ""),
+            "slides_request",
+        )
+    except LaneBusy as busy:
+        return (
+            "The slides that were approved were not started. "
+            f"{busy} Then ask for them again."
+        )
+    return None
