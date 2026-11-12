@@ -22,6 +22,12 @@ concurrency:
 env:
   LAST_OUTPUT: ${{ github.workspace }}/.ci-last-output.txt
 
+defaults:
+  run:
+    # Named explicitly: this is what turns on pipefail, without which a
+    # failing command in front of "| tee" would count as a success.
+    shell: bash
+
 jobs:
   python:
     name: Linter and unit tests
