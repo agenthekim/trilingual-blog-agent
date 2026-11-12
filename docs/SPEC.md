@@ -206,7 +206,7 @@ stage at a time and waits.
 | OPS-4 | Models are called from two places: the agents in `app/agent.py` and the gateway in `app/llm.py`. The web layer calls no model and no platform; it starts actions of the pipeline |
 | OPS-5 | Every function an agent can call as a tool has a name that says what it does and to what; a docstring with its purpose, each argument and what it returns; typed arguments without defaults, where the allowed languages, platforms and code modes are enumerations the model is shown; arguments checked through a Pydantic model before anything happens; and, when it cannot do what was asked, a result with `error_code` and `recovery_instruction` instead of an exception |
 | OPS-6 | Every push runs the linter, the unit tests and a Terraform validation in CI (`.github/workflows/ci.yml`). None of them needs a credential |
-| OPS-7 | In `README.md`, the table "Where each capability lives" points only at what is there: every file or folder it names exists in the repository, and every name it gives as code is found in a file that its row names |
+| OPS-7 | In `README.md`, the table "Where each capability lives" points only at what is there: every file or folder it names exists in the repository, and every name it gives as code is found in a file that its row names. Its rows are the nineteen criteria of the course rubric, by name and in order |
 
 ### 5.10 Runs
 
@@ -354,7 +354,7 @@ takes it.
 | 2 | A third posting state after a draft is published by hand on the site | Covered today by "Update post…" with Public; a way to only register the public address is not built |
 | 3 | Deployment to Agent Runtime, Terraform apply, Cloud DLP, export to Cloud Trace | Written, never run against the services. CI runs on every push (OPS-6); it validates the Terraform files and applies nothing |
 | 4 | Lock file | The repository carries no `uv.lock`: the one that existed named a package index that answers only inside the network it was written in, and it is kept out of version control (`.gitignore`; the last copy is under the tag `v1.0-full`). CI and the container image resolve the dependencies from PyPI within the version ranges of `pyproject.toml`. Writing a lock file against PyPI and committing it is left to the owner |
-| 5 | What version 1.0 was not run with | A real model planning slides in working sessions, three languages at once; the structuring gateway with a real model; a real Medium address; the Google Slides API after the changes of this version; the access token on a host name behind a proxy. The Korean and Japanese texts of the catalogs were not read by a native reader. `README.md` keeps the list of what was run |
+| 5 | What version 1.0 was not run with | The structuring gateway with a real model; a Google Docs source and a Naver source after the changes of this version; a slide request typed to the agent and approved; deck text sync after the changes; the offer after an interruption; export to Cloud Trace; Cloud DLP. The Korean and Japanese texts of the catalogs were not read by a native reader. Run once, on 2026-11-12: a real Medium address, a real model planning slides in working sessions for three languages at once, the Google Slides API, a public post to Qiita, the access token on a host name behind a proxy. `docs/STATUS.md` keeps the list of what was run |
 | 6 | One plan for a talk, localized into the other languages, so that the three decks have the same slides | Not built; a candidate for a later version (section 7 of the plan) |
 
 <!-- requirements:end -->
@@ -470,7 +470,7 @@ Each requirement that code can check is checked by the unit tests named here.
 requirement of sections 2 and 5 is missing from this table, or when the Korean
 companion lists different requirements. Requirements that are instructions to
 a model (LOC-3, LOC-4, SLD-3, SLD-4) are checked as far as their wording goes;
-what the models then did was read in real runs, recorded in `README.md`.
+what the models then did was read in real runs, recorded in `docs/STATUS.md`.
 
 <!-- traceability:begin -->
 | | Checked by |
@@ -563,7 +563,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | OPS-4 | `test_models_are_called_from_the_agents_and_the_gateway_only` |
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: the workflow runs on GitHub, not in the unit tests; whether it passed is shown on the commit it ran for |
-| OPS-7 | `test_every_place_the_readme_points_to_exists` |
+| OPS-7 | `test_every_place_the_readme_points_to_exists`, `test_the_readme_table_has_the_nineteen_criteria_in_order` |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs`, `test_finalizing_a_post_does_not_touch_slides` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |

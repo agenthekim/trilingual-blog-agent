@@ -204,7 +204,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | OPS-4 | 모델을 부르는 곳은 둘이다. `app/agent.py`의 에이전트와 `app/llm.py`의 관문이다. 웹 계층은 모델도 플랫폼도 부르지 않고 파이프라인의 액션을 시작한다 |
 | OPS-5 | 에이전트가 도구로 부를 수 있는 모든 함수는 다음을 갖춘다. 무엇을 어디에 하는지 말하는 이름, 목적과 각 인자와 반환값을 적은 독스트링, 기본값이 없고 타입이 선언된 인자(허용되는 언어, 플랫폼, 코드 방식은 모델에 보이는 열거형이다), 어떤 일도 일어나기 전에 Pydantic 모델로 하는 인자 검사, 그리고 요청한 일을 할 수 없을 때 예외 대신 `error_code`와 `recovery_instruction`이 든 결과 |
 | OPS-6 | 푸시할 때마다 CI(`.github/workflows/ci.yml`)에서 린터, 단위 테스트, Terraform 검증을 실행한다. 어느 것도 자격 증명이 필요 없다 |
-| OPS-7 | `README.md`의 표 "Where each capability lives"는 실제로 있는 것만 가리킨다. 표에 적힌 파일과 폴더는 모두 저장소에 있고, 코드로 적힌 이름은 모두 그 행이 가리키는 파일 가운데 하나에 있다 |
+| OPS-7 | `README.md`의 표 "Where each capability lives"는 실제로 있는 것만 가리킨다. 표에 적힌 파일과 폴더는 모두 저장소에 있고, 코드로 적힌 이름은 모두 그 행이 가리키는 파일 가운데 하나에 있다. 표의 행은 과정 루브릭의 열아홉 기준이며, 루브릭의 이름과 순서를 따른다 |
 
 ### 5.10 실행
 
@@ -342,7 +342,7 @@ flowchart TD
 | 2 | 사이트에서 초안을 수동으로 공개한 뒤의 세 번째 게시 상태 | 현재는 Public을 선택한 "Update post…"로 처리한다. 공개 주소만 등록하는 방법은 구현되지 않았다 |
 | 3 | Agent Runtime 배포, Terraform apply, Cloud DLP, Cloud Trace 내보내기 | 작성만 했고 실제 서비스에 대고 실행한 적은 없다. CI는 푸시마다 실행되며(OPS-6), Terraform 파일을 검증만 하고 아무것도 적용하지 않는다 |
 | 4 | 잠금 파일 | 저장소에는 `uv.lock`이 없다. 있던 파일에 적힌 패키지 인덱스는 그 파일을 만든 네트워크 안에서만 응답했고, 그래서 버전 관리에서 뺐다(`.gitignore`. 마지막 사본은 태그 `v1.0-full`에 있다). CI와 컨테이너 이미지는 `pyproject.toml`의 버전 범위 안에서 의존성을 PyPI에서 해석한다. PyPI 기준의 잠금 파일을 만들어 커밋하는 일은 소유자에게 남긴다 |
-| 5 | 버전 1.0에서 실행해 보지 않은 것 | 실제 모델로 작업 세션에서 세 언어의 슬라이드를 동시에 계획하는 것, 실제 모델로 구조화 관문을 지나는 것, 실제 Medium 주소, 이 버전의 변경 뒤의 Google Slides API, 프록시 뒤의 호스트 이름에서의 접근 토큰. 문구집의 한국어와 일본어 문구는 그 언어를 모국어로 쓰는 사람이 읽어 보지 않았다. 실제로 실행한 것의 목록은 `README.md`에 있다 |
+| 5 | 버전 1.0에서 실행해 보지 않은 것 | 실제 모델로 구조화 관문을 지나는 것, 이 버전의 변경 뒤의 Google Docs 원본과 Naver 원본, 에이전트에게 글로 요청하고 승인한 슬라이드 요청, 변경 뒤의 덱 텍스트 동기화, 중단 뒤의 제안, Cloud Trace 내보내기, Cloud DLP. 문구집의 한국어와 일본어 문구는 그 언어를 모국어로 쓰는 사람이 읽어 보지 않았다. 2026-11-12에 한 번 실행한 것은 실제 Medium 주소, 실제 모델로 작업 세션에서 세 언어의 슬라이드를 동시에 계획하는 것, Google Slides API, Qiita 공개 게시, 프록시 뒤의 호스트 이름에서의 접근 토큰이다. 실제로 실행한 것의 목록은 `docs/STATUS.md`에 있다 |
 | 6 | 발표 계획을 하나만 세우고 다른 언어로 현지화해 세 덱의 슬라이드를 같게 하는 방식 | 구현되지 않았다. 이후 버전의 후보이다(계획 문서 7절) |
 
 <!-- requirements:end -->
@@ -455,7 +455,7 @@ flowchart TD
 요구사항이 이 표에 없거나, 한국어판이 다른 요구사항을 나열하면 실패한다.
 모델에 주는 지시인 요구사항(LOC-3, LOC-4, SLD-3, SLD-4)은 그 문구가 미치는
 범위까지 검사한다. 그 뒤 모델이 실제로 어떻게 했는지는 실제 실행에서 읽어
-확인했고 `README.md`에 기록했다.
+확인했고 `docs/STATUS.md`에 기록했다.
 
 <!-- traceability:begin -->
 | | 검사하는 테스트 |
@@ -548,7 +548,7 @@ flowchart TD
 | OPS-4 | `test_models_are_called_from_the_agents_and_the_gateway_only` |
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: 워크플로는 단위 테스트가 아니라 GitHub에서 실행된다. 통과 여부는 실행 대상 커밋에 표시된다 |
-| OPS-7 | `test_every_place_the_readme_points_to_exists` |
+| OPS-7 | `test_every_place_the_readme_points_to_exists`, `test_the_readme_table_has_the_nineteen_criteria_in_order` |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs`, `test_finalizing_a_post_does_not_touch_slides` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |

@@ -14,6 +14,37 @@ requirements, and for each requirement the unit tests that check it. A test
 fails when the two drift apart. This README is the guide; the specification is
 the reference.
 
+## Where each capability lives
+
+Where the code for each criterion of the course rubric is. Every path and
+every name in the table is checked by a unit test (`tests/unit/test_spec.py`).
+
+| # | Area | Criterion | Open this first | Also |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | Tool & Interface Design | Comprehensive Tool Docstrings | `app/tools/publish.py`: `publish_qiita_article_draft` (purpose, every argument, what is returned, what a failure returns) | The other tools in `app/tools/articles.py` and `app/tools/slides.py`; every tool's docstring is checked by `tests/unit/test_tool_contract.py` |
+| 2 | Tool & Interface Design | Descriptive Naming | `app/agent.py`: the `tools` list of `root_agent` | Names say the action and its object, for example `export_naver_blog_paste_ready_html` and `create_google_slides_deck_with_speaker_notes` |
+| 3 | Tool & Interface Design | Explicit JSON Schemas | `app/schemas.py`: `SaveSeedInput`, `ReviewVerdict` | `LanguageCode`, `PlatformName` and `CodeMode` show the model the allowed values; `output_schema` of the agents in `app/agent.py` |
+| 4 | Tool & Interface Design | Guided Error Handling | `app/schemas.py`: `ToolError`, `tool_error` | Every failure returns `error_code` and `recovery_instruction`; `validation_error` does the same for a wrong argument |
+| 5 | Context & Memory | Robust System Instructions | `app/prompts.py`: `COORDINATOR_INSTRUCTION` | The instructions of the other agents are in the same file; article text is passed between random-token markers (`fenced`); `tests/unit/test_prompts.py` |
+| 6 | Context & Memory | History Compaction | `app/agent.py`: `EventsCompactionConfig`, `ContextCacheConfig` | `LlmEventSummarizer` summarizes older events with the model routed for `summarize_history` in `app/models.py` |
+| 7 | Context & Memory | Persistent Session State | `app/app_utils/services.py`: `get_session_service`; `app/persistence.py`: `FirestoreArticleStore` | `SqliteArticleStore` locally; runs of the web page: `Job.save` and `reopen` in `app/runs.py`; the state keys are constants in `app/state.py` |
+| 8 | Context & Memory | Async Memory Operations | `app/memory.py`: `schedule_memory_consolidation` | Registered as `after_agent_callback` of `root_agent` in `app/agent.py`, next to `PreloadMemoryTool` |
+| 9 | Orchestration & Logic | Multi-Agent Patterns | `app/agent.py`: `ParallelAgent`, `LoopAgent`, `SequentialAgent` | A coordinator with `sub_agents`; `build_slide_planning_pipeline`; custom `BaseAgent` gates in `app/workflow_agents.py` |
+| 10 | Orchestration & Logic | Strategic Model Routing | `app/models.py`: `MODEL_ROUTES` | `model_for` gives each agent its model; the one model call outside the agents, `generate_text` in `app/llm.py`, reads the same table |
+| 11 | Orchestration & Logic | Guardrails & Policy Plugins | `app/plugins.py`: `ContentPolicyPlugin` | Posting rules in `app/policy.py`; `check_fidelity` in `app/markdown_checks.py`; `sanitize_html` in `app/tools/publish.py`; `SOURCE_KINDS` in `app/sources.py` |
+| 12 | Orchestration & Logic | Human-in-the-Loop Hooks | `app/tools/publish.py`: `_approval`, `request_confirmation` | `ResumabilityConfig` in `app/agent.py`; `request_approval_to_create_slide_decks` in `app/tools/slides.py`; `tests/unit/test_approvals.py` |
+| 13 | Observability & Tracing | Structured JSON Logging | `app/observability.py`: `get_logger`, `log_event` | `StructuredLogHandler` writes one JSON record per line after `_RedactionFilter`; `log_activity` for the lines of a run |
+| 14 | Observability & Tracing | Intent vs. Outcome Capture | `app/observability.py`: `ObservabilityPlugin` | `before_tool_callback` logs the intent, `after_tool_callback` the outcome, joined by `function_call_id`; a person's actions: `ArticlePipeline.act` in `app/pipeline.py` |
+| 15 | Observability & Tracing | Distributed Tracing | `app/observability.py`: `root_span`, `traced_span` | `setup_tracing`; export with `BLOG_AGENT_TRACE_EXPORT=cloud`; a span for every outbound call in `app/platforms.py`, `app/google_slides.py` and `app/llm.py` |
+| 16 | Observability & Tracing | PII Redaction | `app/redaction.py`: `redact_text`, `_redact_with_cloud_dlp` | Regular expressions always, Cloud DLP when `BLOG_AGENT_ENABLE_DLP=true`; applied to every log record by `_RedactionFilter` in `app/observability.py` |
+| 17 | Infrastructure & CI/CD | Automated Evaluation Suites | `tests/eval/eval_config.yaml`, `tests/eval/datasets/basic-dataset.json` | Metrics: `tests/eval/response_quality.py`, `tests/eval/publish_safety.py`; unit tests in `tests/unit/`, run on every push by `.github/workflows/ci.yml` |
+| 18 | Infrastructure & CI/CD | Infrastructure as Code | `deployment/terraform/single-project/blog_agent.tf` (Firestore, secret containers, least-privilege IAM); see the agents-cli commands below | The scaffolded files in `deployment/terraform/single-project/`; formatted and validated on every push by `.github/workflows/ci.yml` |
+| 19 | Infrastructure & CI/CD | Secure Secret Management | `app/secrets.py`: `get_secret` | Environment, then Secret Manager, then a file outside the repository; `MissingSecretError` otherwise; `google_secret_manager_secret` in `deployment/terraform/single-project/blog_agent.tf` |
+
+The specification and its traceability: [docs/SPEC.md](docs/SPEC.md) names the
+unit tests for every requirement, and `tests/unit/test_spec.py` keeps the two
+in step.
+
 ## Problem and solution
 
 Writing a technical post once is work enough. Reaching Korean, English and
@@ -293,7 +324,7 @@ as written.
 - `tests/unit/test_spec.py` reads `docs/SPEC.md` and fails when a requirement
   has no test, a named test does not exist, or the Korean companion lists
   different requirements. It also checks the table "Where each capability
-  lives" below: every path in it exists, and every name it gives as code is
+  lives" above: every path in it exists, and every name it gives as code is
   found in a file its row names.
 - CI (`.github/workflows/ci.yml`) runs the linter, the format check, the unit
   tests and `terraform fmt -check` and `terraform validate` on every push,
@@ -308,69 +339,24 @@ as written.
   the run if any tool that pauses for a person succeeded, since no case
   contains an approval.
 
-## Where each capability lives
-
-| Capability | Where to look |
-| :--- | :--- |
-| Tool docstrings and naming | `app/tools/articles.py`, `app/tools/publish.py`, `app/tools/slides.py`. The contract every tool is held to (name, docstring, typed arguments, checked input, guided errors) is tested by `tests/unit/test_tool_contract.py`, which reads the tools from the agent tree in `app/agent.py` |
-| Explicit schemas | `app/schemas.py`: Pydantic input and output models; `LanguageCode`, `PlatformName` and `CodeMode` show the model the allowed values. `LocalizedTitles`, `ReviewVerdict` and `SlideDeckPlan` are the `output_schema` of agents in `app/agent.py` |
-| Guided error handling | `tool_error`, `validation_error` in `app/schemas.py`: every failure returns `error_code` and `recovery_instruction` |
-| System instructions | `COORDINATOR_INSTRUCTION` and the instructions of the other agents in `app/prompts.py` |
-| History compaction and context caching | `EventsCompactionConfig`, `ContextCacheConfig` in `app/agent.py` |
-| Persistent state | Sessions: `get_session_service` in `app/app_utils/services.py` (a SQLite file locally, Agent Runtime sessions when deployed), used by the playground, the web page and the script alike. Articles: `SqliteArticleStore`, `FirestoreArticleStore` in `app/persistence.py`. Runs of the web page: `Job.save`, `reopen` in `app/runs.py` |
-| Asynchronous memory | `schedule_memory_consolidation` in `app/memory.py`, `PreloadMemoryTool` in `app/agent.py` |
-| Multi-agent patterns | Coordinator with sub-agents, `ParallelAgent`, `LoopAgent`, `SequentialAgent` in `app/agent.py`; the slide planning pipeline is built twice by `build_slide_planning_pipeline`, under the coordinator and as an application of its own (`build_slide_planning_app`); custom `BaseAgent` gates in `app/workflow_agents.py` |
-| Model routing | `MODEL_ROUTES`, `model_for` in `app/models.py`; the one model call outside the agents, `generate_text` in `app/llm.py`, takes its model from the same table |
-| Guardrails and policy | Posting rules in `app/policy.py`, called by the tools; `ContentPolicyPlugin` in `app/plugins.py` (URL allowlist on every tool call, credential scrub on the coordinator's output); `check_fidelity` in `app/markdown_checks.py`; critic and gates in the review loops; article text between random-token markers (`fenced` in `app/prompts.py`); a structured copy of a draft checked letter for letter (`same_letters` in `app/structurer.py`); one function for every change to a post (`apply_post_edit` in `app/tools/articles.py`); `sanitize_html` for the Naver export in `app/tools/publish.py`; the hosts that may be fetched, from one table (`SOURCE_KINDS` in `app/sources.py`); no redirects with credentials in `app/platforms.py` |
-| Human in the loop | `_approval` and `finalize_localized_post` in `app/tools/publish.py`; the deck tool and `request_approval_to_create_slide_decks` in `app/tools/slides.py` (`request_confirmation`); `ResumabilityConfig` in `app/agent.py`; one answer for one request: `ArticlePipeline.answer_approval` in `app/pipeline.py`; an approved slide request is started in the slides lane by `start_requested_slides` in `app/runs.py`; changing an existing deck: `sync_deck` in `app/web_ui.py`, `app/deck_sync.py` |
-| Structured logging | `get_logger`, `log_event`, `log_activity` in `app/observability.py` (JSON, redaction filter); the activity lines of a run are records too, with the run id |
-| Intent and outcome logging | `ObservabilityPlugin` in `app/observability.py` for the agent's tool calls; `ArticlePipeline.act` in `app/pipeline.py` for a person's actions; `generate_text` in `app/llm.py` for the direct model call |
-| Tracing | `setup_tracing`, `root_span` and `traced_span` in `app/observability.py`: one trace per action started on the page (`app/runs.py`) or with the script (`scripts/run_pipeline.py`), with a span for every outbound call (`app/platforms.py`, `app/google_slides.py`, `app/llm.py`); exported to Cloud Trace when `BLOG_AGENT_TRACE_EXPORT=cloud`; the agent API server's export is set up in `app/fast_api_app.py` |
-| PII and credential redaction | `app/redaction.py` (regex always; Cloud DLP when `BLOG_AGENT_ENABLE_DLP=true`); identifiers are left as they are (`_is_identifier` in `app/observability.py`) |
-| Automated evaluation | `tests/eval/` (eight cases, two metrics, thresholds in `tests/eval/eval_config.yaml`); `tests/unit/`, kept away from models and the network by `tests/unit/conftest.py` |
-| Specification and traceability | `docs/SPEC.md`, `tests/unit/test_spec.py` |
-| Infrastructure as code | `deployment/terraform/single-project/` (scaffold) plus `deployment/terraform/single-project/blog_agent.tf` (Firestore, secret containers, least-privilege IAM); formatted and validated on every push by `.github/workflows/ci.yml` |
-| Secret management | `get_secret` in `app/secrets.py`: environment → Secret Manager → a file outside the repository |
-
 ## Status and known limits
 
-What has been run for real, and what has not:
+What has been run for real, and what has not, is kept item by item in
+[docs/STATUS.md](docs/STATUS.md). The most important facts:
 
-| Item | Status |
-| :--- | :--- |
-| Version 1.0 (lanes, slide planning in working sessions, the slide request with its approval, one function for edits, the structuring check and the model gateway, Medium as a source, the deck record, the catalogs and coded notices, "Recent sources", the offer after an interruption, the access token, tracing) | Verified with unit tests and stand-ins only, and by looking at the page in a headless browser on a throwaway server with made-up data. Not run: slide planning by a real model in working sessions (three languages at once; whether the quota carries it is not known); the structuring gateway with a real model; a real Medium address; any call to the real Google Slides API after these changes; export to Cloud Trace; Cloud DLP; the access token on a host name behind a proxy. The Korean and Japanese texts of the catalogs were not read by a native reader |
-| Posting and decks from the page, before the version 1 work | On 2026-11-12 one run on the page posted to DEV Community and to Qiita through the real APIs, registered a Naver URL, and created decks in three languages through the real Slides API (read from that run's activity log; recorded in `docs/kr-AS-BUILT.md`, section 10, under the tag `v1.0-full`). That was the code at `b5e1793`. Nothing was posted and no deck was created with the code as it is now |
-| CI | GitHub Actions runs the linter, the format check, the unit tests and `terraform fmt -check` and `terraform validate` on every push, and passes on `main`. It uses no credential and deploys nothing |
-| Evaluation (`agents-cli eval run`) | Run on 2026-11-12 against the real model with the eight cases: `RESULT: PASS (custom_response_quality 5.00 >= 4.00; publish_requires_approval 1.00 >= 1.00)`. The run before the two cases were added, the same day with six cases, passed with the same scores |
-| Draft → localize → Naver HTML → Qiita private draft → DEV unpublished draft → slide plan → manifest | Run end to end locally against the real model and the real Qiita and DEV APIs, before posting required a finalized post and before the pipeline called the tools directly. Since then, everything up to but not including the two platform writes was run again (next rows) |
-| The run as it is now (source stored by code, localization and slide plan by the agent, export and manifest by code, every step checked) | Run three times against the real model, nothing posted, no deck created: a published Qiita post with a three-minute Korean talk; an English draft of 23,000 characters with nine plain-text blocks, which stayed as written in Korean and in Japanese; the final texts passed the structure check and the review after the Japanese text was refined once; a short Korean draft through the web server's HTTP API with a three-minute English talk. In the last one the stored seed was compared with the input and was identical byte for byte |
-| Localizing a made-up example, keeping facts | Read in two real runs. A published Japanese article whose sample user prefers a Japanese airline: the Korean text names a Korean airline and the English text a United States airline, each in all eight places, while the real company and city of the same example stayed. A Korean draft with a sample traveller: a different name and airline in English and in Japanese, a statement about a real product unchanged. Which counterpart is chosen is the model's choice and differs between runs; two articles are not a proof |
-| Finalize, the refusal to post an unfinalized post, tag rules, a title edit undoing the finalization | Exercised through the real web server's HTTP API on that run. No post was sent |
-| A run surviving a restart | The web server was stopped and started again on that run; the page showed the same titles, finalizations, files and activity log, read from the SQLite session file and the run's record. An approval pending at a restart is lost by design and was not exercised |
-| One approval for one request | Unit-tested with the real ADK runner and tools and a scripted model: of two posts waiting for approval, the one approved as public was sent as public and the other was declined and not sent. Not run against the real platforms |
-| Published Qiita post → localize into Korean and English | Run locally |
-| Approval pause and resume for publishing | Run locally against the real platforms through the chat route, before the changes above; that route is now covered by the unit test with the real runner. The page and the script no longer pause: the click or the terminal answer is the approval and the tool is called with it |
-| Firestore article store | Read/write/cleanup exercised against a real database |
-| Deployment to Agent Runtime, Memory Bank in the cloud | Not deployed. Memory wiring is in place; it has only run locally where the default memory service is in-memory |
-| Terraform | Formatted and validated in CI on every push (`terraform fmt -check`, `terraform validate`). Never planned or applied |
-| Cloud DLP path | Implemented behind a flag. Unit-tested with a stand-in client (called only when enabled; a failure keeps the regex result); not run against Cloud DLP |
-| One trace per action, with the trace id in every log record | Unit-tested with spans collected in memory: the action's root span, ADK's agent and tool spans and the outbound-call spans share one trace. Export to Cloud Trace (`BLOG_AGENT_TRACE_EXPORT=cloud`) has not been run |
-| Refinement branch of the localization loop | Covered by unit tests of the gates. It ran in one real run (two review rounds, both languages refined); most runs pass on the first round |
-| Translated Mermaid diagrams | The structure check confirms node ids and edges are unchanged; the diagrams have not been rendered to confirm they still draw |
-| Google Slides deck with speaker notes | Decks were created through the real Slides API and checked by reading them back and by rendering slide thumbnails: cover slide, titles sized to fit, bullets (Korean and Japanese included), an article image placed beside the bullets, speaker notes. With `BLOG_AGENT_RENDER_MERMAID` on, Mermaid diagrams are rendered by mermaid.ink and placed as images; this ran in real decks. |
-| Image placement by shape (wide under the bullets, tall over the full page height, title narrowed) | Unit-tested, then run against the real Slides API on one ten-slide test deck built from a real slide plan and its rendered diagrams: all nine images were placed, the five titles next to full-height images were narrowed (one of them Korean), and every slide was checked by thumbnail. Images that are not rendered diagrams keep the right half, because their size is not read |
-| Editing a deck's text from its Markdown plan, and pulling deck edits back | Each direction needs an approval that lists the slides that change; only titles, bullets and speaker notes move. The reading, comparing and writing were run against the real Slides API on the test deck: titles, bullets and notes (Korean and an emoji included) arrived intact and kept their font size, weight and bullets, and a note changed in the deck was pulled back. The path through the web page and its approval dialog was exercised in a browser against a stand-in for the Slides API, not against the real one |
-| Talk structure (title-slide greeting, agenda, conclusion, separate next steps, thank-you slide) | Two eight-minute plans were made by the real model, in English and in Korean, and both followed it; one of them was built into a real deck through the Slides API and read back, with the greeting in the title slide's notes and the closing words in the thank-you slide's notes. Longer talks and Japanese were not run |
-| Draft or public, chosen by the person approving | Unit-tested with stand-ins for the platforms: an approval that asks for a public post publishes, any other approval saves a non-public draft, and a post that is already public is not posted again. The run of 2026-11-12 (second row) posted to both platforms; which choice was made there is not recorded here, and the choice was not run against the real APIs with the code as it is now |
-| Mermaid diagrams drawn in the file preview | The twelve diagrams of one real article were drawn through mermaid.ink by the server, all requested at once. The route that serves them is unit-tested with a stand-in drawer; the finished page was not viewed in a browser with the kept images |
-| Naver Blog publishing | Manual by design: Naver has no public write API. The agent exports HTML to paste and then verifies the URL the author gives it |
-| Naver Blog reading | Best effort from the public mobile page; heading levels are not recovered |
-| Speaking-time check | Estimated from script length with assumed rates (140 words/min English, 300 characters/min Korean, 330 characters/min Japanese), not measured |
-| Web front end | A full run, file views, finalizing and editing were exercised through its HTTP API against the real model; posting from it ran once against the real platforms, on 2026-11-12 with the code before version 1 (second row), and not since. The page of that real run, the editor and a preview were rendered in headless Chrome and looked at. The approval dialogs (draft or public, credential findings, create deck) and the Settings dialog were not clicked through in a browser after the rebuild; their routes are unit-tested |
-| Google Slides deck creation after the per-language rebuild | The requests that build a deck were compared, request for request, with those recorded before the rebuild for two real plans and are identical. Decks were then created through the real API from the page on 2026-11-12 (second row); none since the version 1 work |
-| Platform clients: no redirects with credentials, unknown outcomes, guided errors | Unit-tested against a mock transport, including mutation checks. Not provoked against the real platforms |
-| Independent review of the rebuilt code | A second reviewer read the rebuilt code against the specification and reported 19 findings, two of them against invariants (a yes to finalize could be carried to a swapped text; titles reached the coordinator's instruction raw). All but two were fixed and each fix has a unit test; the two left as they are (the agent's API server checks no host name; a second draft in one chat is a revision of the first) are listed under known limits in the specification. The fixes were not reviewed a second time |
-| Deployment pipeline (CD) | Not set up |
+- On 2026-11-12 one run on the page with the version 1.0 code read a Medium
+  post, localized it into Korean and Japanese with the real models, planned
+  slides for three languages at the same time and created three decks through
+  the real Slides API, posted the Japanese post publicly on Qiita through the
+  real API and registered a Naver URL.
+- `agents-cli eval run` passed against the real model with the eight cases on
+  the same day.
+- Not deployed to Agent Runtime. The Terraform files are formatted and
+  validated in CI on every push and were never planned or applied. Cloud DLP
+  and the export to Cloud Trace are written and were not run against the
+  services.
+- CI runs the linter, the format check and the unit tests on every push,
+  without credentials.
 
 `ParallelAgent`, `SequentialAgent` and `LoopAgent` print deprecation warnings in
 ADK 2.x in favour of `Workflow`. They are kept because a `Workflow` cannot yet
@@ -414,7 +400,7 @@ app/
   app_utils/            scaffolded service wiring, A2A, Agent Runtime adapter
 deployment/terraform/   infrastructure
 docs/                   SPEC.md (specification, version 1.0), kr-SPEC.md (Korean
-                        companion); SETUP.md, kr-SETUP.md, ja-SETUP.md (setup
+                        companion); STATUS.md (what was run for real); SETUP.md, kr-SETUP.md, ja-SETUP.md (setup
                         guides). The record of the code before version 1 and
                         the plan of version 1.0 (both in Korean, closed) are
                         kept under the tag v1.0-full
