@@ -86,7 +86,8 @@ def test_every_source_kind_is_in_one_table_and_the_fetch_list_comes_from_it(
     assert sentence == (
         "posts are read from Qiita, DEV Community and Naver Blog, and drafts "
         "from Google Docs (https://docs.google.com/document/d/...) and Medium "
-        "(https://medium.com/@author/slug), over https"
+        "(https://medium.com/@author/slug or https://author.medium.com/slug), "
+        "over https"
     )
     assert sources.blog_hosts_sentence() == (
         "qiita.com, dev.to, blog.naver.com or m.blog.naver.com"
@@ -108,3 +109,37 @@ def test_every_source_kind_is_in_one_table_and_the_fetch_list_comes_from_it(
         sources.readable_sources_sentence()
     )
     assert "notes.example.org" in sources.fetch_hosts()
+
+
+def test_a_medium_post_on_its_authors_own_name_is_the_same_post() -> None:
+    from app.pipeline import classify_source
+
+    slug = "4-achieving-the-vibe-e36858b1b25e"
+    own_name = f"https://aimldl.medium.com/{slug}"
+    assert sources.medium_post(own_name) == ("@aimldl", slug)
+    assert sources.medium_post(f"https://medium.com/@aimldl/{slug}") == (
+        "@aimldl",
+        slug,
+    )
+    assert sources.medium_post(own_name + "/") == ("@aimldl", slug)
+    assert classify_source(own_name) == ("medium", own_name)
+    assert sources.kind_of(own_name).name == "medium"
+
+    # The author's name is not a host that is fetched: the feed is still read
+    # from medium.com alone (INV-8).
+    medium = sources.SOURCE_KINDS["medium"]
+    assert medium.hosts == ("medium.com",)
+    assert medium.may_fetch("https://aimldl.medium.com/feed") is None
+    assert medium.may_fetch("https://medium.com/feed/@aimldl")
+
+    for not_a_post in (
+        "https://aimldl.medium.com/",  # the author's page, not a post
+        "https://aimldl.medium.com/a/b",
+        "http://aimldl.medium.com/" + slug,  # not https
+        "https://a.b.medium.com/" + slug,
+        "https://aimldl.medium.com.example.org/" + slug,
+        "https://aimldl.notmedium.com/" + slug,
+        "https://blog.example.com/" + slug,  # a publication's own domain
+    ):
+        assert sources.medium_post(not_a_post) is None, not_a_post
+        assert classify_source(not_a_post)[0] == "elsewhere", not_a_post

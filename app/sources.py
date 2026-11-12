@@ -20,6 +20,9 @@ import httpx
 
 _GDOC_PATH = re.compile(r"^/document/(?:u/\d+/)?d/([A-Za-z0-9_-]{10,})(?:/.*)?$")
 _MEDIUM_PATH = re.compile(r"^/(@[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$")
+# The same post under its author's own Medium name: author.medium.com/slug.
+_MEDIUM_AUTHOR_HOST = re.compile(r"^([a-z0-9][a-z0-9-]*)\.medium\.com$")
+_MEDIUM_SLUG_PATH = re.compile(r"^/([A-Za-z0-9_.-]+)$")
 
 
 def _https_url(url: str | httpx.URL) -> httpx.URL | None:
@@ -51,12 +54,25 @@ def google_doc_id(url: str) -> str | None:
 
 
 def medium_post(url: str) -> tuple[str, str] | None:
-    """(author or publication, slug) of an https Medium post address, else None."""
+    """(author or publication, slug) of an https Medium post address, else None.
+
+    Two forms name the same post: ``medium.com/@author/slug`` and
+    ``author.medium.com/slug``. Either way the post is read from
+    ``medium.com/feed/@author``; no other host is contacted (INV-8). A
+    publication's own domain is not recognised: nothing in such an address
+    says that it is Medium.
+    """
     parsed = _https_url(url)
-    if parsed is None or _host(parsed) != "medium.com":
+    if parsed is None:
         return None
-    match = _MEDIUM_PATH.match(parsed.path.rstrip("/"))
-    return (match.group(1), match.group(2)) if match else None
+    host, path = _host(parsed), parsed.path.rstrip("/")
+    if host == "medium.com":
+        match = _MEDIUM_PATH.match(path)
+        return (match.group(1), match.group(2)) if match else None
+    author, slug = _MEDIUM_AUTHOR_HOST.match(host), _MEDIUM_SLUG_PATH.match(path)
+    if author and slug:
+        return f"@{author.group(1)}", slug.group(1)
+    return None
 
 
 def _on(*hosts: str) -> Callable[[str], bool]:
@@ -141,7 +157,7 @@ SOURCE_KINDS: dict[str, SourceKind] = {
         SourceKind(
             name="medium",
             label="Medium",
-            example="https://medium.com/@author/slug",
+            example="https://medium.com/@author/slug or https://author.medium.com/slug",
             recognises=lambda url: medium_post(url) is not None,
             hosts=("medium.com",),
         ),
