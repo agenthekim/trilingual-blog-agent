@@ -198,7 +198,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
-| OPS-1 | 모든 도구 호출은 의도와 결과로 나누어, 마스킹을 적용한 구조화된 JSON으로 로그에 남기며, 모델을 직접 부르는 호출도 그렇게 남긴다. 사람이 페이지나 스크립트로 시작한 액션은 모두 추적 하나 안에서 실행된다. 액션의 루트 스팬이 있고, 그 아래에 에이전트와 도구의 스팬이 이어지며, 밖으로 나가는 호출(플랫폼, Google Slides, 다이어그램 서비스, 모델)마다 자식 스팬이 있다. 로그 기록은 추적 id와 스팬 id를 싣는다. `BLOG_AGENT_TRACE_EXPORT=cloud`이면 스팬을 Cloud Trace로 내보낸다. 페이지에 보이는 활동 줄은 실행 id와 함께 구조화된 기록으로도 남긴다. `app/`의 어떤 코드도 `print`로 로그를 쓰지 않는다 |
+| OPS-1 | 모든 도구 호출은 의도와 결과로 나누어, 마스킹을 적용한 구조화된 JSON으로 로그에 남기며, 모델을 직접 부르는 호출도 그렇게 남긴다. 사람이 페이지나 스크립트로 시작한 액션은 모두 추적 하나 안에서 실행된다. 액션의 루트 스팬이 있고, 그 아래에 에이전트와 도구의 스팬이 이어지며, 밖으로 나가는 호출(플랫폼, Google Slides, 다이어그램 서비스, 모델)마다 자식 스팬이 있다. 로그 기록은 추적 id와 스팬 id를 싣는다. `BLOG_AGENT_TRACE_EXPORT=cloud`이면 스팬을 Cloud Trace로 내보낸다. 페이지에 보이는 활동 줄은 실행 id와 함께 구조화된 기록으로도 남긴다. `app/`의 어떤 코드도 `print`로 로그를 쓰지 않는다. `app/`의 어떤 모듈도 자기만의 로거를 두지 않고 모두 하나의 구조화 로거로 기록한다. 유일한 예외는 접근 토큰이 든 주소를 한 번 보여 주는 터미널 줄(SEC-7)이며, 이 줄은 의도적으로 구조화 로그에 넣지 않는다 |
 | OPS-2 | `uv run pytest tests/unit`은 모델, 네트워크, 자격 증명 없이 실행되며, 부록 B가 단위 테스트에 배정한 모든 요구사항을 다룬다. 이것은 픽스처가 보장한다. 픽스처는 네트워크 연결과 모델 관문을 거부하고, `.env`는 읽지 않는다 |
 | OPS-3 | 모델 이름은 설정값(`FAST_MODEL_NAME`, `REASONING_MODEL_NAME`)이며 코드 수정으로 바꾸지 않는다 |
 | OPS-4 | 모델을 부르는 곳은 둘이다. `app/agent.py`의 에이전트와 `app/llm.py`의 관문이다. 웹 계층은 모델도 플랫폼도 부르지 않고 파이프라인의 액션을 시작한다 |
@@ -542,7 +542,7 @@ flowchart TD
 | SEC-6 | `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_settings_names_the_account_that_decks_go_to` |
 | SEC-7 | `test_another_address_needs_the_token`, `test_localhost_needs_no_token` |
 | SEC-8 | `test_the_page_runs_no_inline_script`, `test_the_files_of_the_page_are_served_fresh_and_by_name_only` |
-| OPS-1 | `test_log_records_are_scrubbed_before_emission`, `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action`, `test_activity_lines_are_also_structured_records`, `test_the_application_never_logs_with_print` |
+| OPS-1 | `test_log_records_are_scrubbed_before_emission`, `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action`, `test_activity_lines_are_also_structured_records`, `test_the_application_never_logs_with_print`, `test_every_logger_of_the_application_writes_structured_json` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: 코드를 수정하는 사람을 위한 규칙이다. 기본값은 `app/models.py`에 있으며 환경 변수에서 읽는다 |
 | OPS-4 | `test_models_are_called_from_the_agents_and_the_gateway_only` |

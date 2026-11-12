@@ -411,6 +411,100 @@ def test_the_application_never_logs_with_print() -> None:
         assert where == ["say"], f"{path.name}: print is used in {where}"
 
 
+def _logging_calls(path: Path) -> list[tuple[int, str]]:
+    """Where a module makes a logger of its own or logs through the root one."""
+    found = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if not isinstance(node, ast.Call):
+            continue
+        function = node.func
+        if (
+            isinstance(function, ast.Attribute)
+            and isinstance(function.value, ast.Name)
+            and function.value.id == "logging"
+            and function.attr[:1].islower()  # getLogger, warning, basicConfig, ...
+        ):
+            found.append((node.lineno, ast.unparse(node)))
+        elif isinstance(function, ast.Name) and function.id == "getLogger":
+            found.append((node.lineno, ast.unparse(node)))
+    return found
+
+
+@pytest.mark.asyncio
+async def test_every_logger_of_the_application_writes_structured_json(
+    isolated_workspace, monkeypatch
+) -> None:
+    """OPS-1. No module of ``app/`` has a logger of its own, and what the
+    modules that had one write now is JSON that passed the redaction."""
+    # The structured logger is made in one place. The one other logger is
+    # the terminal line with the access token address (SEC-7), which must
+    # not be in the structured log.
+    allowed = {
+        "app/observability.py": ["logging.getLogger(LOGGER_NAME)"],
+        "app/web_ui.py": ["logging.getLogger('tba.terminal')"],
+    }
+    for path in sorted((ROOT / "app").rglob("*.py")):
+        name = path.relative_to(ROOT).as_posix()
+        calls = [call for _, call in _logging_calls(path)]
+        assert calls == allowed.get(name, []), name
+
+    stream = io.StringIO()
+    handler = StructuredLogHandler(stream=stream)
+    handler.addFilter(_RedactionFilter())
+    logger = observability.get_logger()
+    logger.addHandler(handler)
+
+    from google.cloud import secretmanager
+
+    from app import redaction, secrets, structurer
+
+    class NoService:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise PermissionError("no access for owner@example.com")
+
+    class NoDlp:
+        calls = 0
+
+        def deidentify_content(self, request: Any) -> Any:
+            NoDlp.calls += 1
+            raise ConnectionError("unreachable")
+
+    async def no_answer(*args: Any, **kwargs: Any) -> str:
+        raise llm.ModelCallFailed("structure_source", "no answer")
+
+    try:
+        # app/secrets.py: a lookup that fails. The name stands where a
+        # value could be written by mistake, so it shows the filter at work.
+        monkeypatch.setenv("SECRET_MANAGER_PROJECT", "a-project")
+        monkeypatch.setattr(secretmanager, "SecretManagerServiceClient", NoService)
+        assert secrets._from_secret_manager("owner@example.com") is None
+        # app/structurer.py: the model gives no answer.
+        monkeypatch.setattr(llm, "generate_text", no_answer)
+        kept = await structurer.auto_structure_markdown("plain text")
+        assert kept.outcome == "no_answer"
+        # app/redaction.py: Cloud DLP fails. Its own record passes the
+        # redaction too, and does not call the failed service again.
+        monkeypatch.setenv("BLOG_AGENT_ENABLE_DLP", "true")
+        monkeypatch.setenv("DLP_PROJECT_ID", "a-project")
+        monkeypatch.setattr(redaction, "_dlp_client", NoDlp())
+        assert redaction.redact_text("call 010-1234-5678") == (
+            "call [REDACTED_PHONE_NUMBER]"
+        )
+        assert NoDlp.calls == 1
+    finally:
+        logger.removeHandler(handler)
+
+    records = [json.loads(line) for line in stream.getvalue().splitlines()]
+    by_phase = {record["event_phase"]: record for record in records}
+    assert set(by_phase) == {"SECRET", "STRUCTURING", "REDACTION"}
+    assert by_phase["SECRET"]["secret_name"] == "[REDACTED_EMAIL_ADDRESS]"
+    assert by_phase["SECRET"]["error_type"] == "PermissionError"
+    assert by_phase["STRUCTURING"]["severity"] == "WARNING"
+    assert by_phase["STRUCTURING"]["reason"] == "the model call failed"
+    assert by_phase["REDACTION"]["error_type"] == "ConnectionError"
+    assert "owner@example.com" not in stream.getvalue()
+
+
 def test_activity_lines_are_also_structured_records(isolated_workspace, capsys) -> None:
     stream = io.StringIO()
     handler = StructuredLogHandler(stream=stream)

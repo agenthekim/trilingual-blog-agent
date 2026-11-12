@@ -20,11 +20,17 @@ import logging
 import os
 import re
 from collections.abc import Mapping
+from contextvars import ContextVar
 from typing import Any
 
 from app.settings import env_flag
 
-_logger = logging.getLogger(__name__)
+# True while the failure of Cloud DLP is being written to the log. The log
+# record passes ``redact_text`` like any other, and must not call the service
+# that has just failed, or the failure would be reported without end.
+_reporting_dlp_failure: ContextVar[bool] = ContextVar(
+    "reporting_dlp_failure", default=False
+)
 
 
 def _luhn_ok(digits: str) -> bool:
@@ -187,7 +193,7 @@ def _redact_with_cloud_dlp(text: str) -> str:
     """
     global _dlp_client
     project = os.environ.get("DLP_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT")
-    if not project:
+    if not project or _reporting_dlp_failure.get():
         return text
     try:
         if _dlp_client is None:
@@ -216,5 +222,17 @@ def _redact_with_cloud_dlp(text: str) -> str:
         )
         return response.item.value
     except Exception as exc:  # network, permission, or API-disabled errors
-        _logger.warning("Cloud DLP redaction skipped: %s", type(exc).__name__)
+        # Imported here: app.observability imports this module.
+        from app.observability import log_event
+
+        reporting = _reporting_dlp_failure.set(True)
+        try:
+            log_event(
+                "Cloud DLP redaction skipped; the regex result is kept",
+                level=logging.WARNING,
+                event_phase="REDACTION",
+                error_type=type(exc).__name__,
+            )
+        finally:
+            _reporting_dlp_failure.reset(reporting)
         return text

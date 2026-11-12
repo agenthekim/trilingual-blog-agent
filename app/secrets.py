@@ -17,11 +17,10 @@ explanation the calling tool can pass back to the model.
 from __future__ import annotations
 
 import functools
-import logging
 import os
 from pathlib import Path
 
-_logger = logging.getLogger(__name__)
+from app.observability import log_event
 
 QIITA_ACCESS_TOKEN = "QIITA_ACCESS_TOKEN"
 DEVTO_API_KEY = "DEVTO_API_KEY"
@@ -52,8 +51,11 @@ def _from_secret_manager(name: str) -> str | None:
         return response.payload.data.decode("utf-8").strip()
     except Exception as exc:
         # The exception text can contain the resource path but never the value.
-        _logger.info(
-            "Secret Manager lookup for %s failed: %s", name, type(exc).__name__
+        log_event(
+            "Secret Manager lookup failed",
+            event_phase="SECRET",
+            secret_name=name,
+            error_type=type(exc).__name__,
         )
         return None
 

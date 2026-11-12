@@ -6,6 +6,10 @@ Logging
     redaction filter first, so credentials and personal data are scrubbed
     before they reach any log sink. The handler adds the active OpenTelemetry
     trace and span IDs, which lets a log line be opened next to its trace.
+    Every module of ``app/`` logs through ``log_event``; none has a logger of
+    its own. The one exception is the terminal line in ``app/web_ui.py`` that
+    shows the address with the access token once (SEC-7): it must not be in
+    the structured log.
 
 Activity
     The lines a person reads on the page while a run works are also written
@@ -103,9 +107,15 @@ def get_logger() -> logging.Logger:
     return logger
 
 
-def log_event(message: str, **fields: Any) -> None:
-    """Write one structured record. ``fields`` become top-level JSON keys."""
-    get_logger().info(message, extra={"json_fields": fields}, stacklevel=2)
+def log_event(message: str, *, level: int = logging.INFO, **fields: Any) -> None:
+    """Write one structured record. ``fields`` become top-level JSON keys.
+
+    Args:
+        message: What happened, in a few words; it is redacted like the fields.
+        level: The severity, ``logging.INFO`` unless something went wrong.
+        fields: Values to write next to the message, as top-level JSON keys.
+    """
+    get_logger().log(level, message, extra={"json_fields": fields}, stacklevel=2)
 
 
 def _tracer_provider() -> TracerProvider:
@@ -115,9 +125,11 @@ def _tracer_provider() -> TracerProvider:
         return provider  # spans get ids, and nothing leaves the process
     project = os.environ.get("GOOGLE_CLOUD_PROJECT", "").strip()
     if not project:
-        logging.getLogger(__name__).warning(
-            "%s=cloud needs GOOGLE_CLOUD_PROJECT; spans are not exported.",
-            TRACE_EXPORT_ENV,
+        log_event(
+            f"{TRACE_EXPORT_ENV}=cloud needs GOOGLE_CLOUD_PROJECT; "
+            "spans are not exported.",
+            level=logging.WARNING,
+            event_phase="TRACING",
         )
         return provider
     # The exporter ADK's serving layer uses, attached the same way.

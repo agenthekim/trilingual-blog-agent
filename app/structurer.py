@@ -19,11 +19,10 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from app import llm
-
-logger = logging.getLogger(__name__)
+from app.observability import log_event
 
 _HEADING_PATTERN = re.compile(r"^#{1,3}\s+\S+", re.MULTILINE)
 # The line that opens (or closes) a code fence: what follows the fence on that
@@ -107,6 +106,17 @@ def _without_outer_fence(answer: str) -> str:
     return candidate
 
 
+def _keeps_the_text(reason: str, **fields: Any) -> None:
+    """Say in the structured log why the text is kept as it was supplied."""
+    log_event(
+        "structuring: keeping the text as supplied",
+        level=logging.WARNING,
+        event_phase="STRUCTURING",
+        reason=reason,
+        **fields,
+    )
+
+
 async def auto_structure_markdown(text: str) -> Structuring:
     """Give plain text Markdown structure through the model gateway.
 
@@ -119,18 +129,17 @@ async def auto_structure_markdown(text: str) -> Structuring:
     try:
         answer = await llm.generate_text("structure_source", _STRUCTURING_PROMPT, text)
     except llm.ModelCallFailed:
-        logger.warning("Structuring failed; keeping the text as supplied.")
+        _keeps_the_text("the model call failed")
         return Structuring(text, "no_answer")
     candidate = _without_outer_fence(answer)
     if not candidate:
-        logger.warning("Structuring gave no text; keeping the text as supplied.")
+        _keeps_the_text("the model gave no text")
         return Structuring(text, "no_answer")
     if not same_letters(text, candidate):
-        logger.warning(
-            "The structured copy does not have the letters of the original "
-            "(%d against %d characters); keeping the text as supplied.",
-            len(candidate),
-            len(text),
+        _keeps_the_text(
+            "the structured copy does not have the letters of the original",
+            structured_chars=len(candidate),
+            original_chars=len(text),
         )
         return Structuring(text, "letters_differ")
     return Structuring(candidate, "structured")
