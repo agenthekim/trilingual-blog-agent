@@ -141,7 +141,8 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | SLD-9 | 계획, 시간 보고서, 덱, 동기화 기준선은 언어별로 보관한다. 계획이 있는 언어라면 어느 언어든 덱을 생성하거나 다시 생성할 수 있다 |
 | SLD-10 | 파일이 생긴 뒤에 덱 생성이 실패하면, 그 파일이 Drive 안에서 잊히지 않도록 오류에 파일의 주소를 명시한다 |
 | SLD-11 | 글에 있는 Markdown 표는 계획 모델에 `table:N` 참조로 제공된다. 이미지가 없는 슬라이드에 선택되면 불릿 아래에 Google Slides 네이티브 표(최대 8행 6열)로 배치하며, 각 표는 한 번만 쓴다 |
-| SLD-12 | Google Slides 덱은 검토가 끝난 뒤 `slides.<lang>.pdf`로 내보낼 수 있다. 해당 언어의 게시물을 확정할 때, PDF가 있는 상태에서 덱으로 텍스트를 푸시할 때 자동으로 내보내며, Slides 열이나 `export_google_slides_pdf` 도구로 언제든 내보낼 수 있다 |
+| SLD-12 | 덱은 요청이 있을 때 `slides.<lang>.pdf`로 내보내며, PDF가 있는 상태에서 덱 텍스트 동기화가 변경을 덱으로 푸시하면 다시 내보낸다. 페이지는 내보낸 시각을 보여 준다. PDF는 그것을 만든 덱을 새 덱이 대체하면 지운다 |
+| SLD-13 | 덱을 다시 만들면 새 파일이 생긴다. 이전 파일은 Drive에 남고, 그 주소는 실행의 기록과 매니페스트에 남는다 |
 | SLD-14 | 여러 언어의 슬라이드는 하나의 요청이다. 언어들은 동시에 계획하되 한 번에 `BLOG_AGENT_SLIDE_PARALLELISM`개까지 계획한다. 실패한 언어는 그 언어의 실패로 알리고 다른 언어를 멈추지 않는다 |
 
 ### 5.5 덱 텍스트 동기화
@@ -415,7 +416,8 @@ flowchart TD
 | SLD-9 | `test_planning_one_language_keeps_the_plans_of_the_others`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_timing_export_and_manifest_work_per_language`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
 | SLD-10 | `test_a_failure_after_the_file_exists_names_the_file` |
 | SLD-11 | `test_markdown_tables_are_extracted_and_placed_as_native_slide_tables` |
-| SLD-12 | `test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand` |
+| SLD-12 | `test_a_deck_is_exported_as_pdf_on_demand_and_the_row_says_when`, `test_a_pdf_never_outlives_the_deck_it_was_made_from`, `test_finalizing_a_post_does_not_touch_slides` |
+| SLD-13 | `test_a_new_deck_keeps_the_address_of_the_one_it_replaces` |
 | SLD-14 | `test_one_language_failing_does_not_stop_the_others`, `test_the_number_of_languages_planned_at_once_can_be_lowered`, `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck` |
 | SYN-1 | `test_slide_plan_markdown_reads_back_as_the_same_plan`, `test_sync_needs_a_deck_and_a_readable_plan` |
 | SYN-2 | `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor`, `test_notes_edited_in_the_deck_are_pulled_into_the_file` |

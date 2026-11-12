@@ -143,7 +143,8 @@ stage at a time and waits.
 | SLD-9 | Plans, timing reports, decks and sync baselines are kept per language. A deck can be created, or created again, for any language that has a plan |
 | SLD-10 | If deck creation fails after the file exists, the error names the file's address so it is not lost in Drive |
 | SLD-11 | Markdown tables in the article are offered to the planner as `table:N` references. When chosen for a slide without an image, a table is placed on the slide as a native Google Slides table (up to 8 rows and 6 columns) below the bullets, each table used at most once |
-| SLD-12 | A Google Slides deck can be exported as `slides.<lang>.pdf` after review: automatically when its language's post is finalized, when a deck text sync pushes changes while a PDF exists, or on demand from the Slides column or the `export_google_slides_pdf` tool |
+| SLD-12 | A deck is exported as `slides.<lang>.pdf` on demand, and again when a deck text sync pushes changes while a PDF exists. The page shows when it was exported. A PDF is removed when a new deck replaces the one it was made from |
+| SLD-13 | Creating a deck again makes a new file; the earlier file stays in Drive, and its address stays in the run's record and in the manifest |
 | SLD-14 | Slides for several languages are one request. The languages are planned at the same time, up to `BLOG_AGENT_SLIDE_PARALLELISM` at once; a language that fails is reported for that language and does not stop the others |
 
 ### 5.5 Deck text sync
@@ -421,7 +422,8 @@ what the models then did was read in real runs, recorded in `README.md`.
 | SLD-9 | `test_planning_one_language_keeps_the_plans_of_the_others`, `test_a_deck_needs_the_plan_of_its_language_and_human_approval`, `test_timing_export_and_manifest_work_per_language`, `test_a_deck_is_created_for_the_language_that_was_asked_for` |
 | SLD-10 | `test_a_failure_after_the_file_exists_names_the_file` |
 | SLD-11 | `test_markdown_tables_are_extracted_and_placed_as_native_slide_tables` |
-| SLD-12 | `test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand` |
+| SLD-12 | `test_a_deck_is_exported_as_pdf_on_demand_and_the_row_says_when`, `test_a_pdf_never_outlives_the_deck_it_was_made_from`, `test_finalizing_a_post_does_not_touch_slides` |
+| SLD-13 | `test_a_new_deck_keeps_the_address_of_the_one_it_replaces` |
 | SLD-14 | `test_one_language_failing_does_not_stop_the_others`, `test_the_number_of_languages_planned_at_once_can_be_lowered`, `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck` |
 | SYN-1 | `test_slide_plan_markdown_reads_back_as_the_same_plan`, `test_sync_needs_a_deck_and_a_readable_plan` |
 | SYN-2 | `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor`, `test_notes_edited_in_the_deck_are_pulled_into_the_file` |

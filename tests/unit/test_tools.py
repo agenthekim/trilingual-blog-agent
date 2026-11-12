@@ -644,6 +644,80 @@ async def test_a_deck_needs_the_plan_of_its_language_and_human_approval(
 
 
 @pytest.mark.asyncio
+async def test_a_new_deck_keeps_the_address_of_the_one_it_replaces(
+    tool_context, monkeypatch
+) -> None:
+    """SLD-13: a deck made again is a new file; the earlier addresses stay."""
+    from datetime import datetime
+
+    from app import google_slides, state
+    from app.pipeline import overview
+
+    tool = slides.create_google_slides_deck_with_speaker_notes
+    made: list[str] = []
+
+    def url(number: int, language: str = "ko") -> str:
+        return google_slides.deck_url(f"{language}-{number}")
+
+    async def fake_create(plan, allowed_images, *args):
+        made.append(plan.language)
+        number = made.count(plan.language)
+        return {
+            "presentation_id": f"{plan.language}-{number}",
+            "url": url(number, plan.language),
+        }
+
+    monkeypatch.setattr(google_slides, "create_deck", fake_create)
+    monkeypatch.setattr(google_slides, "granted_account", lambda: "")
+    tool_context.state[state.PROJECT_ID] = "proj-decks"
+    tool_context.state[state.SLIDE_PLANS] = {
+        "ko": _plan_for("ko"),
+        "en": _plan_for("en"),
+    }
+    tool_context.approve()
+    first = (await tool("ko", tool_context))["deck"]
+    assert first["url"] == url(1) and first["previous"] == []
+    assert datetime.fromisoformat(first["created"]).tzinfo is not None
+
+    # The person who approves a second deck is told what happens to the first.
+    tool_context.tool_confirmation = None
+    await tool("ko", tool_context)
+    hint = tool_context.confirmation_requests[-1]["hint"]
+    assert "it stays in Drive, its address is kept" in hint
+    assert made == ["ko"]  # asking made nothing
+
+    tool_context.approve()
+    second = (await tool("ko", tool_context))["deck"]
+    assert second["url"] == url(2) and second["previous"] == [url(1)]
+    await tool("en", tool_context)
+    for _ in range(6):
+        await tool("ko", tool_context)
+
+    decks = tool_context.state[state.GOOGLE_SLIDES_DECKS]
+    # The most recent five, the latest first; older addresses drop off.
+    assert decks["ko"]["url"] == url(8)
+    assert decks["ko"]["previous"] == [url(7), url(6), url(5), url(4), url(3)]
+    # Another language's deck replaced nothing.
+    assert decks["en"]["url"] == url(1, "en") and decks["en"]["previous"] == []
+
+    rows = {row["language"]: row for row in overview(tool_context.state)["rows"]}
+    assert rows["ko"]["deck"]["previous"] == decks["ko"]["previous"]
+    assert rows["ko"]["deck"]["created"] == decks["ko"]["created"]
+    assert rows["ko"]["slides_state"] == "deck" and rows["ja"]["slides_state"] == "none"
+
+    manifest = slides.compile_artifact_manifest_markdown(tool_context)["manifest"]
+    listed = [line for line in manifest.splitlines() if "Google Slides deck" in line]
+    assert listed == [
+        f"- Google Slides deck (Korean): {url(8)}",
+        *[
+            f"- Earlier Google Slides deck (Korean), replaced: {url(number)}"
+            for number in (7, 6, 5, 4, 3)
+        ],
+        f"- Google Slides deck (English): {url(1, 'en')}",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_google_slides_without_a_grant_gives_guidance(
     tool_context, monkeypatch
 ) -> None:

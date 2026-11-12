@@ -699,13 +699,12 @@ def test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone(client) -
     assert status["reply"] == "I shortened the English title."
 
 
-def test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand(real, monkeypatch) -> None:
-    """SLD-12: finalizing a post with a deck, or asking from the Slides column, writes slides.<lang>.pdf."""
+def _two_decks_and_a_stand_in_export(job, monkeypatch) -> list[str]:
+    """Decks for English and Korean; returns the decks asked to be exported."""
     import asyncio
 
     from app import google_slides, state
 
-    client, job = real
     exported: list[str] = []
 
     async def fake_export_pdf(presentation_id: str) -> bytes:
@@ -729,26 +728,77 @@ def test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand(real, monkeypatch) 
             }
         )
     )
+    return exported
 
-    # Finalizing English automatically exports slides.en.pdf.
-    resp = client.post(f"/api/jobs/{job.id}/finalize", json={"language": "en"})
-    assert resp.status_code == 200 and resp.json()["finalized"] is True
-    assert exported == ["pres-en-1"]
 
-    status = client.get(f"/api/jobs/{job.id}").json()
-    assert _row(status, "en")["slides_pdf"] == "slides.en.pdf"
+def test_a_deck_is_exported_as_pdf_on_demand_and_the_row_says_when(
+    real, monkeypatch
+) -> None:
+    """SLD-12: asking from the Slides column writes slides.<lang>.pdf."""
+    from datetime import datetime
 
-    pdf_resp = client.get(f"/api/jobs/{job.id}/files/slides.en.pdf")
+    client, job = real
+    exported = _two_decks_and_a_stand_in_export(job, monkeypatch)
+    before = _row(client.get(f"/api/jobs/{job.id}").json(), "ko")
+    assert before["slides_state"] == "deck"
+    assert before["slides_pdf"] is None and before["pdf_exported_at"] is None
+
+    on_demand = client.post(f"/api/jobs/{job.id}/pdf", json={"language": "ko"})
+    assert on_demand.status_code == 200
+    status = _wait(client, job.id)
+    assert status["notice"] is None and exported == ["pres-ko-1"]
+    row = _row(status, "ko")
+    assert row["slides_pdf"] == "slides.ko.pdf"
+    assert datetime.fromisoformat(row["pdf_exported_at"]).tzinfo is not None
+    assert row["deck"]["pdf_exported_at"] == row["pdf_exported_at"]
+    # The other language's deck has no PDF.
+    assert _row(status, "en")["slides_pdf"] is None
+
+    pdf_resp = client.get(f"/api/jobs/{job.id}/files/slides.ko.pdf")
     assert pdf_resp.status_code == 200
     assert pdf_resp.headers["content-type"] == "application/pdf"
     assert pdf_resp.content.startswith(b"%PDF-1.4")
 
-    # On-demand export for Korean from POST /api/jobs/{job_id}/pdf.
-    on_demand = client.post(f"/api/jobs/{job.id}/pdf", json={"language": "ko"})
-    assert on_demand.status_code == 200
+
+def test_finalizing_a_post_does_not_touch_slides(real, monkeypatch) -> None:
+    """RUN-1, SLD-12: finalizing is the main lane's; it writes no slide value."""
+    import asyncio
+
+    from app import state
+    from app.pipeline import project_file
+
+    client, job = real
+    exported = _two_decks_and_a_stand_in_export(job, monkeypatch)
+    # English has a PDF a person asked for; Korean has none.
+    client.post(f"/api/jobs/{job.id}/pdf", json={"language": "en"})
+    _wait(client, job.id)
+    assert exported == ["pres-en-1"]
+
+    slide_keys = (
+        state.SLIDE_PLANS,
+        state.SLIDE_TIMING,
+        state.GOOGLE_SLIDES_DECKS,
+        state.DECK_TEXT_BASELINE,
+    )
+
+    def slide_values() -> dict[str, Any]:
+        current = asyncio.run(job.pipeline.session_state())
+        return {key: current.get(key) for key in slide_keys}
+
+    before = slide_values()
+    for language in ("en", "ko"):
+        resp = client.post(f"/api/jobs/{job.id}/finalize", json={"language": language})
+        assert resp.status_code == 200 and resp.json()["finalized"] is True
     status = _wait(client, job.id)
-    assert _row(status, "ko")["slides_pdf"] == "slides.ko.pdf"
-    assert exported == ["pres-en-1", "pres-ko-1"]
+
+    # No deck was exported, and nothing about slides was written.
+    assert exported == ["pres-en-1"]
+    assert slide_values() == before
+    assert project_file(PROJECT_ID, "slides.ko.pdf") is None
+    assert _row(status, "ko")["slides_pdf"] is None
+    assert _row(status, "en")["slides_pdf"] == "slides.en.pdf"
+    assert _row(status, "en")["finalized"] and _row(status, "ko")["finalized"]
+    assert not status["lanes"]["slides"]["busy"]
 
 
 def _wait_for_lane(client: TestClient, job_id: str, lane: str) -> dict[str, Any]:

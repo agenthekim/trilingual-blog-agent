@@ -405,3 +405,122 @@ def test_a_title_emptied_in_the_deck_is_not_pulled() -> None:
     assert [d.key for d in pulled] == ["1/notes"]  # the emptied title stays as it was
     merged = deck_sync.merged_plan(plan, pulled)
     assert merged.slides[0].title == plan.slides[0].title
+
+
+@pytest.mark.asyncio
+async def test_a_pdf_never_outlives_the_deck_it_was_made_from(
+    isolated_workspace, monkeypatch
+) -> None:
+    """SLD-12: a PDF is a snapshot of one deck, with the time it was taken."""
+    from datetime import datetime
+
+    from app.pipeline import project_file
+
+    plan = _plan()
+    pipeline, _, _ = await _pipeline_with_deck(monkeypatch, plan)
+    exported: list[str] = []
+
+    async def export(presentation_id: str) -> bytes:
+        exported.append(presentation_id)
+        return b"%PDF-1.4\n" + presentation_id.encode()
+
+    async def create(plan, allowed_images, *args):
+        return {
+            "presentation_id": "deck-ko-2",
+            "url": google_slides.deck_url("deck-ko-2"),
+        }
+
+    monkeypatch.setattr(google_slides, "export_deck_pdf", export)
+    monkeypatch.setattr(google_slides, "create_deck", create)
+
+    async def row() -> dict[str, Any]:
+        rows = (await pipeline.overview())["rows"]
+        return next(r for r in rows if r["language"] == "ko")
+
+    async def manifest() -> str:
+        await pipeline.summarize()
+        return project_file("proj-9", "manifest.md").read_text(encoding="utf-8")
+
+    # A file left by a deck that is gone is not the PDF of the deck there is.
+    pdf = workspace_dir() / "proj-9" / "slides.ko.pdf"
+    pdf.write_bytes(b"%PDF-1.4\nleft from an earlier deck")
+    before = await row()
+    assert (before["slides_state"], before["deck_outdated"]) == ("deck", False)
+    assert before["slides_pdf"] is None and before["pdf_exported_at"] is None
+    assert "Slides PDF" not in await manifest()
+
+    # Exported on demand: the row and the manifest say when.
+    assert await pipeline.export_pdf("ko") is None
+    exported_row = await row()
+    record = (await pipeline.session_state())[state.GOOGLE_SLIDES_DECKS]["ko"]
+    when = record["pdf_exported_at"]
+    assert datetime.fromisoformat(when).tzinfo is not None
+    assert exported_row["slides_pdf"] == "slides.ko.pdf"
+    assert exported_row["pdf_exported_at"] == when
+    assert pdf.read_bytes() == b"%PDF-1.4\ndeck-ko"
+    assert f"- Slides PDF (Korean): slides.ko.pdf, exported {when}" in await manifest()
+
+    # The plan changes: the deck is behind it until the change is pushed, and
+    # the push makes the PDF again.
+    edited = render_slide_plan_markdown(plan).replace(
+        "가드레일을 설명합니다.", "가드레일을 다시 설명합니다."
+    )
+    await pipeline.save_edit("slides.ko.md", edited)
+    behind = await row()
+    assert (behind["slides_state"], behind["deck_outdated"]) == ("deck", True)
+    preview = await pipeline.sync_deck_text("ko", "push", apply=False)
+    await pipeline.sync_deck_text(
+        "ko", "push", apply=True, change_id=preview["change_id"]
+    )
+    assert exported == ["deck-ko", "deck-ko"]
+    assert (await row())["deck_outdated"] is False
+
+    # A new deck replaces the one the PDF was made from: the PDF goes.
+    assert await pipeline.create_deck("ko") is None
+    replaced = await row()
+    assert not pdf.exists()
+    assert replaced["slides_pdf"] is None and replaced["pdf_exported_at"] is None
+    assert "pdf_file" not in replaced["deck"]
+    assert "pdf_exported_at" not in replaced["deck"]
+    assert replaced["deck"]["previous"] == ["https://docs.google.com/x"]
+    text = await manifest()
+    assert "Slides PDF" not in text
+    assert (
+        "- Earlier Google Slides deck (Korean), replaced: https://docs.google.com/x"
+        in (text)
+    )
+
+    # The next PDF is of the new deck.
+    assert await pipeline.export_pdf("ko") is None
+    assert exported[-1] == "deck-ko-2" and pdf.read_bytes().endswith(b"deck-ko-2")
+    assert (await row())["slides_pdf"] == "slides.ko.pdf"
+
+
+def test_the_state_of_a_languages_slides_is_read_from_the_record() -> None:
+    from app.tools.slides import deck_outdated, slides_state
+
+    plan = _plan()
+    deck = {"presentation_id": "deck-ko", "url": "https://docs.google.com/x"}
+    nothing: dict[str, Any] = {}
+    planned = {state.SLIDE_PLANS: {"ko": plan.model_dump()}}
+    made = {
+        **planned,
+        state.GOOGLE_SLIDES_DECKS: {"ko": deck},
+        state.DECK_TEXT_BASELINE: {"ko": deck_sync.plan_text(plan)},
+    }
+    assert slides_state(nothing, "ko") == "none"
+    assert (
+        slides_state(planned, "ko") == "plan" and slides_state(planned, "en") == "none"
+    )
+    assert slides_state(made, "ko") == "deck" and not deck_outdated(made, "ko")
+    assert not deck_outdated(planned, "ko")  # no deck, nothing to be behind
+
+    changed = plan.model_copy(deep=True)
+    changed.slides[0].title = "다른 제목"
+    behind = {**made, state.SLIDE_PLANS: {"ko": changed.model_dump()}}
+    assert slides_state(behind, "ko") == "deck" and deck_outdated(behind, "ko")
+    # Without the text deck and plan agreed on, nothing can be said.
+    unknown = {**behind, state.DECK_TEXT_BASELINE: {}}
+    assert not deck_outdated(unknown, "ko")
+    # A deck whose plan was discarded is still a deck.
+    assert slides_state({state.GOOGLE_SLIDES_DECKS: {"ko": deck}}, "ko") == "deck"

@@ -74,8 +74,11 @@ from app.tools.publish import (
 from app.tools.slides import (
     compile_artifact_manifest_markdown,
     create_google_slides_deck_with_speaker_notes,
+    deck_outdated,
     export_google_slides_pdf,
+    exported_pdf,
     parse_slide_plan_markdown,
+    pdf_exported_at,
     render_slide_plan_markdown,
     set_presentation_brief,
     slide_audience,
@@ -83,6 +86,7 @@ from app.tools.slides import (
     slide_pdf_file,
     slide_plan_file,
     slide_timing_report,
+    slides_state,
 )
 
 __all__ = ["API_PLATFORMS", "PLATFORM_NAMES", "ArticlePipeline"]
@@ -246,7 +250,15 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
                 "slides_file": existing(slide_plan_file(language))
                 if language in plans
                 else None,
-                "slides_pdf": existing(slide_pdf_file(language)),
+                # Where the slides stand: 'none', 'plan' or 'deck'. What the
+                # slides lane is doing right now is not part of it.
+                "slides_state": slides_state(session_state, language),
+                # The plan's text differs from what deck and plan last agreed on.
+                "deck_outdated": deck_outdated(session_state, language),
+                # The PDF of the deck there is now, and when it was exported
+                # (SLD-12). A file left from a replaced deck is not listed.
+                "slides_pdf": exported_pdf(session_state, language),
+                "pdf_exported_at": pdf_exported_at(session_state, language),
                 "slides_on_time": (timing.get(language) or {}).get("passed"),
                 # The length a slide request gets when it names none.
                 "slides_minutes": slide_length(session_state, language, 0),
@@ -1180,16 +1192,8 @@ class ArticlePipeline:
         ):
             # The paste file is written from the text as finalized.
             await self.act(export_naver_blog_paste_ready_html)
-        if ((current.get(state.GOOGLE_SLIDES_DECKS) or {}).get(language) or {}).get(
-            "presentation_id"
-        ):
-            pdf_res = await self.act(export_google_slides_pdf, language)
-            if not _failure(pdf_res):
-                self.log(
-                    f">>> exported {slide_pdf_file(language)} on finalizing the "
-                    f"{LANGUAGE_NAMES[language]} post"
-                )
-                await self.summarize()
+        # Finalizing is an action of the main lane and writes no slide value
+        # (RUN-1): a PDF is exported when a person asks for it (SLD-12).
         check = (current.get(state.FIDELITY_REPORT) or {}).get(language)
         return {"language": language, "finalized": True, "check": check}
 
@@ -1333,7 +1337,8 @@ class ArticlePipeline:
         if direction == "pull":
             delta.update(self._plan_of_record(current, language, plan))
         await self._update_state(delta, current)
-        if direction == "push" and project_file(project_id, slide_pdf_file(language)):
+        if direction == "push" and exported_pdf(current, language):
+            # The deck changed, so its PDF is made again (SLD-12).
             await self.act(export_google_slides_pdf, language)
         where = "deck from the file" if direction == "push" else "file from the deck"
         self.log(
