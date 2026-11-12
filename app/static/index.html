@@ -146,9 +146,12 @@
   </header>
 
   <form class="card" id="dropZone" novalidate>
-    <label class="field" for="source">Source document
-      <span class="hint">Share a post URL, a .md file, or your document.</span>
-    </label>
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px">
+      <label class="field" for="source" style="margin-bottom:0">Source document
+        <span class="hint">Share a post URL, a .md file, or your document.</span>
+      </label>
+      <button type="button" class="ghost hidden" id="clearRun" style="font-size:12px; padding:4px 10px; margin-top:2px; white-space:nowrap">Clear / New article</button>
+    </div>
     <textarea id="source" required placeholder="https://qiita.com/you/items/…   or   # My draft …"></textarea>
     <div class="under">
       <button type="button" id="attach">Attach .md file</button>
@@ -189,10 +192,7 @@
 
     <div class="formfoot">
       <span class="muted small">Takes a few minutes. You review everything before anything is posted.</span>
-      <div style="display:flex; gap:8px; align-items:center">
-        <button type="button" class="ghost hidden" id="clearRun">Clear / New article</button>
-        <button class="primary" id="run" type="submit">Run</button>
-      </div>
+      <button class="primary" id="run" type="submit">Run</button>
     </div>
   </form>
 
