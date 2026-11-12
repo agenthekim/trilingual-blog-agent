@@ -400,9 +400,15 @@ function languageRow(row, busy) {
 function render(data) {
   state = {...state, ...data};
   const o = data.overview, busy = data.busy;
-  if (busy && !busySince) busySince = Date.now();
+  if (busy && !busySince) { busySince = Date.now(); $("logBox").open = true; }
   if (!busy) busySince = null;
-  if (data.log.length !== lastLogLength) { lastLogLength = data.log.length; lastLogAt = Date.now(); $("log").textContent = data.log.join("\n\n"); $("log").scrollTop = $("log").scrollHeight; }
+  if (data.log.length !== lastLogLength) {
+    lastLogLength = data.log.length;
+    lastLogAt = Date.now();
+    $("log").textContent = data.log.join("\n\n");
+    $("log").scrollTop = $("log").scrollHeight;
+    if (busy) $("logBox").open = true;
+  }
 
   $("progress").classList.remove("hidden");
   $("clearRun").classList.remove("hidden");
@@ -449,7 +455,7 @@ function render(data) {
     $("rows").replaceChildren(...rows.map((row) => languageRow(row, busy)));
   }
 
-  $("askCard").classList.toggle("hidden", !o.title);
+  $("askCard").classList.toggle("hidden", !o.title && !busy && data.log.length === 0);
   $("reply").classList.toggle("hidden", !data.reply);
   $("reply").textContent = data.reply || "";
   $("run").disabled = busy;
@@ -638,6 +644,7 @@ function submitMessage() {
   if (!text) return;
   if (state && state.busy) { toast("The agent is still working. Try again when it has finished."); return; }
   $("message").value = "";
+  $("logBox").open = true;
   act("message", {text});
 }
 $("send").addEventListener("click", submitMessage);
