@@ -1,5 +1,7 @@
 # Coding Agent Guide
 
+This file is for coding assistants that work on this repository. It is not part of the product and describes no feature of the agent.
+
 ## Prerequisites
 
 Install the CLI (one-time):

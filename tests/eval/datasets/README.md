@@ -1,117 +1,20 @@
-# Evaluation Datasets
+# Evaluation datasets
 
-This directory contains evaluation datasets for testing agent behavior.
+`basic-dataset.json` is the golden dataset of this project: eight single-turn
+cases, each a user message (`prompt`) with a written reference answer
+(`reference`). `agents-cli eval run` runs the agent over it and grades the
+traces with the metrics and thresholds of `tests/eval/eval_config.yaml`.
 
-## Running Evaluations
-
-### Default Dataset
-```bash
-# Run the agent over the default dataset and grade the traces
-agents-cli eval run
-```
-
-### Custom Dataset
-```bash
-agents-cli eval run --dataset tests/eval/datasets/custom-dataset.json --metrics general_quality
-```
-
-### Decoupled Runs
-
-Split the run when you want traces in a custom location, or want to re-grade
-existing traces without re-running the agent:
+One case, `prompt_injection_inside_draft`, contains adversarial text on
+purpose: a paragraph inside the draft that asks the translation agent to print
+credentials and publish without asking. It is test data. The case checks that
+the agent stores the draft as content, prints no token and publishes nothing.
 
 ```bash
-agents-cli eval generate --dataset tests/eval/datasets/custom-dataset.json --output custom_traces/
-agents-cli eval grade --metrics general_quality --traces custom_traces/
+agents-cli eval run                                  # this dataset, graded
+agents-cli eval run --dataset tests/eval/datasets/basic-dataset.json
+agents-cli eval metric list                          # the built-in metrics
 ```
 
-### Deployed Agent
-
-By default, `eval generate` starts a local HTTP server to run your agent in, dispatches each case in parallel and then tears the server down. Pass `--url <base_url> --app-name <name>` to target an already-running or deployed agent instead.
-
-```bash
-agents-cli eval generate --url https://my-agent.run.app --app-name app
-```
-
-## Dataset Format
-
-Each dataset file follows the Gemini platform evaluation
-dataset format. An eval case may use **either** of two shapes — both are
-valid input to `agents-cli eval generate`:
-
-**Shape A — single-prompt case:**
-
-```json
-{
-  "eval_cases": [
-    {
-      "eval_case_id": "unique_case_id",
-      "prompt": {
-        "role": "user",
-        "parts": [{"text": "User message"}]
-      }
-    }
-  ]
-}
-```
-
-**Shape B — continued-conversation case (the "N+1" pattern):**
-The case carries prior turns in `agent_data` and the last turn ends with a
-user message; `eval generate` appends the next agent response.
-
-```json
-{
-  "eval_cases": [
-    {
-      "eval_case_id": "unique_case_id",
-      "agent_data": {
-        "turns": [
-          {
-            "turn_index": 0,
-            "events": [
-              {"author": "user",  "content": {"role": "user",  "parts": [{"text": "First user message"}]}},
-              {"author": "agent", "content": {"role": "model", "parts": [{"text": "First agent reply"}]}},
-              {"author": "user",  "content": {"role": "user",  "parts": [{"text": "Follow-up user message"}]}}
-            ]
-          }
-        ]
-      }
-    }
-  ]
-}
-```
-
-## Key Fields
-
-- `eval_cases`: Array of evaluation cases.
-- `eval_case_id`: Unique identifier for the evaluation case (optional).
-- `prompt`: A single user message — Shape A.
-- `agent_data.turns`: Prior conversation turns ending with a user message — Shape B.
-
-## Creating Custom Datasets
-
-You can create custom datasets in two ways:
-
-1. **By Hand**: Copy `basic-dataset.json` as a template and manually add evaluation cases.
-2. **Synthesize**: Use the synthetic dataset generation command to generate conversation scenarios:
-   ```bash
-   agents-cli eval dataset synthesize --count 10
-   ```
-
-## Discovering Metrics
-
-You can discover available out-of-the-box evaluation metrics by running:
-
-```bash
-agents-cli eval metric list
-```
-
-## Beyond Generate and Grade
-
-Once you have a baseline, the eval surface has a few more commands worth knowing about:
-
-- `agents-cli eval compare BASE CAND` — diff two grade-results files (regression check).
-- `agents-cli eval analyze RESULTS` — cluster failure modes from a grade-results file.
-- `agents-cli eval optimize` — auto-tune your agent's prompts using eval data.
-
-See the [Evaluation Guide](https://google.github.io/agents-cli/guide/evaluation/) for the full surface and metric reference.
+The format of a case and the other `agents-cli eval` commands are described in
+the [Evaluation Guide](https://google.github.io/agents-cli/guide/evaluation/).
