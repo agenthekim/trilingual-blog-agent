@@ -1,12 +1,35 @@
 """Local LLM-as-judge for `custom_response_quality` (see eval_config.yaml)."""
 
+import os
+import re
 import threading
+from pathlib import Path
 
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
 _local = threading.local()
+
+
+def _judge_model() -> str:
+    """The fast model of the application, whose name is configuration (OPS-3).
+
+    ``FAST_MODEL_NAME`` when it is set; otherwise the default written in
+    ``app/models.py``, read from that file's text. The grader runs in an
+    environment of its own, without the agent's packages, so the module
+    cannot be imported here; it runs from the project root.
+    """
+    if name := os.environ.get("FAST_MODEL_NAME"):
+        return name
+    source = Path("app/models.py").read_text(encoding="utf-8")
+    default = re.search(r'os\.environ\.get\("FAST_MODEL_NAME", "([^"]+)"\)', source)
+    if default is None:
+        raise RuntimeError("app/models.py no longer names the default fast model.")
+    return default.group(1)
+
+
+JUDGE_MODEL = _judge_model()
 
 
 class _Verdict(BaseModel):
@@ -51,7 +74,7 @@ def evaluate(instance):
     prompt += f"Full Agent Trace: {instance.get('agent_data', '')}\n"
 
     response = _client().models.generate_content(
-        model="gemini-3.8-flash",
+        model=JUDGE_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0,  # deterministic grading

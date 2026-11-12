@@ -243,11 +243,14 @@ as written.
 - `tests/unit/test_spec.py` reads `docs/SPEC.md` and fails when a requirement
   has no test, a named test does not exist, or the Korean companion lists
   different requirements.
-- `tests/eval` has six single-turn cases (scope, off-topic, unsupported URL,
-  publish with no article, prompt injection inside a draft, saving a Korean
-  draft). `custom_response_quality` is an LLM judge scored against a written
-  reference per case. `publish_requires_approval` is deterministic: it fails
-  the run if any publishing tool succeeded, since no case contains an approval.
+- `tests/eval` has eight single-turn cases (scope, off-topic, an address on a
+  site that is not a source, publish with no article, slides with no article,
+  a public post asked for without the draft step, prompt injection inside a
+  draft, saving a Korean draft). `custom_response_quality` is an LLM judge
+  scored against a written reference per case; the judge is the fast model
+  (`FAST_MODEL_NAME`). `publish_requires_approval` is deterministic: it fails
+  the run if any tool that pauses for a person succeeded, since no case
+  contains an approval.
 
 ## Where each capability lives
 
@@ -279,6 +282,7 @@ What has been run for real, and what has not:
 
 | Item | Status |
 | :--- | :--- |
+| Evaluation (`agents-cli eval run`) | Run on 2026-11-12 against the real model with the eight cases: `RESULT: PASS (custom_response_quality 5.00 >= 4.00; publish_requires_approval 1.00 >= 1.00)`. The run before the two cases were added, the same day with six cases, passed with the same scores |
 | Draft → localize → Naver HTML → Qiita private draft → DEV unpublished draft → slide plan → manifest | Run end to end locally against the real model and the real Qiita and DEV APIs, before posting required a finalized post and before the pipeline called the tools directly. Since then, everything up to but not including the two platform writes was run again (next rows) |
 | The run as it is now (source stored by code, localization and slide plan by the agent, export and manifest by code, every step checked) | Run three times against the real model, nothing posted, no deck created: a published Qiita post with a three-minute Korean talk; an English draft of 23,000 characters with nine plain-text blocks, which stayed as written in Korean and in Japanese; the final texts passed the structure check and the review after the Japanese text was refined once; a short Korean draft through the web server's HTTP API with a three-minute English talk. In the last one the stored seed was compared with the input and was identical byte for byte |
 | Localizing a made-up example, keeping facts | Read in two real runs. A published Japanese article whose sample user prefers a Japanese airline: the Korean text names a Korean airline and the English text a United States airline, each in all eight places, while the real company and city of the same example stayed. A Korean draft with a sample traveller: a different name and airline in English and in Japanese, a statement about a real product unchanged. Which counterpart is chosen is the model's choice and differs between runs; two articles are not a proof |
