@@ -166,7 +166,7 @@ stage at a time and waits.
 | PER-1 | A run survives a restart of the server: its session (posts, titles, finalizations, plans, deck records, sync baselines, publication records) and its activity log are on disk. Opening the run's address again shows it as it was |
 | PER-2 | A run that was working when the server stopped is shown as interrupted, with a notice; an approval that was pending then must be asked for again |
 | PER-3 | Generated files live in `workspace/<project id>/`; every revision of every post and every publication record is also kept in the article store (SQLite locally, Firestore when configured) |
-| PER-4 | The page reopens the last run of this browser when opened without a run in its address |
+| PER-4 | The page reopens the last run of this browser when opened without a run in its address, restoring the source document in the input box and offering "Clear / New article" to start fresh |
 
 ### 5.8 Security and privacy
 

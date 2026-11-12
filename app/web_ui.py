@@ -129,6 +129,7 @@ class Job:
     pipeline: ArticlePipeline
     created: float = field(default_factory=time.time)
     # What was asked for, so progress is judged against it after a reload too.
+    source_text: str = ""
     talk_languages: list[str] = field(default_factory=list)
     wants_decks: bool = False
     log: list[str] = field(default_factory=list)
@@ -151,6 +152,7 @@ class Job:
             "id": self.id,
             "session_id": self.pipeline.session_id,
             "created": self.created,
+            "source_text": self.source_text,
             "talk_languages": self.talk_languages,
             "wants_decks": self.wants_decks,
             "busy": self.busy,
@@ -167,10 +169,13 @@ class Job:
 JOBS: dict[str, Job] = {}
 
 
-def _new_job(talk_languages: list[str], wants_decks: bool) -> Job:
+def _new_job(
+    talk_languages: list[str], wants_decks: bool, source_text: str = ""
+) -> Job:
     job = Job(
         id=uuid.uuid4().hex,
         pipeline=ArticlePipeline(),
+        source_text=source_text,
         talk_languages=talk_languages,
         wants_decks=wants_decks,
     )
@@ -189,6 +194,7 @@ def _reopen(job_id: str) -> Job | None:
             id=job_id,
             pipeline=ArticlePipeline(session_id=record["session_id"]),
             created=float(record.get("created") or 0),
+            source_text=str(record.get("source_text") or ""),
             talk_languages=[
                 code for code in record.get("talk_languages") or [] if code in LANGUAGES
             ],
@@ -481,7 +487,7 @@ async def config() -> dict[str, Any]:
 async def start_job(request: StartRequest) -> dict[str, str]:
     wants_slides = request.talk_minutes > 0 and bool(request.talk_languages)
     languages = list(request.talk_languages) if wants_slides else []
-    job = _new_job(languages, wants_slides and request.create_deck)
+    job = _new_job(languages, wants_slides and request.create_deck, request.text)
     _start(
         job,
         lambda: job.pipeline.run_stages(
@@ -500,6 +506,9 @@ async def start_job(request: StartRequest) -> dict[str, str]:
 async def job_status(job_id: str) -> dict[str, Any]:
     job = _job(job_id)
     current = await job.pipeline.session_state()
+    view = overview(current)
+    if job.source_text:
+        view["source_text"] = job.source_text
     return {
         "busy": job.busy,
         "error": job.error,
@@ -507,7 +516,7 @@ async def job_status(job_id: str) -> dict[str, Any]:
         "reply": job.reply,
         "log": job.log,
         "approvals": job.pipeline.approvals,
-        "overview": overview(current),
+        "overview": view,
         "progress": progress(current, job.talk_languages, job.wants_decks),
         "post_progress": post_progress(current, job.talk_languages),
     }

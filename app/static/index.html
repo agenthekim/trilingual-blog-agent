@@ -189,7 +189,10 @@
 
     <div class="formfoot">
       <span class="muted small">Takes a few minutes. You review everything before anything is posted.</span>
-      <button class="primary" id="run" type="submit">Run</button>
+      <div style="display:flex; gap:8px; align-items:center">
+        <button type="button" class="ghost hidden" id="clearRun">Clear / New article</button>
+        <button class="primary" id="run" type="submit">Run</button>
+      </div>
     </div>
   </form>
 
@@ -266,7 +269,7 @@ const STATUS = {
 };
 const SETTINGS_KEY = "tba.settings", LAST_RUN_KEY = "tba.lastRun";
 const RUN_ID = /^[0-9a-f]{32}$/;
-let jobId = null, timer = null, state = null, missed = 0;
+let jobId = null, timer = null, state = null, missed = 0, restoredJob = null;
 let shownRows = "", shownNotices = "", config = null;
 let busySince = null, lastLogAt = Date.now(), lastLogLength = 0, liveKey = null;
 const typed = {};  // values typed into the table survive re-rendering
@@ -402,6 +405,13 @@ function render(data) {
   if (data.log.length !== lastLogLength) { lastLogLength = data.log.length; lastLogAt = Date.now(); $("log").textContent = data.log.join("\n\n"); $("log").scrollTop = $("log").scrollHeight; }
 
   $("progress").classList.remove("hidden");
+  $("clearRun").classList.remove("hidden");
+  if (restoredJob !== jobId && o.source_text) {
+    restoredJob = jobId;
+    if (!$("source").value.trim() && document.activeElement !== $("source")) {
+      $("source").value = o.source_text;
+    }
+  }
   $("articleTitle").textContent = o.title || (busy ? "Reading the source document…" : "No article was stored");
   // The server says which steps are done, judged against what this run was asked for.
   const firstOpen = data.progress.findIndex((step) => !step.done);
@@ -473,10 +483,11 @@ function drawLive() {
 setInterval(drawLive, 1000);
 
 function forget(message) {
-  clearInterval(timer); jobId = null; state = null; missed = 0;
+  clearInterval(timer); jobId = null; state = null; missed = 0; restoredJob = null;
   history.replaceState(null, "", location.pathname);
   localStorage.removeItem(LAST_RUN_KEY);
   $("run").disabled = false;
+  $("clearRun").classList.add("hidden");
   for (const id of ["progress", "langs", "askCard"]) $(id).classList.add("hidden");
   if (message) toast(message, 8000);
 }
@@ -610,6 +621,11 @@ async function openSettings() {
 }
 $("openSettings").addEventListener("click", openSettings);
 $("closeSettings").addEventListener("click", () => $("settingsModal").close());
+$("clearRun").addEventListener("click", () => {
+  $("source").value = ""; $("file").value = "";
+  $("fileInfo").textContent = "or drop a file anywhere on this card";
+  forget();
+});
 $("attach").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", (e) => { loadFile(e.target.files[0]); e.target.value = ""; });
 const zone = $("dropZone");

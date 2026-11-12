@@ -192,10 +192,15 @@ def overview(session_state: dict[str, Any]) -> dict[str, Any]:
         for row in rows
         if row["can_edit"] and f"post.{row['language']}.md" in row["files"]
     ] + slides
+    source_url = next(
+        (r["url"] for r in rows if r["status"] == "existing_source" and r.get("url")),
+        "",
+    )
     return {
         "project_id": project_id,
         "title": session_state.get(state.SEED_TITLE) or "",
         "source_language": source,
+        "source_text": source_url or (session_state.get(state.SEED_MARKDOWN) or ""),
         "rows": rows,
         "slides": slides,
         "decks": dict(decks),
