@@ -166,7 +166,7 @@ stage at a time and waits.
 | WEB-8 | Editor: full window; title field for posts; Save; unsaved changes are guarded. Saving a post undoes its finalization and says so. For a slide plan with a deck: after Save the sync dialog opens when the deck differs; "Update deck…" and "Pull from deck…" are always there |
 | WEB-9 | "Ask the agent for a change": one line to the agent; the agent's reply is shown on the page when the turn ends. When the agent asks for an approval, the request is shown with Approve and Decline; an answer goes to that request only (INV-1), and other requests pending at that moment are declined and said to be. Requests left unanswered when a new line is sent are gone, and a notice says so |
 | WEB-10 | Settings shows the fixed language-to-platform mapping, per credential whether it is configured, and the Google account that decks go to, as reported by the server at that moment. No names or values of secrets |
-| WEB-11 | While the agent works nothing else can be started; one sentence says so. A lost connection is shown. When an action ends without doing what was asked, a notice says what did not happen (INV-12) |
+| WEB-11 | While a lane works, nothing else can be started in that lane; one sentence says so and names the lane. The other lane stays usable (RUN-1). A lost connection is shown. When an action ends without doing what was asked, a notice says what did not happen (INV-12) |
 | WEB-12 | Texts for people are written for people: platform names not ids, no Python lists, no exception class names |
 
 ### 5.7 Persistence
@@ -202,7 +202,9 @@ stage at a time and waits.
 
 | | Requirement |
 | :--- | :--- |
+| RUN-1 | A run has two lanes: main (source document, localization, posts, requests to the agent) and slides (plans, decks, PDF, deck text sync). One action runs at a time in a lane, and the two lanes run at the same time: while slides are made, posts can be reviewed, edited, finalized and posted |
 | RUN-2 | The session of a run is its record and has one writer at a time: an agent turn in the main lane, or a short write by code that reads the record first. Slide planning works in a session of its own, and only its result is written to the record. Two actions that change different languages never lose each other's change |
+| RUN-3 | Every action a person starts ends in one of two ways that the page shows: done, or a notice saying what did not happen. Nothing is started whose result nobody waits for |
 
 ---
 
@@ -418,7 +420,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again`, `test_draft_source_language_post_can_be_edited_before_finalizing` |
 | WEB-9 | `test_the_agents_reply_to_a_request_in_words_is_shown`, `test_an_approval_answers_one_request_and_never_another`, `test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone` |
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
-| WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
+| WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
 | WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |
 | PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart` |
@@ -434,5 +436,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: a rule for people who edit the code; the defaults are in `app/models.py` and are read from the environment |
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
+| RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more` |
+| RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
 <!-- traceability:end -->

@@ -124,17 +124,21 @@ async def main() -> int:
     pipeline = ArticlePipeline(log=lambda line: print(line + "\n"))
     source_text = args.url or args.draft.read_text(encoding="utf-8")
 
-    notes = await pipeline.run_stages(
-        source_text,
-        args.talk_minutes,
-        args.talk_language or ["en", "ko", "ja"],
-        args.audience,
-        args.create_deck,
-    )
+    # The two parts of a run, in turn: the posts, then the slides.
+    ready, notes = await pipeline.run_posts(source_text)
     if notes:
         print(notes, file=sys.stderr)
-    if not (await pipeline.overview())["manifest"]:
-        return 1  # the run stopped before the end
+    if not ready:
+        return 1  # the run stopped before the posts were there
+    if args.talk_minutes > 0:
+        notes = await pipeline.run_slides(
+            args.talk_language or ["en", "ko", "ja"],
+            args.talk_minutes,
+            args.audience,
+            args.create_deck,
+        )
+        if notes:
+            print(notes, file=sys.stderr)
 
     tags = [t.strip() for t in args.tags.split(",") if t.strip()]
     for platform in args.publish:

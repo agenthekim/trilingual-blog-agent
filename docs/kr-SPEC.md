@@ -164,7 +164,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | WEB-8 | 편집기: 창 전체를 쓴다. 게시물에는 제목 입력란이 있다. Save가 있다. 저장하지 않은 변경 사항은 보호한다. 게시물을 저장하면 확정이 해제되고 그 사실을 알린다. 덱이 있는 슬라이드 계획의 경우, Save 후 덱과 내용이 다르면 동기화 대화상자가 열린다. "Update deck…"과 "Pull from deck…"은 항상 있다 |
 | WEB-9 | "Ask the agent for a change": 에이전트에게 보내는 한 줄이다. 턴이 끝나면 에이전트의 답이 페이지에 표시된다. 에이전트가 승인을 요청하면 그 요청이 Approve, Decline과 함께 표시된다. 답은 그 요청에만 전달되고(INV-1), 그 시점에 대기 중이던 다른 요청은 거절되며 그 사실이 표시된다. 새 줄을 보낼 때 답하지 않은 채 남아 있던 요청은 사라지며, 알림이 그 사실을 알린다 |
 | WEB-10 | Settings는 고정된 언어-플랫폼 대응, 자격 증명별 설정 여부, 그리고 덱이 들어가는 Google 계정을 그 시점에 서버가 보고한 대로 보여 준다. 시크릿의 이름이나 값은 표시하지 않는다 |
-| WEB-11 | 에이전트가 작업하는 동안에는 다른 어떤 것도 시작할 수 없으며, 한 문장으로 그 사실을 알린다. 연결이 끊기면 이를 표시한다. 작업이 요청대로 수행되지 않은 채 끝나면 무엇이 이루어지지 않았는지 알림으로 알린다(INV-12) |
+| WEB-11 | 레인이 작업하는 동안에는 그 레인에서 다른 어떤 것도 시작할 수 없으며, 한 문장으로 그 사실을 알리고 어느 레인인지 말한다. 다른 레인은 계속 쓸 수 있다(RUN-1). 연결이 끊기면 이를 표시한다. 작업이 요청대로 수행되지 않은 채 끝나면 무엇이 이루어지지 않았는지 알림으로 알린다(INV-12) |
 | WEB-12 | 사람에게 보여 주는 문구는 사람이 읽도록 쓴다. ID가 아닌 플랫폼 이름을 쓰고, Python 리스트나 예외 클래스 이름은 쓰지 않는다 |
 
 ### 5.7 영속성
@@ -200,7 +200,9 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 
 | | 요구사항 |
 | :--- | :--- |
+| RUN-1 | 실행에는 레인이 둘 있다. 글 레인(main)은 원본 문서, 현지화, 글, 에이전트에게 보내는 요청을 맡고, 슬라이드 레인(slides)은 계획, 덱, PDF, 덱 텍스트 동기화를 맡는다. 한 레인에서는 한 번에 액션 하나만 실행되고 두 레인은 동시에 실행된다. 슬라이드를 만드는 동안 글을 검토하고, 고치고, 확정하고, 게시할 수 있다 |
 | RUN-2 | 실행의 세션은 그 실행의 기록이며 한 번에 한 작성자만 쓴다. 작성자는 글 레인의 에이전트 턴이거나, 기록을 먼저 읽고 하는 코드의 짧은 쓰기다. 슬라이드 계획은 자기만의 세션에서 일하고 그 결과만 기록에 쓴다. 서로 다른 언어를 바꾸는 두 액션은 절대 상대의 변경을 잃게 하지 않는다 |
+| RUN-3 | 사람이 시작한 모든 액션은 페이지가 보여 주는 두 가지 중 하나로 끝난다. 완료이거나, 무엇이 이루어지지 않았는지 말하는 알림이다. 결과를 아무도 기다리지 않는 일은 시작하지 않는다 |
 
 ---
 
@@ -412,7 +414,7 @@ flowchart TD
 | WEB-8 | `test_editor_page_is_served_and_saves_through_the_file_api`, `test_changing_only_the_title_makes_a_post_unfinished_again`, `test_draft_source_language_post_can_be_edited_before_finalizing` |
 | WEB-9 | `test_the_agents_reply_to_a_request_in_words_is_shown`, `test_an_approval_answers_one_request_and_never_another`, `test_requests_left_unanswered_by_a_new_message_are_said_to_be_gone` |
 | WEB-10 | `test_settings_reports_only_whether_each_credential_is_configured`, `test_settings_names_the_account_that_decks_go_to` |
-| WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
+| WEB-11 | `test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so`, `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_reading_the_status_never_creates_the_session` |
 | WEB-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_tags_are_checked_against_the_platforms_rule_before_anything_runs` |
 | PER-1 | `test_a_session_is_read_back_by_a_new_process`, `test_a_run_is_reopened_from_its_record_after_a_restart` |
 | PER-2 | `test_a_run_is_reopened_from_its_record_after_a_restart` |
@@ -428,5 +430,7 @@ flowchart TD
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: 코드를 수정하는 사람을 위한 규칙이다. 기본값은 `app/models.py`에 있으며 환경 변수에서 읽는다 |
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
+| RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
 | RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more` |
+| RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
 <!-- traceability:end -->

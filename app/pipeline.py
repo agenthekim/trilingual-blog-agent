@@ -730,17 +730,35 @@ class ArticlePipeline:
         audience: str = "software engineers",
         create_deck: bool = False,
     ) -> str | None:
-        """Source document, localization, export, talks, manifest.
+        """Both parts of a run, one after the other: the posts, then the slides.
 
-        Returns None when everything asked for was done, else sentences
-        saying what was not or what the person should look at. Nothing is
-        posted to Qiita or DEV Community here. ``create_deck`` is the person's
-        approval, given with the run options, to create one Google Slides
-        file per selected language in their own Drive.
+        The page runs the two parts in two lanes (``app.runs``); the script
+        and the tests call them in turn through this. Returns None when
+        everything asked for was done, else sentences saying what was not or
+        what the person should look at. Nothing is posted to Qiita or DEV
+        Community here. ``create_deck`` is the person's approval, given with
+        the run options, to create one Google Slides file per selected
+        language in their own Drive.
+        """
+        ready, notice = await self.run_posts(source_text)
+        if not ready:
+            return notice
+        wanted = list(dict.fromkeys(talk_languages or []))
+        if talk_minutes <= 0 or not wanted:
+            return notice
+        slides = await self.run_slides(wanted, talk_minutes, audience, create_deck)
+        return " ".join(filter(None, [notice, slides])) or None
+
+    async def run_posts(self, source_text: str) -> tuple[bool, str | None]:
+        """The posts part of a run: source document, localization, Naver file, manifest.
+
+        Returns whether the posts are there to be reviewed, and a sentence
+        when something did not happen or the person should look at something.
+        When the first is false nothing else of the run may be started.
         """
         notes: list[str] = []
         if stopped := await self._store_source(source_text, notes):
-            return stopped
+            return False, stopped
 
         await self.say("Localize it into the other two languages.")
         current = await self.session_state()
@@ -751,7 +769,7 @@ class ArticlePipeline:
             if not current.get(state.localized_key(language))
         ]
         if unwritten:
-            return (
+            return False, (
                 f"No {' or '.join(unwritten)} text was written, so nothing else "
                 "was done. See the agent's reply in the activity log."
             )
@@ -762,7 +780,7 @@ class ArticlePipeline:
             if not (report.get(language) or {}).get("passed")
         ]
         if failed:
-            return (
+            return False, (
                 f"The structure check failed for {' and '.join(failed)}, so nothing "
                 "was exported and no slides were made. Review the files; the "
                 "activity log lists what differs."
@@ -772,8 +790,25 @@ class ArticlePipeline:
             if failure := _failure(await self.act(export_naver_blog_paste_ready_html)):
                 notes.append(f"The Naver Blog file was not written. {failure}")
 
-        wanted = list(dict.fromkeys(talk_languages or []))
-        for language in wanted if talk_minutes > 0 else []:
+        # The manifest is written as soon as the posts are there, so they can
+        # be reviewed while the slides are still being made.
+        await self.act(compile_artifact_manifest_markdown)
+        return True, " ".join(notes) or None
+
+    async def run_slides(
+        self,
+        talk_languages: list[str],
+        talk_minutes: int,
+        audience: str = "software engineers",
+        create_deck: bool = False,
+    ) -> str | None:
+        """The slides part of a run: a plan and, if approved, a deck per language.
+
+        Returns None when every language got what was asked for, else
+        sentences saying what did not happen.
+        """
+        notes: list[str] = []
+        for language in dict.fromkeys(talk_languages):
             notes += await self._prepare_talk(
                 language, talk_minutes, audience, create_deck
             )

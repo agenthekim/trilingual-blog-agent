@@ -157,7 +157,8 @@ def test_deck_sync_writes_only_when_the_request_says_a_person_approved(client) -
         client.post(url, json={"language": "ko", "direction": "both"}).status_code
         == 422
     )
-    job.busy = True  # the agent is working: the deck is not touched meanwhile
+    # The slides lane is working: the deck is not touched meanwhile.
+    job.lanes["slides"].busy = True
     for approved in (False, True):
         busy = client.post(
             url,
@@ -168,9 +169,10 @@ def test_deck_sync_writes_only_when_the_request_says_a_person_approved(client) -
                 "change_id": "c1",
             },
         )
-        assert busy.status_code == 409 and busy.json()["detail"] == web_ui.BUSY
+        assert busy.status_code == 409
+        assert busy.json()["detail"] == web_ui.BUSY["slides"]
     # A request that was turned away must not clear a flag it did not set.
-    assert job.busy is True and len(job.pipeline.synced) == 2
+    assert job.lanes["slides"].busy is True and len(job.pipeline.synced) == 2
 
 
 def test_mermaid_blocks_are_shown_as_images_drawn_once(client, monkeypatch) -> None:
@@ -210,16 +212,10 @@ def test_mermaid_blocks_are_shown_as_images_drawn_once(client, monkeypatch) -> N
     assert "/diagrams/" not in plain and "flowchart TD" in plain
 
 
-def test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so(
-    client,
-) -> None:
-    job = web_ui.JOBS[JOB_ID]
-    job.busy = True
-    base = f"/api/jobs/{JOB_ID}"
-    attempts = [
+def _main_lane_attempts(client, base: str) -> list[Any]:
+    return [
         client.post(f"{base}/message", json={"text": "shorten the title"}),
         client.post(f"{base}/finalize", json={"language": "en"}),
-        client.post(f"{base}/deck", json={"language": "en", "approved": True}),
         client.post(
             f"{base}/url",
             json={"platform": "naver_blog", "url": "https://blog.naver.com/a/1"},
@@ -230,9 +226,66 @@ def test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so(
             json={"platform": "devto", "tags": ["ai"], "approved": True},
         ),
     ]
-    for response in attempts:
-        assert response.status_code == 409 and response.json()["detail"] == web_ui.BUSY
-    assert job.busy is True and job.pipeline.saved == [] and job.pipeline.said == []
+
+
+def _slides_lane_attempts(client, base: str) -> list[Any]:
+    return [
+        client.post(f"{base}/deck", json={"language": "en", "approved": True}),
+        client.post(f"{base}/pdf", json={"language": "en"}),
+        client.put(f"{base}/files/slides.ko.md", json={"markdown": "# deck\n"}),
+        client.post(f"{base}/deck/sync", json={"language": "ko", "direction": "push"}),
+    ]
+
+
+def test_while_the_agent_works_nothing_else_starts_and_one_sentence_says_so(
+    client,
+) -> None:
+    job = web_ui.JOBS[JOB_ID]
+    job.lanes["main"].busy = job.lanes["slides"].busy = True
+    base = f"/api/jobs/{JOB_ID}"
+    for response in _main_lane_attempts(client, base):
+        assert response.status_code == 409
+        assert response.json()["detail"] == web_ui.BUSY["main"]
+    for response in _slides_lane_attempts(client, base):
+        assert response.status_code == 409
+        assert response.json()["detail"] == web_ui.BUSY["slides"]
+    assert job.lanes["main"].busy and job.lanes["slides"].busy
+    assert job.pipeline.saved == [] and job.pipeline.said == []
+    assert job.pipeline.synced == []
+
+
+def test_a_busy_lane_refuses_its_own_actions_and_names_itself(client) -> None:
+    job = web_ui.JOBS[JOB_ID]
+    base = f"/api/jobs/{JOB_ID}"
+    # The sentence of each lane names that lane, and the two differ.
+    assert "main lane" in web_ui.BUSY["main"] and "slides lane" in web_ui.BUSY["slides"]
+
+    # The slides lane works: its own actions are refused, the main lane's run.
+    job.lanes["slides"].busy = True
+    for response in _slides_lane_attempts(client, base):
+        assert response.status_code == 409
+        assert response.json()["detail"] == web_ui.BUSY["slides"]
+    saved = client.put(f"{base}/files/post.ko.md", json={"markdown": "# 글\n"})
+    assert saved.status_code == 200 and job.pipeline.saved[0][0] == "post.ko.md"
+    status = client.get(base).json()
+    assert status["busy"] is True
+    assert status["lanes"]["slides"]["busy"] is True
+    assert status["lanes"]["main"]["busy"] is False
+    assert "posts_busy" not in status
+
+    # The main lane works: the other way round.
+    job.lanes["slides"].busy, job.lanes["main"].busy = False, True
+    for response in _main_lane_attempts(client, base):
+        assert response.status_code == 409
+        assert response.json()["detail"] == web_ui.BUSY["main"]
+    notes = client.put(f"{base}/files/slides.ko.md", json={"markdown": "# deck\n"})
+    assert notes.status_code == 200 and job.pipeline.saved[-1][0] == "slides.ko.md"
+    asked = client.post(
+        f"{base}/deck/sync", json={"language": "ko", "direction": "push"}
+    )
+    assert asked.status_code == 200
+    # An action that was let in gave its lane back; the other stays as it was.
+    assert job.lanes["slides"].busy is False and job.lanes["main"].busy is True
 
 
 def test_the_agents_reply_to_a_request_in_words_is_shown(client) -> None:
@@ -511,7 +564,7 @@ def test_a_run_is_reopened_from_its_record_after_a_restart(real) -> None:
     client, job = real
     job.add_log(">>> a line from before the restart")
     job.talk_languages, job.wants_decks = ["en", "ko"], True
-    job.busy = True  # it was working when the server stopped
+    job.lanes["main"].busy = True  # it was working when the server stopped
     job.save()
     before = client.get(f"/api/jobs/{job.id}").json()
 
@@ -711,3 +764,56 @@ def test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand(real, monkeypatch) 
     status = _wait(client, job.id)
     assert _row(status, "ko")["slides_pdf"] == "slides.ko.pdf"
     assert exported == ["pres-en-1", "pres-ko-1"]
+
+
+def _wait_for_lane(client: TestClient, job_id: str, lane: str) -> dict[str, Any]:
+    """The status of a run once the action of one lane has ended."""
+    import time
+
+    for _ in range(200):
+        status = client.get(f"/api/jobs/{job_id}").json()
+        if not status["lanes"][lane]["busy"]:
+            return status
+        time.sleep(0.02)
+    raise AssertionError(f"the action of the {lane} lane did not end")
+
+
+def test_posts_can_be_saved_finalized_and_posted_while_slides_are_made(
+    real, monkeypatch
+) -> None:
+    from app import platforms
+    from app.tools.articles import write_workspace_file
+    from tests.unit.conftest import SEED_KO
+
+    client, job = real
+    english = SEED_KO.replace("제목", "Title")
+    write_workspace_file(PROJECT_ID, "post.en.md", english)
+    sent: list[dict] = []
+
+    async def fake_save(**kwargs):
+        sent.append(kwargs)
+        return {"id": 42, "url": "https://dev.to/u/t-42"}
+
+    monkeypatch.setattr(platforms, "devto_save_article", fake_save)
+    base = f"/api/jobs/{job.id}"
+    job.lanes["slides"].busy = True  # slides are being made, for minutes
+
+    edited = english.replace("끝입니다.", "끝입니다. 고쳤습니다.")
+    saved = client.put(f"{base}/files/post.en.md", json={"markdown": edited})
+    assert saved.status_code == 200 and saved.json()["saved"] == "post.en.md"
+    done = client.post(f"{base}/finalize", json={"language": "en"})
+    assert done.status_code == 200 and done.json()["finalized"] is True
+    posted = client.post(
+        f"{base}/draft", json={"platform": "devto", "tags": ["ai"], "approved": True}
+    )
+    assert posted.json() == {"accepted": True}
+
+    status = _wait_for_lane(client, job.id, "main")
+    assert status["lanes"]["main"]["notice"] is None and status["error"] is None
+    assert "고쳤습니다" in sent[0]["body"] and sent[0]["published"] is False
+    assert _row(status, "en")["status"] == "draft"
+    # The slides lane was neither used nor released by any of this.
+    assert status["lanes"]["slides"]["busy"] is True and status["busy"] is True
+    refused = client.post(f"{base}/deck", json={"language": "en", "approved": True})
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == web_ui.BUSY["slides"]

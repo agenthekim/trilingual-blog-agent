@@ -24,10 +24,6 @@ import html
 import json
 import re
 import time
-import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -41,20 +37,24 @@ load_env_file(Path(__file__).resolve().parent.parent / ".env")
 import httpx
 import markdown as markdown_lib
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+)
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from app import policy, secrets, state
+from app import policy, runs, secrets, state
 from app.google_slides import SlidesError, granted_account, mermaid_preview_url
 from app.observability import log_event
 from app.pipeline import (
-    ArticlePipeline,
     overview,
     post_progress,
     progress,
     project_file,
 )
-from app.redaction import redact_credentials
 from app.schemas import DevtoDraftInput, QiitaDraftInput
 from app.settings import (
     LANGUAGE_NAMES,
@@ -65,7 +65,6 @@ from app.settings import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-MAX_LOG_LINES = 400
 # Generated files are shown in the browser. They come from article text, so no
 # script in them may run and nothing may be loaded except images.
 _VIEW_HEADERS = {
@@ -106,170 +105,28 @@ async def only_its_own_name(request: Request, call_next: Any) -> Response:
     return await call_next(request)
 
 
-BUSY = "The agent is still working. Try again when it has finished."
-INTERRUPTED = (
-    "The server stopped while this run was working. What was finished is "
-    "below; start a new run for the rest."
-)
-_JOB_ID = re.compile(r"^[0-9a-f]{32}$")
 Language = Literal["ko", "en", "ja"]
 
-
-def _jobs_dir() -> Path:
-    folder = workspace_dir() / ".jobs"
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
-
-
-@dataclass
-class Job:
-    """One run as the page knows it: the pipeline plus what is not in the session."""
-
-    id: str
-    pipeline: ArticlePipeline
-    created: float = field(default_factory=time.time)
-    # What was asked for, so progress is judged against it after a reload too.
-    source_text: str = ""
-    talk_languages: list[str] = field(default_factory=list)
-    wants_decks: bool = False
-    log: list[str] = field(default_factory=list)
-    busy: bool = False
-    error: str | None = None
-    notice: str | None = None
-    reply: str | None = None  # the agent's answer to "Ask the agent for a change"
-    task: asyncio.Task | None = None  # held so the task is not garbage-collected
-
-    def add_log(self, line: str) -> None:
-        line = redact_credentials(line)
-        self.log.append(line)
-        del self.log[:-MAX_LOG_LINES]
-        with (_jobs_dir() / f"{self.id}.log").open("a", encoding="utf-8") as file:
-            file.write(json.dumps(line, ensure_ascii=False) + "\n")
-
-    def save(self) -> None:
-        """Write the record that lets this run be opened after a restart."""
-        record = {
-            "id": self.id,
-            "session_id": self.pipeline.session_id,
-            "created": self.created,
-            "source_text": self.source_text,
-            "talk_languages": self.talk_languages,
-            "wants_decks": self.wants_decks,
-            "busy": self.busy,
-            "error": self.error,
-            "notice": self.notice,
-            "reply": self.reply,
-        }
-        path = _jobs_dir() / f"{self.id}.json"
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
-        temporary.replace(path)
+# The runs and their lanes live in ``app.runs``; the names below are kept here
+# because the routes and the tests use them.
+Job = runs.Job
+JOBS = runs.JOBS
+BUSY = runs.BUSY
+_job = runs.get_job
+_new_job = runs.new_job
+_start = runs.start
+_claim = runs.claim
 
 
-JOBS: dict[str, Job] = {}
+@web.exception_handler(runs.LaneBusy)
+async def lane_is_busy(request: Request, exc: runs.LaneBusy) -> JSONResponse:
+    """A lane that works refuses its own new actions, in one sentence (WEB-11)."""
+    return JSONResponse({"detail": str(exc)}, status_code=409)
 
 
-def _new_job(
-    talk_languages: list[str], wants_decks: bool, source_text: str = ""
-) -> Job:
-    job = Job(
-        id=uuid.uuid4().hex,
-        pipeline=ArticlePipeline(),
-        source_text=source_text,
-        talk_languages=talk_languages,
-        wants_decks=wants_decks,
-    )
-    job.pipeline.log = job.add_log
-    JOBS[job.id] = job
-    job.save()
-    return job
-
-
-def _reopen(job_id: str) -> Job | None:
-    """Bring back a run this process does not hold, from its record on disk."""
-    path = _jobs_dir() / f"{job_id}.json"
-    try:
-        record = json.loads(path.read_text(encoding="utf-8"))
-        job = Job(
-            id=job_id,
-            pipeline=ArticlePipeline(session_id=record["session_id"]),
-            created=float(record.get("created") or 0),
-            source_text=str(record.get("source_text") or ""),
-            talk_languages=[
-                code for code in record.get("talk_languages") or [] if code in LANGUAGES
-            ],
-            wants_decks=bool(record.get("wants_decks")),
-            error=record.get("error"),
-            notice=record.get("notice"),
-            reply=record.get("reply"),
-        )
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
-    job.pipeline.log = job.add_log
-    log = _jobs_dir() / f"{job_id}.log"
-    if log.is_file():
-        for line in log.read_text(encoding="utf-8").splitlines()[-MAX_LOG_LINES:]:
-            try:
-                job.log.append(str(json.loads(line)))
-            except ValueError:
-                continue
-    if record.get("busy"):
-        # Whatever was running died with the old process, and an approval the
-        # agent was waiting for is gone with it.
-        job.notice = " ".join(filter(None, [INTERRUPTED, job.notice]))
-        job.save()
-    JOBS[job_id] = job
-    return job
-
-
-def _job(job_id: str) -> Job:
-    job = JOBS.get(job_id)
-    if job is None and _JOB_ID.match(job_id):
-        job = _reopen(job_id)
-    if job is None:
-        raise HTTPException(404, "Unknown run. Its record is not on this server.")
-    return job
-
-
-@contextmanager
-def _exclusive(job: Job) -> Iterator[None]:
-    """One thing at a time per run: claim it, or say that the agent is working."""
-    if job.busy:
-        raise HTTPException(409, BUSY)
-    job.busy = True
-    try:
-        yield
-    finally:
-        job.busy = False
-
-
-def _start(job: Job, work: Any, what: str) -> None:
-    """Run ``work`` in the background; one action at a time per job.
-
-    ``work`` returns None when it did what was asked, or a sentence for the
-    page saying what did not happen.
-    """
-    if job.busy:
-        raise HTTPException(409, BUSY)
-    job.busy, job.error, job.notice, job.reply = True, None, None, None
-    job.save()
-
-    async def runner() -> None:
-        try:
-            job.notice = await work()
-        except Exception as exc:  # shown to the user; details go to the log
-            job.error = redact_credentials(str(exc))[:500] or "It failed unexpectedly."
-            log_event(
-                "web ui action failed",
-                event_phase="WEB_UI",
-                action=what,
-                error_type=type(exc).__name__,
-            )
-        finally:
-            job.busy = False
-            job.save()
-
-    job.task = asyncio.create_task(runner())
+@web.exception_handler(runs.UnknownRun)
+async def unknown_run(request: Request, exc: runs.UnknownRun) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=404)
 
 
 class StartRequest(BaseModel):
@@ -495,13 +352,13 @@ async def list_recent_jobs() -> dict[str, Any]:
     """Recent runs with their source text and title, newest first."""
     items: list[dict[str, Any]] = []
     for path in sorted(
-        _jobs_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        runs.jobs_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
     )[:30]:
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
             job_id = str(record.get("id") or "")
             source_text = str(record.get("source_text") or "").strip()
-            if not _JOB_ID.match(job_id) or not source_text:
+            if not re.fullmatch(r"[0-9a-f]{32}", job_id) or not source_text:
                 continue
             job = _job(job_id)
             current = await job.pipeline.session_state()
@@ -563,25 +420,8 @@ async def start_job(request: StartRequest) -> dict[str, str]:
     wants_slides = request.talk_minutes > 0 and bool(request.talk_languages)
     languages = list(request.talk_languages) if wants_slides else []
     job = _new_job(languages, wants_slides and request.create_deck, request.text)
-    _start(
-        job,
-        lambda: job.pipeline.run_stages(
-            request.text,
-            request.talk_minutes,
-            languages,
-            request.audience,
-            job.wants_decks,
-        ),
-        "run_stages",
-    )
+    runs.start_run(job, request.text, request.talk_minutes, languages, request.audience)
     return {"job_id": job.id}
-
-
-def _posts_ready(current: dict[str, Any], job: Job) -> bool:
-    """True when all blog posts are ready, even if slides are still being prepared."""
-    steps = progress(current, job.talk_languages, job.wants_decks)
-    post_step = next((s for s in steps if s["name"] == "Prepare posts"), None)
-    return bool(post_step and post_step["done"])
 
 
 @web.get("/api/jobs/{job_id}")
@@ -591,10 +431,10 @@ async def job_status(job_id: str) -> dict[str, Any]:
     view = overview(current)
     if job.source_text:
         view["source_text"] = job.source_text
-    posts_done = _posts_ready(current, job)
     return {
+        # Whether anything runs at all; what may be started depends on the lane.
         "busy": job.busy,
-        "posts_busy": job.busy and not posts_done,
+        "lanes": {name: lane.public() for name, lane in job.lanes.items()},
         "error": job.error,
         "notice": job.notice,
         "reply": job.reply,
@@ -634,20 +474,15 @@ async def post_draft(job_id: str, request: DraftRequest) -> dict[str, bool]:
         model(title="title", tags=request.tags)
     except ValidationError as exc:
         raise HTTPException(400, rule) from exc
+    if job.lanes[runs.MAIN].busy:
+        raise runs.LaneBusy(runs.MAIN)
     current = await job.pipeline.session_state()
-    posts_done = _posts_ready(current, job)
-    if job.busy and not posts_done:
-        raise HTTPException(409, BUSY)
     # Said at once rather than after a round trip: finalize first, and so on.
     if refusal := policy.posting_refusal(current, request.platform):
         raise HTTPException(409, refusal.message)
-    if job.busy and posts_done:
-        asyncio.create_task(
-            job.pipeline.post(request.platform, request.tags, request.public)
-        )
-        return {"accepted": True}
     _start(
         job,
+        runs.MAIN,
         lambda: job.pipeline.post(request.platform, request.tags, request.public),
         "post",
     )
@@ -663,6 +498,7 @@ async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
     if request.replan:
         _start(
             job,
+            runs.SLIDES,
             lambda: job.pipeline.prepare_slides_and_deck(
                 request.language,
                 minutes=request.minutes,
@@ -673,7 +509,12 @@ async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
             "create_deck",
         )
     else:
-        _start(job, lambda: job.pipeline.create_deck(request.language), "create_deck")
+        _start(
+            job,
+            runs.SLIDES,
+            lambda: job.pipeline.create_deck(request.language),
+            "create_deck",
+        )
     return {"accepted": True}
 
 
@@ -681,7 +522,12 @@ async def create_deck(job_id: str, request: DeckRequest) -> dict[str, bool]:
 async def export_deck_pdf(job_id: str, request: DeckPdfRequest) -> dict[str, bool]:
     """Export one language's Google Slides deck as slides.<lang>.pdf (SLD-12)."""
     job = _job(job_id)
-    _start(job, lambda: job.pipeline.export_pdf(request.language), "export_pdf")
+    _start(
+        job,
+        runs.SLIDES,
+        lambda: job.pipeline.export_pdf(request.language),
+        "export_pdf",
+    )
     return {"accepted": True}
 
 
@@ -689,14 +535,7 @@ async def export_deck_pdf(job_id: str, request: DeckPdfRequest) -> dict[str, boo
 async def finalize_post(job_id: str, request: FinalizeRequest) -> dict[str, Any]:
     """Mark a post as final. Posting needs it; editing the title or text undoes it."""
     job = _job(job_id)
-    if job.busy and _posts_ready(await job.pipeline.session_state(), job):
-        try:
-            return await job.pipeline.finalize_post(
-                request.language, request.acknowledge_findings
-            )
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
-    with _exclusive(job):
+    with _claim(job, runs.MAIN, "finalize"):
         try:
             return await job.pipeline.finalize_post(
                 request.language, request.acknowledge_findings
@@ -729,8 +568,8 @@ async def sync_deck(job_id: str, request: DeckSyncRequest) -> dict[str, Any]:
             raise HTTPException(502, exc.message) from exc
 
     if not request.approved:
-        if job.busy:
-            raise HTTPException(409, BUSY)
+        if job.lanes[runs.SLIDES].busy:
+            raise runs.LaneBusy(runs.SLIDES)
         return await run()
     if not request.change_id:
         raise HTTPException(400, "Ask what would change before approving it.")
@@ -740,20 +579,17 @@ async def sync_deck(job_id: str, request: DeckSyncRequest) -> dict[str, Any]:
         language=request.language,
         direction=request.direction,
     )
-    with _exclusive(job):  # nothing else may run while the deck is written
+    # Nothing else of the slides lane may run while the deck is written.
+    with _claim(job, runs.SLIDES, "sync_deck"):
         return await run()
 
 
 @web.post("/api/jobs/{job_id}/url")
 async def record_url(job_id: str, request: UrlRequest) -> dict[str, bool]:
     job = _job(job_id)
-    if job.busy and _posts_ready(await job.pipeline.session_state(), job):
-        asyncio.create_task(
-            job.pipeline.record_posted_url(request.platform, request.url)
-        )
-        return {"accepted": True}
     _start(
         job,
+        runs.MAIN,
         lambda: job.pipeline.record_posted_url(request.platform, request.url),
         "record_url",
     )
@@ -846,7 +682,7 @@ async def send_message(job_id: str, request: MessageRequest) -> dict[str, bool]:
             )
         return None
 
-    _start(job, work, "message")
+    _start(job, runs.MAIN, work, "message")
     return {"accepted": True}
 
 
@@ -869,7 +705,7 @@ async def answer_approval(job_id: str, request: ApprovalRequest) -> dict[str, bo
             )
         return None
 
-    _start(job, work, "approval")
+    _start(job, runs.MAIN, work, "approval")
     return {"accepted": True}
 
 
@@ -943,16 +779,9 @@ async def view_diagram(job_id: str, diagram_id: str) -> Response:
 @web.put("/api/jobs/{job_id}/files/{name}")
 async def save_file(job_id: str, name: str, request: EditRequest) -> dict[str, Any]:
     job = _job(job_id)
-    if (
-        job.busy
-        and name.startswith("post.")
-        and _posts_ready(await job.pipeline.session_state(), job)
-    ):
-        try:
-            return await job.pipeline.save_edit(name, request.markdown, request.title)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
-    with _exclusive(job):
+    # A post is the main lane's; speaker notes (a slide plan) are the slides lane's.
+    lane = runs.SLIDES if name.startswith("slides.") else runs.MAIN
+    with _claim(job, lane, "save_file"):
         try:
             return await job.pipeline.save_edit(name, request.markdown, request.title)
         except ValueError as exc:
