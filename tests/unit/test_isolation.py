@@ -13,7 +13,8 @@ from app.env_file import NO_DOTENV, load_env_file
 from tests.unit.conftest import OutsideWorldRefused
 
 
-def test_unit_tests_cannot_reach_the_network_or_a_model(
+@pytest.mark.asyncio
+async def test_unit_tests_cannot_reach_the_network_or_a_model(
     no_network_and_no_model, tmp_path, monkeypatch
 ) -> None:
     attempts = no_network_and_no_model
@@ -50,6 +51,16 @@ def test_unit_tests_cannot_reach_the_network_or_a_model(
     with pytest.raises(OutsideWorldRefused, match="a model"):
         genai.Client()
     assert len(attempts) == 3
+
+    # The gateway: its one calling function refuses, and what the gateway
+    # makes of that (a failed call) does not hide the attempt.
+    from app import llm
+
+    with pytest.raises(OutsideWorldRefused, match="the gateway"):
+        await llm._call_model("any-model", "instruction", "text")
+    with pytest.raises(llm.ModelCallFailed):
+        await llm.generate_text("structure_source", "instruction", "text")
+    assert len(attempts) == 5
 
     # ``.env``: not read while the tests run, read otherwise.
     env_file = tmp_path / ".env"

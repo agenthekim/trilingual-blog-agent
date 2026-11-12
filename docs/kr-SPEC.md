@@ -54,7 +54,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | INV-8 | 서버가 요청을 보내는 대상은 다음뿐이다. 세 블로그 호스트(글과 URL 확인, 모든 리디렉션 홉 포함), Google Docs 문서 내보내기(`docs.google.com` 및 `*.googleusercontent.com`), 두 플랫폼 API, Google의 토큰·Slides·Drive 내보내기 엔드포인트, 그리고 운영자가 허용한 경우 다이어그램용 mermaid.ink |
 | INV-9 | 자격 증명은 호출 시점에 환경 변수, Secret Manager, 또는 저장소 밖의 파일에서 읽는다. 어떤 경우에도 로그에 남기지 않고, 모델에 보내지 않고, 저장소에 저장하지 않으며, 어떤 라우트로도 반환하지 않는다 |
 | INV-10 | 자격 증명처럼 보이는 값이 들어 있는 본문은 확정하는 사람이 탐지 결과를 하나도 빠짐없이 보고 실제 자격 증명이 아니라고 밝히지 않는 한 게시하지 않는다 |
-| INV-11 | 작성자가 제공한 글 본문은 제공된 그대로 저장한다. 저장되기까지 어떤 모델도 이를 옮겨 적지 않는다 |
+| INV-11 | 작성자가 제공한 본문은 제공된 그대로 `source.original.md`와 글 저장소의 첫 판으로 보관한다. 시드는 그 본문이다. 예외는 SRC-7 하나뿐이다 |
 | INV-12 | 페이지가 말하는 내용은 사실이다. 페이지에 표시되는 모든 상태는 그 시점에 서버가 가진 값으로 계산한 것이며 고정된 문구가 아니고, 사람이 시작한 작업이 요청대로 수행되지 않으면 언제나 알림이 나타난다 |
 
 ## 3. 용어
@@ -92,10 +92,11 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | :--- | :--- |
 | SRC-1 | 원본 문서는 50자 이상 60,000자(`BLOG_AGENT_MAX_ARTICLE_CHARS`) 이하의 Markdown 또는 일반 텍스트(붙여 넣은 텍스트, 또는 `.md`, `.markdown`, `.txt` 파일), Google Docs 문서 URL(`https://docs.google.com/document/d/...`), 또는 `qiita.com`, `dev.to`, `blog.naver.com`, `m.blog.naver.com` 중 한 곳의 게시물 https URL 하나이다. 그 밖의 파일 형식(Microsoft Word 등), 다른 곳의 주소, https가 아닌 주소, 너무 짧거나 긴 텍스트는 무엇이든 저장하기 전에 알기 쉬운 말로 거부한다 |
 | SRC-2 | 웹 페이지나 스크립트에 제출된 초안(붙여 넣은 텍스트, `.md`/`.txt` 파일, 또는 Markdown으로 내보낸 Google Docs URL)은 코드가 바이트 단위로 그대로 저장하며, 언어는 글이 쓰인 문자 체계로 판별한다. 제목은 코드 블록 밖의 첫 번째 1단계 헤딩이고, 없으면 프런트 매터의 `title`, 그것도 없으면 본문의 첫 줄이다. 뒤의 두 경우에는 어떤 제목을 취했는지 알리는 알림이 실행에 붙는다. 어떤 모델도 관여하지 않는다(INV-11). URL만 있는 입력도 코드가 읽는다. URL 외에 다른 말이 더 있는 짧은 메시지만 에이전트로 간다 |
-| SRC-3 | URL은 플랫폼의 API(Qiita, DEV)로 읽거나 공개된 모바일 페이지(Naver)에서 읽는다. 그 플랫폼은 원본으로 기록하고 절대 쓰지 않는다(INV-4). Naver에서 읽은 본문은 헤딩, 목록, 링크가 빠질 수 있으며, 그때는 그 사실을 알리는 알림이 실행에 붙는다 |
+| SRC-3 | URL은 플랫폼의 API(Qiita, DEV)로 읽거나 공개된 모바일 페이지(Naver)에서 읽는다. 그 플랫폼은 원본으로 기록하고 절대 쓰지 않는다(INV-4). Naver에서 읽은 본문은 SRC-7에 따라 Markdown 구조를 갖춘다 |
 | SRC-4 | 시드는 웹 페이지나 스크립트가 저장하는 시점에 최종본이 된다. 채팅에서는 작성자가 그렇다고 말할 때에만 최종본이 된다 |
 | SRC-5 | 글에 딸린 코드는 선택 사항이며, 어떤 경우에도 요구하지 않는다 |
 | SRC-6 | 실행 하나는 글 한 편을 담는다. 같은 세션에 다른 게시된 글을 읽어 오면 새 프로젝트가 시작되고 이전 글의 것은 아무것도 남지 않는다. 시드 본문을 고치면 이전 본문으로 만든 현지화본, 확정, 슬라이드 계획과 그 파일들이 폐기된다. 게시 기록과 덱은 여전히 그 글의 것이므로 남는다. 이전 본문에서 남은 게시물 파일은 다시 저장할 수 없다. 원본 언어 게시물을 페이지에서든 에이전트를 통해서든 편집하면 현지화본과 슬라이드 계획은 남는다. 이전 본문으로 만든 현지화본은 다시 만들 때까지 원본보다 오래된 것으로 표시된다(WEB-15) |
+| SRC-7 | Markdown 헤딩이 없는 100자 이상의 초안과 Naver 페이지에서 다시 만든 본문은 시드가 되기 전에 모델이 Markdown 구조를 입힌다. 구조화한 본문은 마크업과 공백을 빼고 원문과 글자와 숫자가 같다는 것을 코드가 확인한 경우에만 쓴다. 그렇지 않으면 원문이 시드다. 어느 쪽이든 어떻게 되었는지 알리는 알림이 실행에 붙는다. 본문은 데이터로 모델에 넘긴다(INV-7) |
 
 ### 5.2 현지화
 
@@ -197,6 +198,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | OPS-1 | 모든 도구 호출은 의도와 결과로 나누어, 마스킹을 적용한 구조화된 JSON으로 로그에 남긴다. 플랫폼 호출은 트레이싱 스팬 안에서 실행한다 |
 | OPS-2 | `uv run pytest tests/unit`은 모델, 네트워크, 자격 증명 없이 실행되며, 부록 B가 단위 테스트에 배정한 모든 요구사항을 다룬다. 이것은 픽스처가 보장한다. 픽스처는 네트워크 연결과 모델 관문을 거부하고, `.env`는 읽지 않는다 |
 | OPS-3 | 모델 이름은 설정값(`FAST_MODEL_NAME`, `REASONING_MODEL_NAME`)이며 코드 수정으로 바꾸지 않는다 |
+| OPS-4 | 모델을 부르는 곳은 둘이다. `app/agent.py`의 에이전트와 `app/llm.py`의 관문이다. 웹 계층은 모델도 플랫폼도 부르지 않고 파이프라인의 액션을 시작한다 |
 | OPS-5 | 에이전트가 도구로 부를 수 있는 모든 함수는 다음을 갖춘다. 무엇을 어디에 하는지 말하는 이름, 목적과 각 인자와 반환값을 적은 독스트링, 기본값이 없고 타입이 선언된 인자(허용되는 언어, 플랫폼, 코드 방식은 모델에 보이는 열거형이다), 어떤 일도 일어나기 전에 Pydantic 모델로 하는 인자 검사, 그리고 요청한 일을 할 수 없을 때 예외 대신 `error_code`와 `recovery_instruction`이 든 결과 |
 | OPS-6 | 푸시할 때마다 CI(`.github/workflows/ci.yml`)에서 린터, 단위 테스트, Terraform 검증을 실행한다. 어느 것도 자격 증명이 필요 없다 |
 
@@ -374,7 +376,7 @@ flowchart TD
 | INV-8 | `test_fetch_rejects_urls_outside_the_allowlist`, `test_unauthenticated_fetch_rechecks_the_host_on_every_redirect`, `test_policy_plugin_blocks_disallowed_urls_for_any_tool`, `test_mermaid_rendering_is_off_unless_enabled` |
 | INV-9 | `test_secret_from_environment_takes_precedence`, `test_log_records_are_scrubbed_before_emission`, `test_settings_reports_only_whether_each_credential_is_configured` |
 | INV-10 | `test_text_with_a_credential_is_not_finalized_or_sent_unless_acknowledged`, `test_a_plain_yes_does_not_accept_credential_findings`, `test_finalizing_text_with_credential_findings_asks_the_person_first`, `test_every_credential_finding_is_shown_not_only_the_first_few` |
-| INV-11 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_other_text_is_the_draft_itself_exactly_as_given` |
+| INV-11 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_other_text_is_the_draft_itself_exactly_as_given`, `test_the_text_as_supplied_is_kept_beside_the_seed` |
 | INV-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_a_run_stops_and_says_which_language_was_not_written`, `test_a_registered_address_is_recorded_and_checked` |
 | SRC-1 | `test_fetch_accepts_supported_hosts`, `test_fetch_rejects_disallowed_host_without_network`, `test_invalid_seed_returns_recovery_instruction`, `test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason`, `test_an_address_that_cannot_be_read_is_told_apart_from_a_draft`, `test_what_cannot_be_used_as_a_source_is_said_in_plain_words`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
 | SRC-2 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_a_bare_address_is_read_by_code`, `test_a_short_request_with_a_supported_address_goes_to_the_agent`, `test_language_guess`, `test_the_title_of_a_draft_is_never_a_comment_inside_code`, `test_a_draft_without_a_title_line_says_which_title_was_taken`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
@@ -382,6 +384,7 @@ flowchart TD
 | SRC-4 | `test_seed_gate_blocks_an_unfinalized_seed`, `test_finalize_requires_a_seed`, `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it` |
 | SRC-5 | No unit test: 코드 어디에서도 글에 딸린 코드를 요구하지 않으므로 검사할 동작이 없다 |
 | SRC-6 | `test_another_article_in_the_same_session_keeps_nothing_of_the_first`, `test_a_revised_seed_discards_what_was_made_from_the_old_text`, `test_a_revised_seed_leaves_no_file_of_the_old_text_behind`, `test_a_file_left_from_an_earlier_text_cannot_be_saved_back`, `test_a_localization_older_than_the_source_is_marked` |
+| SRC-7 | `test_a_structured_copy_is_used_only_when_its_letters_are_the_same`, `test_text_for_structuring_goes_to_the_model_between_markers`, `test_a_post_read_from_the_naver_page_goes_on_with_a_notice` |
 | LOC-1 | `test_language_gate_skips_the_source_language`, `test_language_gate_runs_a_target_language`, `test_localized_title_is_used_for_target_languages_only` |
 | LOC-2 | `test_altered_code_is_an_error`, `test_missing_code_block_link_and_heading_are_errors`, `test_mermaid_structure_must_not_change`, `test_plain_text_block_translates_prose_lines_only`, `test_english_plain_text_block_stays_verbatim`, `test_plain_text_blocks_are_copied_for_an_english_source_and_translated_otherwise` |
 | LOC-3 | `test_writer_refiner_and_critic_get_the_same_words_on_facts_and_examples` |
@@ -443,6 +446,7 @@ flowchart TD
 | OPS-1 | `test_log_records_are_scrubbed_before_emission` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: 코드를 수정하는 사람을 위한 규칙이다. 기본값은 `app/models.py`에 있으며 환경 변수에서 읽는다 |
+| OPS-4 | `test_models_are_called_from_the_agents_and_the_gateway_only` |
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: 워크플로는 단위 테스트가 아니라 GitHub에서 실행된다. 통과 여부는 실행 대상 커밋에 표시된다 |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |

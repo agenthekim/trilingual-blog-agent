@@ -2,8 +2,8 @@
 
 OPS-2 is kept by two devices in this file, not by care alone: ``.env`` is not
 read (the variable below is set before any ``app`` module is imported), and a
-fixture that applies to every test refuses network connections and direct
-model clients.
+fixture that applies to every test refuses network connections, the model
+gateway (``app.llm``) and direct model clients.
 """
 
 from __future__ import annotations
@@ -25,12 +25,19 @@ class OutsideWorldRefused(RuntimeError):
 
 @pytest.fixture(autouse=True)
 def no_network_and_no_model(monkeypatch):
-    """Refuse every connection that is not a Unix socket, and every model client.
+    """Refuse every connection that is not a Unix socket, and every model call.
+
+    A model can be reached in two ways, and both are refused: through the
+    gateway, whose one calling function is replaced here (a test that needs
+    an answer puts a stand-in in its place), and through a client made
+    directly.
 
     The attempt raises, and it is also remembered: application code that
     catches the error and carries on still fails its test when the test ends.
     """
     from google import genai
+
+    from app import llm
 
     attempts: list[str] = []
     real_connect = socket.socket.connect
@@ -58,7 +65,12 @@ def no_network_and_no_model(monkeypatch):
 
     monkeypatch.setattr(socket.socket, "connect", connect)
     monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+
+    async def model_gateway(*args: Any, **kwargs: Any) -> str:
+        raise refuse("a model through the gateway app.llm")
+
     monkeypatch.setattr(genai, "Client", model_client)
+    monkeypatch.setattr(llm, "_call_model", model_gateway)
     yield attempts
     assert not attempts, f"this test tried to reach {', '.join(attempts)}"
 

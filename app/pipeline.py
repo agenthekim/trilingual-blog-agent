@@ -49,7 +49,11 @@ from app.settings import (
     slide_parallelism,
     workspace_dir,
 )
-from app.structurer import auto_structure_markdown, needs_markdown_structuring
+from app.structurer import (
+    Structuring,
+    auto_structure_markdown,
+    needs_markdown_structuring,
+)
 from app.tools.articles import (
     apply_post_edit,
     fetch_published_article_markdown,
@@ -57,6 +61,7 @@ from app.tools.articles import (
     has_title_line,
     save_seed_article_revision,
     title_of_draft,
+    write_workspace_file,
 )
 from app.tools.publish import (
     export_naver_blog_paste_ready_html,
@@ -84,6 +89,7 @@ __all__ = ["API_PLATFORMS", "PLATFORM_NAMES", "ArticlePipeline"]
 
 _EDITABLE_FILE = re.compile(r"^(post|slides)\.(ko|en|ja)\.md$")
 MIN_DRAFT_CHARS = 50  # what the seed tool accepts as a whole article
+ORIGINAL_FILE = "source.original.md"  # the text as supplied (INV-11)
 USER_ID = "pipeline"
 CONFIRMATION_CALL = "adk_request_confirmation"
 _POSTING_TOOL = {
@@ -443,6 +449,27 @@ class PersonContext:
         raise RuntimeError("A person's action must carry its own approval.")
 
 
+def _structuring_notice(structuring: Structuring, *, used: bool) -> str:
+    """Which of the two happened to a text sent for structuring (SRC-7)."""
+    if used:
+        return (
+            "A model gave the text Markdown structure (headings, lists, tables, "
+            "code blocks). Code confirmed that the letters and digits are the "
+            f"same as in the text as supplied, which is kept as {ORIGINAL_FILE}."
+        )
+    reason = {
+        "letters_differ": "its letters and digits were not the same as in the "
+        "text as supplied",
+        "no_answer": "the model gave no answer",
+        "structured": "it could not be stored",
+    }[structuring.outcome]
+    return (
+        "A model was asked to give the text Markdown structure, but its copy "
+        f"was not used because {reason}. The article is the text as supplied, "
+        f"also kept as {ORIGINAL_FILE}."
+    )
+
+
 def _failure(result: dict[str, Any]) -> str | None:
     """Why a tool did not do what was asked, or None when it did."""
     if result.get("status") == "success" or "passed" in result:
@@ -644,35 +671,38 @@ class ArticlePipeline:
             result = await self.act(fetch_published_article_markdown, text)
             if failure := _failure(result):
                 return f"The post could not be read. {failure}"
+            current = await self.session_state()
+            original = current.get(state.SEED_MARKDOWN) or ""
+            # The text as read is version 1 in the store; this is its file.
+            write_workspace_file(current[state.PROJECT_ID], ORIGINAL_FILE, original)
             if not result.get("seed_finalized"):
-                # Naver has no Markdown export; automatically structure plain text into Markdown.
-                current = await self.session_state()
-                raw_markdown = current.get(state.SEED_MARKDOWN) or ""
-                structured = await auto_structure_markdown(raw_markdown)
-                if structured and structured != raw_markdown:
+                # Naver has no Markdown export: the text was rebuilt from the
+                # page, and a model gives it structure (SRC-7).
+                structuring = await auto_structure_markdown(original)
+                used = structuring.used and not _failure(
                     await self.act(
                         save_seed_article_revision,
-                        title=title_of_draft(structured)
+                        title=title_of_draft(structuring.markdown)
                         or current.get(state.SEED_TITLE)
                         or "",
-                        markdown=structured,
+                        markdown=structuring.markdown,
                         source_language=current.get(state.SOURCE_LANGUAGE) or "ko",
-                        code_mode="inline_markdown" if "```" in structured else "none",
+                        code_mode="inline_markdown"
+                        if "```" in structuring.markdown
+                        else "none",
                         code_repo_url="",
                         finalized=True,
                     )
-                    notes.append(
-                        "The text was rebuilt from the Naver page and automatically structured into "
-                        "Markdown with headings, lists, and tables. Check the Korean file "
-                        "before using the results."
-                    )
-                else:
+                )
+                if not used:
                     await self.act(finalize_seed_article)
-                    notes.append(
-                        "The text was rebuilt from the Naver page, so headings, lists, "
-                        "images and links may be missing. Check the Korean file "
-                        "before using the results."
-                    )
+                notes.append(
+                    "The text was rebuilt from the Naver page, so "
+                    + ("" if used else "headings, lists, ")
+                    + "images and links may be missing. "
+                    + _structuring_notice(structuring, used=used)
+                    + " Check the Korean file before using the results."
+                )
             return None
         if kind == "request":
             await self.say(text)
@@ -713,31 +743,49 @@ class ArticlePipeline:
                 f"The draft could not be stored. It has {len(text):,} characters; "
                 f"the limit for one article is {MAX_ARTICLE_CHARS:,}."
             )
-        # A draft is stored as it was handed in. If it lacks headings, auto-structure it into Markdown.
-        draft_text = text
-        if needs_markdown_structuring(draft_text):
-            structured = await auto_structure_markdown(draft_text)
-            if structured and structured != draft_text:
-                draft_text = structured
-                notes.append(
-                    "Automatically structured plain text into Markdown with headings, "
-                    "lists, and tables. Review the file before using the results."
-                )
+        # A draft is stored as it was handed in: as the first version in the
+        # store and as a file of its own, whatever happens to the seed after.
         result = await self.act(
             save_seed_article_revision,
-            title=title_of_draft(draft_text),
-            markdown=draft_text,
-            source_language=platforms.guess_language(draft_text),
-            code_mode="inline_markdown" if "```" in draft_text else "none",
+            title=title_of_draft(text),
+            markdown=text,
+            source_language=platforms.guess_language(text),
+            code_mode="inline_markdown" if "```" in text else "none",
             code_repo_url="",
             finalized=True,
         )
         if failure := _failure(result):
             return f"The draft could not be stored. {failure}"
-        if not has_title_line(draft_text):
+        write_workspace_file(result["project_id"], ORIGINAL_FILE, text)
+        seed_text = text
+        if needs_markdown_structuring(text):
+            # No heading: a model gives it structure, and the structured copy
+            # becomes the seed only when its letters are the same (SRC-7).
+            structuring = await auto_structure_markdown(text)
+            used = structuring.used and not _failure(
+                await self.act(
+                    save_seed_article_revision,
+                    title=title_of_draft(structuring.markdown),
+                    markdown=structuring.markdown,
+                    source_language=platforms.guess_language(text),
+                    code_mode="inline_markdown"
+                    if "```" in structuring.markdown
+                    else "none",
+                    code_repo_url="",
+                    finalized=True,
+                )
+            )
+            if used:
+                seed_text = structuring.markdown
+            notes.append(
+                "The draft has no Markdown heading. "
+                + _structuring_notice(structuring, used=used)
+                + " Review the file before using the results."
+            )
+        if not has_title_line(seed_text):
             notes.append(
                 "The draft has no '# Title' line, so this was taken as the "
-                f"title: '{title_of_draft(draft_text)}'. If that is not the title, "
+                f"title: '{title_of_draft(seed_text)}'. If that is not the title, "
                 "add a '# Title' line at the top and run again."
             )
         return None

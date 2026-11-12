@@ -33,6 +33,7 @@ TaskKind = Literal[
     "revise_seed",
     "critique_localization",
     "plan_slides",
+    "structure_source",
 ]
 
 # The routing table. Keeping it as data makes the decision reviewable in one
@@ -46,12 +47,17 @@ MODEL_ROUTES: dict[TaskKind, str] = {
     "revise_seed": REASONING_MODEL,
     "critique_localization": REASONING_MODEL,
     "plan_slides": REASONING_MODEL,
+    "structure_source": FAST_MODEL,
 }
+
+# Transient errors are retried the same way wherever a model is called: by the
+# agents below and by the gateway for direct calls (``app.llm``).
+RETRY_OPTIONS = types.HttpRetryOptions(attempts=3)
 
 
 def model_for(task: TaskKind) -> Gemini:
     """Return the configured model for a kind of task, with transient-error retries."""
     return Gemini(
         model=MODEL_ROUTES[task],
-        retry_options=types.HttpRetryOptions(attempts=3),
+        retry_options=RETRY_OPTIONS,
     )

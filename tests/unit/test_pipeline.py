@@ -7,6 +7,7 @@ import pytest
 from app import state
 from app.pipeline import classify_source, overview, project_file
 from app.settings import workspace_dir
+from app.structurer import same_letters
 from app.tools.articles import write_workspace_file
 
 
@@ -542,30 +543,170 @@ async def test_a_published_post_is_read_by_code_and_its_platform_is_closed(
         await pipeline.finalize_post("ja")
 
 
+def _model_behind_the_gateway(monkeypatch, answer) -> list[str]:
+    """Stand in for the model the gateway calls; returns what it was sent."""
+    from app import llm
+
+    sent: list[str] = []
+
+    async def call_model(model: str, instruction: str, contents: str) -> str:
+        sent.append(contents)
+        return answer(contents) if callable(answer) else answer
+
+    monkeypatch.setattr(llm, "_call_model", call_model)
+    return sent
+
+
+def _seed_versions(project_id: str, language: str) -> list[str]:
+    """Every version of the seed in the article store, oldest first."""
+    from app.persistence import get_article_store
+
+    rows = get_article_store()._db.execute(
+        "SELECT markdown FROM versions WHERE project_id = ? AND language = ? "
+        "ORDER BY revision",
+        (project_id, language),
+    )
+    return [row[0] for row in rows]
+
+
+PLAIN_DRAFT_KO = (
+    "에이전트 런타임 이해하기\n\n"
+    "1. 개요\n\n"
+    "에이전트 런타임은 세션과 도구 호출을 관리합니다. 한 번의 실행은 평균 3초가 걸립니다.\n\n"
+    "2. 설치\n\n"
+    "pip install agent-runtime 명령으로 설치하고 버전 2 이상인지 확인합니다.\n"
+)
+PLAIN_DRAFT_KO_STRUCTURED = (
+    "# 에이전트 런타임 이해하기\n\n"
+    "## 1. 개요\n\n"
+    "에이전트 런타임은 세션과 도구 호출을 관리합니다. 한 번의 실행은 평균 3초가 걸립니다.\n\n"
+    "## 2. 설치\n\n"
+    "`pip install agent-runtime` 명령으로 설치하고 버전 2 이상인지 확인합니다."
+)
+
+
+@pytest.mark.asyncio
+async def test_the_text_as_supplied_is_kept_beside_the_seed(
+    isolated_workspace, monkeypatch
+) -> None:
+    assert same_letters(PLAIN_DRAFT_KO, PLAIN_DRAFT_KO_STRUCTURED)
+
+    # A draft without a heading whose structured copy has the same letters:
+    # the copy is the seed, and the text as supplied is still there, as a
+    # file and as the first version in the store.
+    sent = _model_behind_the_gateway(monkeypatch, PLAIN_DRAFT_KO_STRUCTURED)
+    pipeline = _new_pipeline()
+    _stand_in_agent(pipeline)
+    notes = await pipeline.run_stages(PLAIN_DRAFT_KO, talk_minutes=0)
+    current = await pipeline.session_state()
+    folder = workspace_dir() / current[state.PROJECT_ID]
+    assert len(sent) == 1
+    assert current[state.SEED_MARKDOWN] == PLAIN_DRAFT_KO_STRUCTURED
+    assert current[state.SEED_TITLE] == "에이전트 런타임 이해하기"
+    assert current[state.SEED_FINALIZED] is True
+    assert (folder / "source.original.md").read_bytes() == PLAIN_DRAFT_KO.encode()
+    assert (folder / "post.ko.md").read_text(encoding="utf-8") == (
+        PLAIN_DRAFT_KO_STRUCTURED
+    )
+    assert _seed_versions(current[state.PROJECT_ID], "ko") == [
+        PLAIN_DRAFT_KO,
+        PLAIN_DRAFT_KO_STRUCTURED,
+    ]
+    assert "gave the text Markdown structure" in notes
+    assert "source.original.md" in notes
+
+    # The model changed a number: its copy is not used, the seed is the text
+    # as supplied, and the notice says so.
+    _model_behind_the_gateway(
+        monkeypatch, PLAIN_DRAFT_KO_STRUCTURED.replace("3초", "5초")
+    )
+    pipeline = _new_pipeline()
+    _stand_in_agent(pipeline)
+    notes = await pipeline.run_stages(PLAIN_DRAFT_KO, talk_minutes=0)
+    current = await pipeline.session_state()
+    folder = workspace_dir() / current[state.PROJECT_ID]
+    assert current[state.SEED_MARKDOWN] == PLAIN_DRAFT_KO  # byte for byte
+    assert (folder / "source.original.md").read_bytes() == PLAIN_DRAFT_KO.encode()
+    assert _seed_versions(current[state.PROJECT_ID], "ko") == [PLAIN_DRAFT_KO]
+    assert "was not used because its letters and digits were not the same" in notes
+    assert "The article is the text as supplied" in notes
+
+    # A draft with headings goes to no model, and is kept beside the seed too.
+    sent = _model_behind_the_gateway(monkeypatch, "never asked")
+    pipeline = _new_pipeline()
+    _stand_in_agent(pipeline)
+    assert await pipeline.run_stages(DRAFT_KO, talk_minutes=0) is None
+    current = await pipeline.session_state()
+    folder = workspace_dir() / current[state.PROJECT_ID]
+    assert sent == []
+    assert (folder / "source.original.md").read_bytes() == DRAFT_KO.encode()
+    assert _seed_versions(current[state.PROJECT_ID], "ko") == [DRAFT_KO]
+
+
 @pytest.mark.asyncio
 async def test_a_post_read_from_the_naver_page_goes_on_with_a_notice(
     isolated_workspace, monkeypatch
 ) -> None:
     from app import platforms
 
-    async def fake_post(blog_id, log_no):
-        return "네이버 글", "네이버 페이지에서 읽어 온 본문입니다. " * 5
+    body = "네이버 페이지에서 읽어 온 본문입니다. " * 5
 
-    async def not_structured(text):
-        # Stands in for the model: the text comes back as it went in.
-        return text
+    async def fake_post(blog_id, log_no):
+        return "네이버 글", body
 
     monkeypatch.setattr(platforms, "naver_get_post", fake_post)
-    monkeypatch.setattr("app.pipeline.auto_structure_markdown", not_structured)
+
+    # The model's copy says something the page did not: it is not used.
+    _model_behind_the_gateway(monkeypatch, "## 요약\n\n" + body)
     pipeline = _new_pipeline()
     _stand_in_agent(pipeline)
     notes = await pipeline.run_stages(
         "https://blog.naver.com/someone/223456789012", talk_minutes=0
     )
     assert "rebuilt from the Naver page" in notes
+    assert "headings, lists, images and links may be missing" in notes
+    assert "was not used because its letters and digits were not the same" in notes
     current = await pipeline.session_state()
+    as_read = current[state.SEED_MARKDOWN]
+    assert "요약" not in as_read and body.strip() in as_read
     assert current[state.SEED_FINALIZED] is True
+    assert (
+        project_file(current[state.PROJECT_ID], "source.original.md").read_text(
+            encoding="utf-8"
+        )
+        == as_read
+    )
+    assert _seed_versions(current[state.PROJECT_ID], "ko") == [as_read]
     # Naver is the original here, so no paste file is written for it.
+    assert project_file(current[state.PROJECT_ID], "naver_blog.html") is None
+
+    # A copy with the same letters is used; the text as read stays beside it.
+    def with_a_heading(contents: str) -> str:
+        text = contents.split("\n", 1)[1].rsplit("\n", 1)[0]  # between the markers
+        first, rest = text.strip().split(". ", 1)
+        return f"## {first}\n\n{rest}"
+
+    _model_behind_the_gateway(monkeypatch, with_a_heading)
+    pipeline = _new_pipeline()
+    _stand_in_agent(pipeline)
+    notes = await pipeline.run_stages(
+        "https://blog.naver.com/someone/223456789012", talk_minutes=0
+    )
+    assert "rebuilt from the Naver page" in notes
+    assert "gave the text Markdown structure" in notes
+    current = await pipeline.session_state()
+    assert current[state.SEED_MARKDOWN].startswith("## ")
+    assert current[state.SEED_FINALIZED] is True
+    assert _seed_versions(current[state.PROJECT_ID], "ko") == [
+        as_read,
+        current[state.SEED_MARKDOWN],
+    ]
+    assert (
+        project_file(current[state.PROJECT_ID], "source.original.md").read_text(
+            encoding="utf-8"
+        )
+        == as_read
+    )
     assert project_file(current[state.PROJECT_ID], "naver_blog.html") is None
 
 

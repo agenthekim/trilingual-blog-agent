@@ -56,7 +56,7 @@ whatever else it improves.
 | INV-8 | The server fetches only: the three blog hosts (articles and URL checks, every redirect hop included), Google Docs document export (`docs.google.com` and `*.googleusercontent.com`), the two platform APIs, Google's token, Slides and Drive export endpoints, and mermaid.ink for diagrams when the operator allowed it |
 | INV-9 | Credentials are read at call time from the environment, Secret Manager or a file outside the repository; they are never logged, never sent to a model, never stored in the repository, and never returned by any route |
 | INV-10 | Text with credential-looking values is not posted unless the person finalizing saw the findings, every one of them, and said they are not real credentials |
-| INV-11 | The article text an author supplied is stored exactly as supplied. No model retypes it on the way in |
+| INV-11 | The text an author supplied is kept exactly as supplied, as `source.original.md` and as the first version in the article store. The seed is that text; the one exception is SRC-7 |
 | INV-12 | What the pages say is true: every status a page shows is computed from what the server holds at that moment, never fixed text, and a notice appears whenever an action a person started did not do what was asked |
 
 ## 3. Terms
@@ -94,10 +94,11 @@ stage at a time and waits.
 | :--- | :--- |
 | SRC-1 | A source document is Markdown or plain text (pasted, or a `.md`, `.markdown` or `.txt` file) of 50 to 60,000 characters (`BLOG_AGENT_MAX_ARTICLE_CHARS`), a Google Docs document URL (`https://docs.google.com/document/d/...`), or one https URL of a post on `qiita.com`, `dev.to`, `blog.naver.com` or `m.blog.naver.com`. Other file formats (such as Microsoft Word), addresses elsewhere, addresses that are not https, and texts that are too short or too long are refused in plain words before anything is stored |
 | SRC-2 | A draft handed to the web page or the script (pasted text, a `.md`/`.txt` file, or a Google Docs URL exported as Markdown) is stored by code, byte for byte, with its language detected from the script it is written in. Its title is the first level-1 heading outside code blocks, else the `title` of its front matter, else its first line of prose; in the last two cases the run carries a notice naming the title it took. No model is involved (INV-11). A bare URL is read by code as well; only a short message that says more than a URL goes to the agent |
-| SRC-3 | A URL is read through the platform's API (Qiita, DEV) or from the public mobile page (Naver). The platform is recorded as the original and never written to (INV-4). Naver text may lose headings, lists and links; the run then carries a notice saying so |
+| SRC-3 | A URL is read through the platform's API (Qiita, DEV) or from the public mobile page (Naver). The platform is recorded as the original and never written to (INV-4). Naver text is given Markdown structure under SRC-7 |
 | SRC-4 | The seed is final when stored by the web page or the script. In a chat it is final only when the author says so |
 | SRC-5 | Companion code is optional and never required |
 | SRC-6 | One run holds one article. Reading another published post into the same session starts a new project and keeps nothing of the previous article. Revising the seed's text discards the localizations, finalizations and slide plans made from the old text, and their files; publication records and decks, which are still that article's, stay. A post file left from an earlier text cannot be saved back. Editing the source-language post, on the page or through the agent, keeps the localizations and slide plans; each localization made from an earlier text is shown as older than the source until it is made again (WEB-15) |
+| SRC-7 | A draft of 100 characters or more without a Markdown heading, and text rebuilt from a Naver page, is given Markdown structure by a model before it becomes the seed. The structured text is used only when code confirms that it has the same letters and digits as the original, markup and spacing aside; otherwise the original is the seed. Either way the run carries a notice saying which happened. The text goes to the model as data (INV-7) |
 
 ### 5.2 Localization
 
@@ -199,6 +200,7 @@ stage at a time and waits.
 | OPS-1 | Every tool call is logged as intent and outcome in structured JSON with redaction; platform calls run inside tracing spans |
 | OPS-2 | `uv run pytest tests/unit` needs no model, no network and no credential, and covers every requirement that Appendix B assigns to a unit test. A fixture makes this so: it refuses network connections and the model gateway, and `.env` is not read |
 | OPS-3 | Model names are configuration (`FAST_MODEL_NAME`, `REASONING_MODEL_NAME`) and are not changed by code edits |
+| OPS-4 | Models are called from two places: the agents in `app/agent.py` and the gateway in `app/llm.py`. The web layer calls no model and no platform; it starts actions of the pipeline |
 | OPS-5 | Every function an agent can call as a tool has a name that says what it does and to what; a docstring with its purpose, each argument and what it returns; typed arguments without defaults, where the allowed languages, platforms and code modes are enumerations the model is shown; arguments checked through a Pydantic model before anything happens; and, when it cannot do what was asked, a result with `error_code` and `recovery_instruction` instead of an exception |
 | OPS-6 | Every push runs the linter, the unit tests and a Terraform validation in CI (`.github/workflows/ci.yml`). None of them needs a credential |
 
@@ -380,7 +382,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | INV-8 | `test_fetch_rejects_urls_outside_the_allowlist`, `test_unauthenticated_fetch_rechecks_the_host_on_every_redirect`, `test_policy_plugin_blocks_disallowed_urls_for_any_tool`, `test_mermaid_rendering_is_off_unless_enabled` |
 | INV-9 | `test_secret_from_environment_takes_precedence`, `test_log_records_are_scrubbed_before_emission`, `test_settings_reports_only_whether_each_credential_is_configured` |
 | INV-10 | `test_text_with_a_credential_is_not_finalized_or_sent_unless_acknowledged`, `test_a_plain_yes_does_not_accept_credential_findings`, `test_finalizing_text_with_credential_findings_asks_the_person_first`, `test_every_credential_finding_is_shown_not_only_the_first_few` |
-| INV-11 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_other_text_is_the_draft_itself_exactly_as_given` |
+| INV-11 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_other_text_is_the_draft_itself_exactly_as_given`, `test_the_text_as_supplied_is_kept_beside_the_seed` |
 | INV-12 | `test_a_post_that_did_not_happen_is_said_on_the_page`, `test_a_run_stops_and_says_which_language_was_not_written`, `test_a_registered_address_is_recorded_and_checked` |
 | SRC-1 | `test_fetch_accepts_supported_hosts`, `test_fetch_rejects_disallowed_host_without_network`, `test_invalid_seed_returns_recovery_instruction`, `test_a_source_that_cannot_be_stored_stops_the_run_with_the_reason`, `test_an_address_that_cannot_be_read_is_told_apart_from_a_draft`, `test_what_cannot_be_used_as_a_source_is_said_in_plain_words`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
 | SRC-2 | `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it`, `test_a_bare_address_is_read_by_code`, `test_a_short_request_with_a_supported_address_goes_to_the_agent`, `test_language_guess`, `test_the_title_of_a_draft_is_never_a_comment_inside_code`, `test_a_draft_without_a_title_line_says_which_title_was_taken`, `test_google_docs_url_is_read_as_a_draft_with_all_three_platforms_open` |
@@ -388,6 +390,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | SRC-4 | `test_seed_gate_blocks_an_unfinalized_seed`, `test_finalize_requires_a_seed`, `test_a_pasted_draft_is_stored_exactly_as_given_and_no_model_retypes_it` |
 | SRC-5 | No unit test: nothing in the code asks for companion code, so there is no behaviour to check |
 | SRC-6 | `test_another_article_in_the_same_session_keeps_nothing_of_the_first`, `test_a_revised_seed_discards_what_was_made_from_the_old_text`, `test_a_revised_seed_leaves_no_file_of_the_old_text_behind`, `test_a_file_left_from_an_earlier_text_cannot_be_saved_back`, `test_a_localization_older_than_the_source_is_marked` |
+| SRC-7 | `test_a_structured_copy_is_used_only_when_its_letters_are_the_same`, `test_text_for_structuring_goes_to_the_model_between_markers`, `test_a_post_read_from_the_naver_page_goes_on_with_a_notice` |
 | LOC-1 | `test_language_gate_skips_the_source_language`, `test_language_gate_runs_a_target_language`, `test_localized_title_is_used_for_target_languages_only` |
 | LOC-2 | `test_altered_code_is_an_error`, `test_missing_code_block_link_and_heading_are_errors`, `test_mermaid_structure_must_not_change`, `test_plain_text_block_translates_prose_lines_only`, `test_english_plain_text_block_stays_verbatim`, `test_plain_text_blocks_are_copied_for_an_english_source_and_translated_otherwise` |
 | LOC-3 | `test_writer_refiner_and_critic_get_the_same_words_on_facts_and_examples` |
@@ -449,6 +452,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | OPS-1 | `test_log_records_are_scrubbed_before_emission` |
 | OPS-2 | `test_requirement_ids_are_unique_and_every_one_is_traced`, `test_every_test_named_in_the_specification_exists`, `test_unit_tests_cannot_reach_the_network_or_a_model` |
 | OPS-3 | No unit test: a rule for people who edit the code; the defaults are in `app/models.py` and are read from the environment |
+| OPS-4 | `test_models_are_called_from_the_agents_and_the_gateway_only` |
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: the workflow runs on GitHub, not in the unit tests; whether it passed is shown on the commit it ran for |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
