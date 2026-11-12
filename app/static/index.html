@@ -319,7 +319,7 @@
     </div>
     <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px">
       <h2 id="settingsTitle" data-i18n="settingsTitle">Platforms &amp; integrations</h2>
-      <a href="https://github.com/agenthekim/trilingual-blog-agent/blob/main/SETUP.md" target="_blank" rel="noopener" class="small" data-i18n="setupGuideLink">Setup guide</a>
+      <a id="setupGuideAnchor" href="https://github.com/agenthekim/trilingual-blog-agent/blob/main/docs/SETUP.md" target="_blank" rel="noopener" class="small" data-i18n="setupGuideLink">Setup guide</a>
     </div>
     <p class="muted small" style="margin:0" id="settingsPlatformsHint" data-i18n="settingsHint">Blog platforms per language and Google Slides integration status.</p>
     <div id="settingsRows"></div>
@@ -625,6 +625,9 @@ function applyUiLanguage(lang) {
     ths[2].textContent = t.colFiles;
     ths[3].textContent = t.colSlides;
     ths[4].textContent = t.colNext;
+  }
+  if ($("setupGuideAnchor") && typeof setupUrlForLang === "function") {
+    $("setupGuideAnchor").href = setupUrlForLang(lang);
   }
   if (typeof renderSettingsRows === "function" && config && $("settingsModal") && $("settingsModal").open) {
     renderSettingsRows();
@@ -1054,14 +1057,18 @@ async function loadFile(file) {
   reader.readAsText(file, "utf-8");
 }
 
-const SETUP_URL = "https://github.com/agenthekim/trilingual-blog-agent/blob/main/SETUP.md";
+function setupUrlForLang(lang) {
+  const file = lang === "ko" ? "kr-SETUP.md" : lang === "ja" ? "ja-SETUP.md" : "SETUP.md";
+  return `https://github.com/agenthekim/trilingual-blog-agent/blob/main/docs/${file}`;
+}
 
 function renderSettingsRows() {
+  if ($("setupGuideAnchor")) $("setupGuideAnchor").href = setupUrlForLang(currentUiLang);
   if (!config) return;
   const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
   const tag = (text, tone) => el("span", {class: "platform-tag " + (tone || "")}, text);
   const setupLink = (text, anchor) => el("a", {
-    href: `${SETUP_URL}#${anchor}`,
+    href: `${setupUrlForLang(currentUiLang)}#${anchor}`,
     target: "_blank",
     rel: "noopener",
     class: "platform-tag warn",

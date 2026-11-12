@@ -1,11 +1,14 @@
 # Setup Guide
 
+**Languages**: **English** · [한국어](kr-SETUP.md) · [日本語](ja-SETUP.md)
+
 This guide walks through configuring **Trilingual Blog Agent** from a fresh clone, including Google Cloud Vertex AI, publishing platform credentials (DEV Community and Qiita), and Google Slides OAuth integration.
 
 > **Note**: Stages 1 (Source intake), 2 (Trilingual localization), and 4 (Slide planning in Markdown) work with only Google Cloud Vertex AI configured. Platform credentials and Google Slides OAuth are only needed when you want to publish drafts through the APIs or build Google Slides decks in Google Drive.
 
 ---
 
+<a id="1-google-cloud-and-vertex-ai"></a>
 ## 1. Google Cloud and Vertex AI
 
 1. Install [uv](https://docs.astral.sh/uv/), the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), and `google-agents-cli`:
@@ -26,6 +29,7 @@ This guide walks through configuring **Trilingual Blog Agent** from a fresh clon
 
 ---
 
+<a id="2-dev-community-api-key"></a>
 ## 2. DEV Community API Key
 
 English posts are published to [DEV Community (dev.to)](https://dev.to) via the Forem REST API.
@@ -33,7 +37,7 @@ English posts are published to [DEV Community (dev.to)](https://dev.to) via the 
 1. Sign in to DEV Community and open **Settings → Extensions**:
    * `https://dev.to/settings/extensions`
 2. Under **DEV Community API Keys**, enter a short description (for example `trilingual-blog-agent`) and click **Generate API Key**.
-3. Store the key in Google Cloud Secret Manager (recommended) or in your local environment:
+3. Store the key in Google Cloud Secret Manager:
    ```bash
    read -rs TOKEN && printf '%s' "$TOKEN" | gcloud secrets create DEVTO_API_KEY --data-file=- && unset TOKEN
    ```
@@ -41,6 +45,7 @@ English posts are published to [DEV Community (dev.to)](https://dev.to) via the 
 
 ---
 
+<a id="3-qiita-access-token"></a>
 ## 3. Qiita Access Token
 
 Japanese posts are published to [Qiita](https://qiita.com) via the Qiita v2 API.
@@ -56,6 +61,7 @@ Japanese posts are published to [Qiita](https://qiita.com) via the Qiita v2 API.
 
 ---
 
+<a id="4-google-slides-oauth"></a>
 ## 4. Google Slides OAuth
 
 To create presentation decks with speaker notes directly in your Google Drive:
@@ -75,6 +81,7 @@ To create presentation decks with speaker notes directly in your Google Drive:
 
 ---
 
+<a id="5-naver-blog-html-export"></a>
 ## 5. Naver Blog HTML Export
 
 Korean posts target **Naver Blog**, which does not provide a public write API:
@@ -85,6 +92,7 @@ Korean posts target **Naver Blog**, which does not provide a public write API:
 
 ---
 
+<a id="6-starting-the-web-ui"></a>
 ## 6. Starting the Web UI
 
 Once configured, start the web server and open **Settings** in the top-right corner to verify that all integrations show as connected:

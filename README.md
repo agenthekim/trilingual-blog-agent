@@ -96,7 +96,7 @@ before the next one starts.
 ## Quick start
 
 Requirements: [uv](https://docs.astral.sh/uv/), the Google Cloud SDK with
-Application Default Credentials, and `agents-cli`. For a step-by-step walkthrough of issuing platform tokens and Google Slides OAuth credentials, see [SETUP.md](SETUP.md).
+Application Default Credentials, and `agents-cli`. For a step-by-step walkthrough of issuing platform tokens and Google Slides OAuth credentials, see the setup guide ([English](docs/SETUP.md) · [한국어](docs/kr-SETUP.md) · [日本語](docs/ja-SETUP.md)).
 
 ```bash
 uv tool install google-agents-cli
