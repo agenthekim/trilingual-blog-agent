@@ -43,6 +43,18 @@ def render_mermaid_enabled() -> bool:
     return env_flag("BLOG_AGENT_RENDER_MERMAID")
 
 
+def slide_parallelism() -> int:
+    """How many languages are planned at the same time (SLD-14); at least one.
+
+    ``BLOG_AGENT_SLIDE_PARALLELISM``, 3 by default. Lower it to 1 when the
+    model quota does not carry three planning runs at once.
+    """
+    try:
+        return max(1, int(os.environ.get("BLOG_AGENT_SLIDE_PARALLELISM", "3")))
+    except ValueError:
+        return 3
+
+
 def workspace_dir() -> Path:
     """Directory where drafts are read from and generated files are written to."""
     root = Path(os.environ.get("BLOG_AGENT_WORKSPACE_DIR", "workspace")).expanduser()

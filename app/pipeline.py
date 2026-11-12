@@ -41,13 +41,14 @@ from app.markdown_checks import check_fidelity
 from app.observability import log_event
 from app.persistence import get_article_store
 from app.policy import API_PLATFORMS, PLATFORM_NAMES
-from app.redaction import find_secrets
+from app.redaction import find_secrets, redact_credentials
 from app.settings import (
     ALLOWED_ARTICLE_HOSTS,
     LANGUAGE_NAMES,
     LANGUAGES,
     MAX_ARTICLE_CHARS,
     PLATFORM_FOR_LANGUAGE,
+    slide_parallelism,
     workspace_dir,
 )
 from app.structurer import auto_structure_markdown, needs_markdown_structuring
@@ -72,6 +73,7 @@ from app.tools.slides import (
     export_google_slides_pdf,
     parse_slide_plan_markdown,
     render_slide_plan_markdown,
+    set_presentation_brief,
     slide_pdf_file,
     slide_plan_file,
     slide_timing_report,
@@ -450,9 +452,12 @@ class ArticlePipeline:
         session_service: BaseSessionService | None = None,
         session_id: str | None = None,
         agent_app: Any = None,
+        slide_app: Any = None,
     ) -> None:
         if agent_app is None:
             from app.agent import app as agent_app
+        if slide_app is None:
+            from app.agent import slide_planning_app as slide_app
         if session_service is None:
             # The process-wide service: a SQLite file locally, so a run can be
             # opened again after the server restarts.
@@ -466,6 +471,13 @@ class ArticlePipeline:
             session_service=self._sessions,
             memory_service=InMemoryMemoryService(),
             auto_create_session=True,
+        )
+        # Slide planning runs here, in a working session per language (SLD-5).
+        self._slide_app = slide_app
+        self._slide_runner = Runner(
+            app=slide_app,
+            session_service=self._sessions,
+            memory_service=InMemoryMemoryService(),
         )
         self.session_id = session_id or uuid.uuid4().hex
         self.log = log
@@ -807,42 +819,157 @@ class ArticlePipeline:
         Returns None when every language got what was asked for, else
         sentences saying what did not happen.
         """
-        notes: list[str] = []
-        for language in dict.fromkeys(talk_languages):
-            notes += await self._prepare_talk(
-                language, talk_minutes, audience, create_deck
-            )
+        return await self.make_slides(
+            list(dict.fromkeys(talk_languages)), talk_minutes, audience, create_deck
+        )
+
+    async def make_slides(
+        self, languages: list[str], minutes: int, audience: str, create_deck: bool
+    ) -> str | None:
+        """Slides for several languages as one request (SLD-14).
+
+        The languages are planned at the same time, up to
+        ``BLOG_AGENT_SLIDE_PARALLELISM`` at once, each in a working session
+        of its own. Decks are created one at a time, in the order the plans
+        are ready. A language that fails is reported for that language and
+        does not stop the others. ``create_deck`` is a person's approval to
+        create one Google Slides file per language.
+        """
+        planning = asyncio.Semaphore(slide_parallelism())
+        one_deck_at_a_time = asyncio.Lock()
+
+        async def one(language: str) -> list[str]:
+            name = LANGUAGE_NAMES.get(language, language)
+            try:
+                async with planning:
+                    made, note = await self.plan_slides(language, minutes, audience)
+                notes = [note] if note else []
+                if made and create_deck:
+                    async with one_deck_at_a_time:
+                        self.log(f">>> {name} deck: approved with the slide request")
+                        if failure := await self.create_deck(language, summarize=False):
+                            notes.append(failure)
+                return notes
+            except Exception as exc:  # this language's; the others go on
+                log_event(
+                    "slides for one language failed",
+                    event_phase="SLIDES",
+                    language=language,
+                    error_type=type(exc).__name__,
+                )
+                reason = redact_credentials(str(exc))[:300] or type(exc).__name__
+                self.log(f">>> {name} slides: failed. {reason}")
+                return [f"The {name} slides were not made. {reason}"]
+
+        results = await asyncio.gather(*(one(language) for language in languages))
         await self.act(compile_artifact_manifest_markdown)
-        return " ".join(notes) or None
+        return " ".join(note for notes in results for note in notes) or None
+
+    async def plan_slides(
+        self, language: str, minutes: int, audience: str
+    ) -> tuple[bool, str | None]:
+        """Plan one language's talk in a working session of its own (SLD-5).
+
+        The record is copied, without the working area of any earlier
+        planning, into a new session of the slide planning application. The
+        brief is set there, the planning pipeline runs there, and only this
+        language's plan and timing report are written to the record; then the
+        working session is deleted. The record session is not written to
+        while the models work, so a person can edit, finalize and post
+        meanwhile (RUN-2).
+
+        Returns whether the plan of this language was made, and a sentence
+        when it was not or when the person should look at something.
+        """
+        name = LANGUAGE_NAMES.get(language, language)
+        record = await self.session_state()
+        working = {
+            key: value
+            for key, value in copy.deepcopy(record).items()
+            if key not in state.PLANNING_WORKING_AREA
+        }
+        context = PersonContext(_StateEdits(working))
+        brief = set_presentation_brief(
+            language, audience, minutes, tool_context=context
+        )
+        if failure := _failure(brief):
+            return False, f"No {name} slide plan was made. {failure}"
+        working.update(context.state.delta)
+        app_name = self._slide_app.name
+        session = await self._sessions.create_session(
+            app_name=app_name, user_id=USER_ID, state=working
+        )
+        self.log(f">>> planning the {name} slides ({minutes} minutes, for {audience})")
+        try:
+            await self._run_planning(session.id, language)
+            after = await self._sessions.get_session(
+                app_name=app_name,
+                user_id=USER_ID,
+                session_id=session.id,
+                config=GetSessionConfig(num_recent_events=0),
+            )
+            planned = dict(after.state) if after else {}
+        finally:
+            await self._sessions.delete_session(
+                app_name=app_name, user_id=USER_ID, session_id=session.id
+            )
+        plan = (planned.get(state.SLIDE_PLANS) or {}).get(language)
+        # Only a plan this run produced counts; an older plan of the same
+        # language is still in the record, but it is not what was asked for.
+        if not plan or not planned.get(state.SLIDE_DECK_PLAN):
+            return False, (
+                f"No {name} slide plan was made. See the activity log for what "
+                "the planner said."
+            )
+        # Only this language's entries differ from what was copied, so only
+        # they are written over the record as it is now.
+        await self._update_state(
+            {
+                state.SLIDE_PLANS: planned.get(state.SLIDE_PLANS) or {},
+                state.SLIDE_TIMING: planned.get(state.SLIDE_TIMING) or {},
+            },
+            record,
+        )
+        timing = (planned.get(state.SLIDE_TIMING) or {}).get(language) or {}
+        if not timing.get("passed"):
+            return True, (
+                f"The {name} slide plan missed the one-slide-per-minute target "
+                "after two attempts; its speaker notes say how long each slide runs."
+            )
+        return True, None
+
+    async def _run_planning(self, session_id: str, language: str) -> None:
+        """Run the slide planning pipeline in a working session until it ends."""
+        async for event in self._slide_runner.run_async(
+            user_id=USER_ID,
+            session_id=session_id,
+            new_message=types.Content(
+                role="user", parts=[types.Part.from_text(text="Plan the slides.")]
+            ),
+        ):
+            if not (event.content and event.content.parts):
+                continue
+            for part in event.content.parts:
+                if not (part.text and not part.thought and event.is_final_response()):
+                    continue
+                if event.author.startswith(_BULK_WRITERS):
+                    self.log(
+                        f"[{event.author}, {language}] wrote {len(part.text)} characters"
+                    )
+                else:
+                    self.log(f"[{event.author}, {language}]\n{part.text.strip()}")
 
     async def _prepare_talk(
         self, language: str, minutes: int, audience: str, create_deck: bool
     ) -> list[str]:
         """Plan one language's talk and, if approved, create its deck."""
-        name = LANGUAGE_NAMES[language]
         if language not in LANGUAGES:
             return [f"'{language}' is not a language slides can be made in."]
-        await self.say(
-            f"Prepare a {minutes} minute talk in language '{language}'. "
-            f"Audience: {audience}."
-        )
-        current = await self.session_state()
-        brief = current.get(state.PRESENTATION_BRIEF) or {}
-        plan = (current.get(state.SLIDE_PLANS) or {}).get(language)
-        if not plan or brief.get("language") != language:
-            return [
-                f"No {name} slide plan was made. See the agent's reply in the "
-                "activity log."
-            ]
-        notes = []
-        timing = (current.get(state.SLIDE_TIMING) or {}).get(language) or {}
-        if not timing.get("passed"):
-            notes.append(
-                f"The {name} slide plan missed the one-slide-per-minute target "
-                "after two attempts; its speaker notes say how long each slide runs."
-            )
-        if create_deck:
-            self.log(f">>> {name} deck: approved in advance with the run options")
+        name = LANGUAGE_NAMES[language]
+        made, note = await self.plan_slides(language, minutes, audience)
+        notes = [note] if note else []
+        if made and create_deck:
+            self.log(f">>> {name} deck: approved with the slide request")
             if failure := await self.create_deck(language, summarize=False):
                 notes.append(failure)
         return notes

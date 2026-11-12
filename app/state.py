@@ -30,6 +30,9 @@ FINALIZATIONS_ASKED = "finalizations_asked"
 PRESENTATION_BRIEF = "presentation_brief"  # language, audience, minutes
 SLIDE_DECK_PLAN = "slide_deck_plan"  # the planner model's latest draft
 SLIDE_DRAFT_TIMING = "slide_timing_report"  # timing check of that draft
+# A planning run started by the pipeline gets a working session of its own
+# (SLD-5); these keys are not copied into it and never come back from it.
+PLANNING_WORKING_AREA = (PRESENTATION_BRIEF, SLIDE_DECK_PLAN, SLIDE_DRAFT_TIMING)
 
 # The record, per language. Everything outside the planning loop reads these.
 SLIDE_PLANS = "slide_plans"  # the plan of record

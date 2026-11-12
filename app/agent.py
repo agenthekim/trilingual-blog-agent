@@ -20,6 +20,7 @@ before the next stage starts. Model choice per agent comes from
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from google.adk.agents import Agent, LoopAgent, ParallelAgent, SequentialAgent
 from google.adk.agents.context_cache_config import ContextCacheConfig
@@ -191,47 +192,58 @@ localization_pipeline = SequentialAgent(
 
 
 # --- Stage 4: slide planning with a timing check ----------------------------
-slide_plan_agent = Agent(
-    name="slide_plan_agent",
-    description="Plans the slides and a one-minute speaker script per slide.",
-    model=model_for("plan_slides"),
-    instruction=prompts.slide_planner_instruction,
-    include_contents="none",
-    output_schema=SlideDeckPlan,
-    output_key=state.SLIDE_DECK_PLAN,
-)
+def build_slide_planning_pipeline(planner_model: Any = None) -> SequentialAgent:
+    """One instance of the slide planning pipeline.
 
-slide_planning_pipeline = SequentialAgent(
-    name="slide_planning_pipeline",
-    description=(
-        "Stage 4. Plans a slide deck with a one-minute speaker script per "
-        "slide from the article and checks its timing. Transfer here after "
-        "set_presentation_brief, or when the user asks to redo the slides."
-    ),
-    sub_agents=[
-        BriefGate(
-            name="brief_gate",
-            sub_agents=[
-                SequentialAgent(
-                    name="slide_planning_steps",
-                    sub_agents=[
-                        LoopAgent(
-                            name="slide_review_loop",
-                            description="Self-evaluation: plan, then check the "
-                            "one-minute rule.",
-                            max_iterations=MAX_REVIEW_ROUNDS,
-                            sub_agents=[
-                                slide_plan_agent,
-                                SlideTimingGate(name="slide_timing_gate"),
-                            ],
-                        ),
-                        SlideReportAgent(name="slide_report_agent"),
-                    ],
-                )
-            ],
-        )
-    ],
-)
+    An agent has one parent, so each place that runs the pipeline gets an
+    instance of its own: the coordinator, which a chat user transfers to, and
+    ``slide_planning_app``, which the page and the script run in a working
+    session per language (SLD-5). ``planner_model`` replaces the planner's
+    model in tests; the route in ``app.models`` is used otherwise.
+    """
+    slide_plan_agent = Agent(
+        name="slide_plan_agent",
+        description="Plans the slides and a one-minute speaker script per slide.",
+        model=planner_model or model_for("plan_slides"),
+        instruction=prompts.slide_planner_instruction,
+        include_contents="none",
+        output_schema=SlideDeckPlan,
+        output_key=state.SLIDE_DECK_PLAN,
+    )
+    return SequentialAgent(
+        name="slide_planning_pipeline",
+        description=(
+            "Stage 4. Plans a slide deck with a one-minute speaker script per "
+            "slide from the article and checks its timing. Transfer here after "
+            "set_presentation_brief, or when the user asks to redo the slides."
+        ),
+        sub_agents=[
+            BriefGate(
+                name="brief_gate",
+                sub_agents=[
+                    SequentialAgent(
+                        name="slide_planning_steps",
+                        sub_agents=[
+                            LoopAgent(
+                                name="slide_review_loop",
+                                description="Self-evaluation: plan, then check "
+                                "the one-minute rule.",
+                                max_iterations=MAX_REVIEW_ROUNDS,
+                                sub_agents=[
+                                    slide_plan_agent,
+                                    SlideTimingGate(name="slide_timing_gate"),
+                                ],
+                            ),
+                            SlideReportAgent(name="slide_report_agent"),
+                        ],
+                    )
+                ],
+            )
+        ],
+    )
+
+
+slide_planning_pipeline = build_slide_planning_pipeline()
 
 
 # --- Coordinator -----------------------------------------------------------
@@ -287,3 +299,21 @@ app = App(
     # Required for publish tools to pause for human approval and resume.
     resumability_config=ResumabilityConfig(is_resumable=True),
 )
+
+
+def build_slide_planning_app(planner_model: Any = None) -> App:
+    """The slide planning pipeline as the root of an application of its own.
+
+    The page and the script plan each language in a working session of this
+    application, so a planning run never writes to the record session of a
+    run while a person works on the posts (RUN-2). Same plugins as ``app``:
+    the content policy and the intent and outcome log apply here too.
+    """
+    return App(
+        root_agent=build_slide_planning_pipeline(planner_model),
+        name="slide_planning",
+        plugins=[ContentPolicyPlugin(), ObservabilityPlugin()],
+    )
+
+
+slide_planning_app = build_slide_planning_app()

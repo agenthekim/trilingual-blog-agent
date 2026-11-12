@@ -133,7 +133,7 @@ stage at a time and waits.
 | SLD-2 | A plan has exactly one numbered slide per minute, each with a script of about one minute at the assumed speaking rate (45 to 75 seconds), plus an opening script and a closing script that are not counted. Slide numbers are 1..N without gaps or repeats. The language of a plan is the language that was asked for, whatever the model wrote |
 | SLD-3 | Opening script, said on the title slide: a greeting, the talk title, then what the title means and what the audience takes away. It is the only greeting. Closing script, said on the thank-you slide: thanks and an invitation to ask. It is the only goodbye |
 | SLD-4 | From five slides: slide 1 is the agenda, titled with the language's word for "Agenda". Every plan ends with a conclusion slide titled "Conclusion" or "Summary" in that language. From six slides: when the article names next steps, future work or a follow-up, they get their own slide after the conclusion; when it names none, there is no such slide. Slide titles name their idea plainly and never repeat the talk title. These are instructions to the planning model; code checks SLD-2 only |
-| SLD-5 | A plan that fails SLD-2 is planned once more with the failure named. What one language's planning left behind never reaches another language's planning |
+| SLD-5 | A plan that fails SLD-2 is planned once more with the failure named. Each language is planned in a working session of its own, so what one planning left behind cannot reach another |
 | SLD-6 | A deck is: a title slide; the numbered slides (title, bullets); a thank-you slide ("Thank you", "감사합니다", "ありがとうございました"). Speaker notes hold the opening script, each slide's script followed by `[Visual]` and the visual note, and the closing script |
 | SLD-7 | Only images that are in the article go on slides: image URLs, and Mermaid diagrams drawn by mermaid.ink when `BLOG_AGENT_RENDER_MERMAID` is on. Each is used once. A reference the model made up is dropped |
 | SLD-8 | A drawn diagram is placed where it is largest: under the bullets across the page when wide; over the full page height with the title narrowed when tall; otherwise beside the bullets in a column sized to the text. An image of unknown shape gets the right half. Text and image never overlap and stay on the page |
@@ -141,6 +141,7 @@ stage at a time and waits.
 | SLD-10 | If deck creation fails after the file exists, the error names the file's address so it is not lost in Drive |
 | SLD-11 | Markdown tables in the article are offered to the planner as `table:N` references. When chosen for a slide without an image, a table is placed on the slide as a native Google Slides table (up to 8 rows and 6 columns) below the bullets, each table used at most once |
 | SLD-12 | A Google Slides deck can be exported as `slides.<lang>.pdf` after review: automatically when its language's post is finalized, when a deck text sync pushes changes while a PDF exists, or on demand from the Slides column or the `export_google_slides_pdf` tool |
+| SLD-14 | Slides for several languages are one request. The languages are planned at the same time, up to `BLOG_AGENT_SLIDE_PARALLELISM` at once; a language that fails is reported for that language and does not stop the others |
 
 ### 5.5 Deck text sync
 
@@ -398,7 +399,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | SLD-2 | `test_slide_timing_passes_for_one_minute_scripts`, `test_slide_timing_names_the_slides_to_fix`, `test_slide_timing_wants_words_for_the_title_and_thank_you_slides`, `test_slide_numbers_must_run_from_one_without_gaps_or_repeats`, `test_the_brief_decides_the_language_of_a_plan` |
 | SLD-3 | `test_the_planner_is_told_what_is_said_on_the_title_and_thank_you_slides` |
 | SLD-4 | `test_talk_structure_follows_the_length` |
-| SLD-5 | `test_a_failed_draft_is_named_to_the_planner_only_within_the_same_run`, `test_a_new_brief_clears_what_the_last_planning_run_left` |
+| SLD-5 | `test_a_failed_draft_is_named_to_the_planner_only_within_the_same_run`, `test_a_new_brief_clears_what_the_last_planning_run_left`, `test_slide_planning_runs_in_a_session_of_its_own_and_only_its_result_reaches_the_record` |
 | SLD-6 | `test_slide_requests_build_a_cover_and_one_slide_per_plan_entry` |
 | SLD-7 | `test_mermaid_diagrams_become_references_and_image_addresses`, `test_mermaid_rendering_is_off_unless_enabled`, `test_images_are_found_in_markdown_and_html_but_not_in_code` |
 | SLD-8 | `test_a_wide_image_goes_under_the_bullets_and_spans_the_page`, `test_a_tall_image_takes_the_page_height_and_the_title_makes_room`, `test_image_layouts_stay_on_the_page_and_never_shrink_the_image`, `test_an_image_of_unknown_shape_keeps_the_right_half` |
@@ -406,6 +407,7 @@ what the models then did was read in real runs, recorded in `README.md`.
 | SLD-10 | `test_a_failure_after_the_file_exists_names_the_file` |
 | SLD-11 | `test_markdown_tables_are_extracted_and_placed_as_native_slide_tables` |
 | SLD-12 | `test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand` |
+| SLD-14 | `test_one_language_failing_does_not_stop_the_others`, `test_the_number_of_languages_planned_at_once_can_be_lowered`, `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck` |
 | SYN-1 | `test_slide_plan_markdown_reads_back_as_the_same_plan`, `test_sync_needs_a_deck_and_a_readable_plan` |
 | SYN-2 | `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor`, `test_notes_edited_in_the_deck_are_pulled_into_the_file` |
 | SYN-3 | `test_saved_notes_reach_the_deck_only_after_approval`, `test_a_field_edited_on_both_sides_is_reported_as_a_conflict`, `test_deck_sync_writes_only_when_the_request_says_a_person_approved` |
@@ -439,6 +441,6 @@ what the models then did was read in real runs, recorded in `README.md`.
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: the workflow runs on GitHub, not in the unit tests; whether it passed is shown on the commit it ran for |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
-| RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more` |
+| RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
 <!-- traceability:end -->

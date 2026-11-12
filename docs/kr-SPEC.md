@@ -131,7 +131,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | SLD-2 | 계획에는 번호가 붙은 슬라이드가 1분당 정확히 한 장 있고, 슬라이드마다 가정한 말하기 속도로 약 1분(45초에서 75초) 분량의 대본이 있다. 여기에 도입 대본과 마무리 대본이 더해지며 이 둘은 세지 않는다. 슬라이드 번호는 빠짐이나 중복 없이 1..N이다. 계획의 언어는 모델이 무엇을 썼든 요청된 언어이다 |
 | SLD-3 | 도입 대본은 제목 슬라이드에서 말한다. 인사, 발표 제목, 이어서 제목이 뜻하는 바와 청중이 얻어 갈 것으로 이루어진다. 인사는 여기서만 한다. 마무리 대본은 감사 슬라이드에서 말한다. 감사 인사와 질문을 청하는 말로 이루어진다. 작별 인사는 여기서만 한다 |
 | SLD-4 | 슬라이드가 다섯 장 이상이면 1번 슬라이드는 목차이고, 제목은 해당 언어에서 "Agenda"에 해당하는 단어이다. 모든 계획은 해당 언어로 "Conclusion" 또는 "Summary"라는 제목이 붙은 결론 슬라이드로 끝난다. 슬라이드가 여섯 장 이상이면, 글이 다음 단계, 향후 작업, 후속 내용을 언급할 때 그 내용은 결론 뒤에 별도의 슬라이드를 갖는다. 언급하지 않으면 그런 슬라이드는 없다. 슬라이드 제목은 그 슬라이드의 요지를 꾸밈없이 나타내며 발표 제목을 절대 반복하지 않는다. 이상은 계획 모델에 주는 지시이며, 코드는 SLD-2만 검사한다 |
-| SLD-5 | SLD-2를 통과하지 못한 계획은 실패 내용을 명시해 한 번 더 계획한다. 한 언어의 계획 과정에서 남은 것은 다른 언어의 계획 과정에 절대 전달되지 않는다 |
+| SLD-5 | SLD-2를 통과하지 못한 계획은 실패 내용을 명시해 한 번 더 계획한다. 언어마다 자기만의 작업 세션에서 계획하므로, 한 계획 과정에서 남은 것이 다른 계획 과정에 전달될 수 없다 |
 | SLD-6 | 덱은 제목 슬라이드, 번호가 붙은 슬라이드(제목, 불릿), 감사 슬라이드("Thank you", "감사합니다", "ありがとうございました")로 구성된다. 발표자 노트에는 도입 대본, 각 슬라이드의 대본과 그 뒤에 오는 `[Visual]` 및 시각 자료 메모, 마무리 대본이 들어간다 |
 | SLD-7 | 슬라이드에는 글에 있는 이미지만 넣는다. 이미지 URL, 그리고 `BLOG_AGENT_RENDER_MERMAID`가 켜져 있을 때 mermaid.ink가 그린 Mermaid 다이어그램이 이에 해당한다. 각 이미지는 한 번만 쓴다. 모델이 지어낸 참조는 버린다 |
 | SLD-8 | 그려진 다이어그램은 가장 크게 들어가는 자리에 배치한다. 가로로 넓으면 불릿 아래에 페이지 너비 전체로, 세로로 길면 제목을 좁히고 페이지 높이 전체로, 그 밖에는 불릿 옆에 텍스트에 맞춰 크기를 정한 열로 배치한다. 형태를 알 수 없는 이미지는 오른쪽 절반을 차지한다. 텍스트와 이미지는 절대 겹치지 않으며 페이지 안에 머문다 |
@@ -139,6 +139,7 @@ Google Slides 덱이다. 작성자는 검토하고 승인하며, 승인과 승�
 | SLD-10 | 파일이 생긴 뒤에 덱 생성이 실패하면, 그 파일이 Drive 안에서 잊히지 않도록 오류에 파일의 주소를 명시한다 |
 | SLD-11 | 글에 있는 Markdown 표는 계획 모델에 `table:N` 참조로 제공된다. 이미지가 없는 슬라이드에 선택되면 불릿 아래에 Google Slides 네이티브 표(최대 8행 6열)로 배치하며, 각 표는 한 번만 쓴다 |
 | SLD-12 | Google Slides 덱은 검토가 끝난 뒤 `slides.<lang>.pdf`로 내보낼 수 있다. 해당 언어의 게시물을 확정할 때, PDF가 있는 상태에서 덱으로 텍스트를 푸시할 때 자동으로 내보내며, Slides 열이나 `export_google_slides_pdf` 도구로 언제든 내보낼 수 있다 |
+| SLD-14 | 여러 언어의 슬라이드는 하나의 요청이다. 언어들은 동시에 계획하되 한 번에 `BLOG_AGENT_SLIDE_PARALLELISM`개까지 계획한다. 실패한 언어는 그 언어의 실패로 알리고 다른 언어를 멈추지 않는다 |
 
 ### 5.5 덱 텍스트 동기화
 
@@ -392,7 +393,7 @@ flowchart TD
 | SLD-2 | `test_slide_timing_passes_for_one_minute_scripts`, `test_slide_timing_names_the_slides_to_fix`, `test_slide_timing_wants_words_for_the_title_and_thank_you_slides`, `test_slide_numbers_must_run_from_one_without_gaps_or_repeats`, `test_the_brief_decides_the_language_of_a_plan` |
 | SLD-3 | `test_the_planner_is_told_what_is_said_on_the_title_and_thank_you_slides` |
 | SLD-4 | `test_talk_structure_follows_the_length` |
-| SLD-5 | `test_a_failed_draft_is_named_to_the_planner_only_within_the_same_run`, `test_a_new_brief_clears_what_the_last_planning_run_left` |
+| SLD-5 | `test_a_failed_draft_is_named_to_the_planner_only_within_the_same_run`, `test_a_new_brief_clears_what_the_last_planning_run_left`, `test_slide_planning_runs_in_a_session_of_its_own_and_only_its_result_reaches_the_record` |
 | SLD-6 | `test_slide_requests_build_a_cover_and_one_slide_per_plan_entry` |
 | SLD-7 | `test_mermaid_diagrams_become_references_and_image_addresses`, `test_mermaid_rendering_is_off_unless_enabled`, `test_images_are_found_in_markdown_and_html_but_not_in_code` |
 | SLD-8 | `test_a_wide_image_goes_under_the_bullets_and_spans_the_page`, `test_a_tall_image_takes_the_page_height_and_the_title_makes_room`, `test_image_layouts_stay_on_the_page_and_never_shrink_the_image`, `test_an_image_of_unknown_shape_keeps_the_right_half` |
@@ -400,6 +401,7 @@ flowchart TD
 | SLD-10 | `test_a_failure_after_the_file_exists_names_the_file` |
 | SLD-11 | `test_markdown_tables_are_extracted_and_placed_as_native_slide_tables` |
 | SLD-12 | `test_a_deck_is_exported_as_pdf_on_finalize_and_on_demand` |
+| SLD-14 | `test_one_language_failing_does_not_stop_the_others`, `test_the_number_of_languages_planned_at_once_can_be_lowered`, `test_each_language_asked_for_gets_its_own_plan_and_its_own_deck` |
 | SYN-1 | `test_slide_plan_markdown_reads_back_as_the_same_plan`, `test_sync_needs_a_deck_and_a_readable_plan` |
 | SYN-2 | `test_push_carries_only_what_the_file_changed_and_keeps_the_style_anchor`, `test_notes_edited_in_the_deck_are_pulled_into_the_file` |
 | SYN-3 | `test_saved_notes_reach_the_deck_only_after_approval`, `test_a_field_edited_on_both_sides_is_reported_as_a_conflict`, `test_deck_sync_writes_only_when_the_request_says_a_person_approved` |
@@ -433,6 +435,6 @@ flowchart TD
 | OPS-5 | `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool` |
 | OPS-6 | No unit test: 워크플로는 단위 테스트가 아니라 GitHub에서 실행된다. 통과 여부는 실행 대상 커밋에 표시된다 |
 | RUN-1 | `test_a_busy_lane_refuses_its_own_actions_and_names_itself`, `test_posts_can_be_saved_finalized_and_posted_while_slides_are_made`, `test_a_run_makes_the_posts_in_the_main_lane_and_then_the_slides_in_theirs` |
-| RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more` |
+| RUN-2 | `test_a_write_by_code_waits_for_the_agent_turn_in_the_record_session`, `test_two_actions_on_different_languages_keep_both_changes`, `test_a_write_that_finds_the_record_changed_reads_it_again_and_writes_once_more`, `test_a_person_edit_during_slide_planning_does_not_stop_the_planning` |
 | RUN-3 | `test_every_started_action_ends_as_done_or_as_a_notice` |
 <!-- traceability:end -->

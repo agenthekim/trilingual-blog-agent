@@ -305,8 +305,52 @@ def _plan(language: str, slides: int = 3) -> dict:
 
 
 def _stand_in_agent(pipeline, *, write=("en", "ja"), check=True, plan_as=None):
-    """Replace ``pipeline.say`` by code that changes the session as the agent would."""
+    """Replace the two places a model works by code that writes what it would.
+
+    ``pipeline.say`` (the coordinator's turn in the record session) and
+    ``pipeline._run_planning`` (the slide planning pipeline in the working
+    session of one language). ``said`` lists what was asked of either.
+    """
+    from google.adk.events import Event, EventActions
+
+    from app.pipeline import USER_ID
+
     said: list[str] = []
+
+    async def run_planning(session_id: str, language: str) -> None:
+        app_name = pipeline._slide_app.name
+        working = await pipeline._sessions.get_session(
+            app_name=app_name, user_id=USER_ID, session_id=session_id
+        )
+        brief = working.state[state.PRESENTATION_BRIEF]
+        assert brief["language"] == language
+        said.append(
+            f"Plan a {brief['minutes']} minute talk in language '{language}'. "
+            f"Audience: {brief['audience']}."
+        )
+        written = plan_as or language
+        await pipeline._sessions.append_event(
+            working,
+            Event(
+                author="slide_timing_gate",
+                invocation_id="planning-stand-in",
+                actions=EventActions(
+                    state_delta={
+                        state.SLIDE_DECK_PLAN: _plan(written),
+                        state.SLIDE_PLANS: {
+                            **(working.state.get(state.SLIDE_PLANS) or {}),
+                            written: _plan(written),
+                        },
+                        state.SLIDE_TIMING: {
+                            **(working.state.get(state.SLIDE_TIMING) or {}),
+                            written: {"passed": True, "expected_slide_count": 3},
+                        },
+                    }
+                ),
+            ),
+        )
+
+    pipeline._run_planning = run_planning
 
     async def say(text: str) -> None:
         said.append(text)
@@ -320,22 +364,6 @@ def _stand_in_agent(pipeline, *, write=("en", "ja"), check=True, plan_as=None):
             }
             delta[state.LOCALIZED_TITLES] = {lang: f"{lang} title" for lang in targets}
             await pipeline._update_state(delta)
-        elif text.startswith("Prepare a"):
-            asked = text.split("'")[1]
-            language = plan_as or asked
-            await pipeline._update_state(
-                {
-                    state.PRESENTATION_BRIEF: {"language": language, "minutes": 3},
-                    state.SLIDE_PLANS: {
-                        **(current.get(state.SLIDE_PLANS) or {}),
-                        language: _plan(language),
-                    },
-                    state.SLIDE_TIMING: {
-                        **(current.get(state.SLIDE_TIMING) or {}),
-                        language: {"passed": True, "expected_slide_count": 3},
-                    },
-                }
-            )
 
     pipeline.say = say
     return said
@@ -423,7 +451,7 @@ async def test_each_language_asked_for_gets_its_own_plan_and_its_own_deck(
     )
 
     assert said[1:] == [
-        f"Prepare a 3 minute talk in language '{code}'. Audience: students and beginners."
+        f"Plan a 3 minute talk in language '{code}'. Audience: students and beginners."
         for code in ("en", "ko", "ja")  # each once, in the order asked
     ]
     assert created == ["en", "ko"]
