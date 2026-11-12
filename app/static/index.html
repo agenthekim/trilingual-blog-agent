@@ -519,7 +519,7 @@ async function postDraft(row, update) {
     summary: [["Title", row.title]],
     extra: [el("label", {class: "field", for: "confirmTags"}, "Tags", tagInput, el("span", {class: "hint"}, ruleText), tagError)],
     validate: () => {
-      parsedTags = tagInput.value.split(",").map((t) => (isQiita ? t.trim() : t.trim().toLowerCase())).filter(Boolean);
+      parsedTags = tagInput.value.split(/[\s,]+/).map((t) => (isQiita ? t.trim() : t.trim().toLowerCase())).filter(Boolean);
       const err = checkTags(row.platform, parsedTags);
       if (err) { tagError.textContent = err; tagError.classList.remove("hidden"); tagInput.focus(); return false; }
       return true;
