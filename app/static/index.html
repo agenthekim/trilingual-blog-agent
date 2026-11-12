@@ -131,9 +131,9 @@
     white-space:pre-wrap; overflow-wrap:anywhere; }
   .prompt-chips-bar { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
   .prompt-chips-list { display:flex; gap:6px; align-items:center; flex-wrap:wrap; flex:1; }
-  button.prompt-chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; height:26px; padding:0 10px;
+  button.prompt-chip { display:inline-block; font-size:12.5px; line-height:1.4; height:auto; min-height:28px; padding:4px 12px;
     border-radius:999px; border:1px solid var(--line); background:var(--soft); color:var(--text); cursor:pointer;
-    max-width:290px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:400; }
+    max-width:100%; white-space:normal; text-align:left; font-weight:400; }
   button.prompt-chip:hover { border-color:var(--accent); color:var(--accent); }
   .prompt-modal-list { display:grid; gap:6px; max-height:220px; overflow:auto; }
   .prompt-modal-item { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 10px;
@@ -637,6 +637,9 @@ function applyUiLanguage(lang) {
   }
   if (typeof renderPromptsModal === "function" && $("promptsModal") && $("promptsModal").open) {
     renderPromptsModal();
+  }
+  if (typeof ensurePromptHistoryLocalized === "function") {
+    ensurePromptHistoryLocalized();
   }
   if (typeof renderSourcesModal === "function" && $("sourcesModal") && $("sourcesModal").open) {
     renderSourcesModal();
@@ -1171,6 +1174,55 @@ const ESSENTIAL_PROMPTS_BY_LANG = {
 };
 const DEFAULT_QUICK_INDICES = [4, 5, 0];
 
+function parseSlidePromptIntent(text) {
+  const s = (text || "").trim();
+  if (!s || s.length > 90) return null;
+  if (!/(slide|slides|deck|슬라이드|덱|スライド|デッキ)/i.test(s)) return null;
+  if (!/(create|re-create|recreate|generate|make|build|제작|생성|만들|다시|재생성|재제작|作成|再作成|作っ)/i.test(s)) return null;
+  const langHits = [];
+  const patterns = [
+    ["en", /\b(english|en)\b|영어|영문|英語/i],
+    ["ko", /\b(korean|ko)\b|한국어|국문|韓国語/i],
+    ["ja", /\b(japanese|ja)\b|일본어|일문|日本語/i],
+  ];
+  for (const [code, rx] of patterns) {
+    const m = rx.exec(s);
+    if (m) langHits.push([m.index, code]);
+  }
+  if (langHits.length === 0) return null;
+  langHits.sort((a, b) => a[0] - b[0]);
+  const langs = langHits.map((x) => x[1]);
+  const recreate = /(re-create|recreate|again|다시|재생성|재제작|再作成|作り直)/i.test(s);
+  const withDeck = /(google slides|deck|덱|デッキ)/i.test(s);
+  return {langs, recreate, withDeck};
+}
+
+function formatSlidePromptIntent(intent, targetLang) {
+  const {langs, recreate, withDeck} = intent;
+  if (targetLang === "ko") {
+    const names = {en: "영어", ko: "한국어", ja: "일본어"};
+    const joined = langs.length === 2
+      ? `${names[langs[0]]}와 ${names[langs[1]]}`
+      : langs.map((l) => names[l]).join(", ");
+    const targetObj = withDeck ? "발표 슬라이드와 Google Slides 덱을" : "슬라이드를";
+    return recreate ? `${joined} ${targetObj} 다시 만들어줘` : `${joined} ${targetObj} 제작해`;
+  }
+  if (targetLang === "ja") {
+    const names = {en: "英語", ko: "韓国語", ja: "日本語"};
+    const joined = langs.map((l) => names[l]).join("と");
+    const targetObj = withDeck ? "のスライドとGoogle Slidesデッキを" : "のスライドを";
+    return recreate ? `${joined}${targetObj}再作成して` : `${joined}${targetObj}作成して`;
+  }
+  const names = {en: "English", ko: "Korean", ja: "Japanese"};
+  const joined = langs.length === 1
+    ? names[langs[0]]
+    : langs.length === 2
+      ? `${names[langs[0]]} and ${names[langs[1]]}`
+      : `${names[langs[0]]}, ${names[langs[1]]}, and ${names[langs[2]]}`;
+  const targetObj = withDeck ? "slides and Google Slides deck" : "slides";
+  return `${recreate ? "Re-create" : "Create"} the ${joined} ${targetObj}`;
+}
+
 function localizeBuiltInPrompt(text, targetLang) {
   const clean = (text || "").trim().toLowerCase();
   const targetList = ESSENTIAL_PROMPTS_BY_LANG[targetLang] || ESSENTIAL_PROMPTS_BY_LANG.en;
@@ -1178,7 +1230,19 @@ function localizeBuiltInPrompt(text, targetLang) {
     const idx = list.findIndex((p) => p.toLowerCase() === clean);
     if (idx >= 0 && targetList[idx]) return targetList[idx];
   }
+  const intent = parseSlidePromptIntent(text);
+  if (intent) return formatSlidePromptIntent(intent, targetLang);
   return text;
+}
+
+function localizePromptItem(item, targetLang) {
+  if (!item) return "";
+  const builtIn = localizeBuiltInPrompt(item.text, targetLang);
+  if (builtIn !== item.text) return builtIn;
+  if (item.i18n && typeof item.i18n[targetLang] === "string" && item.i18n[targetLang].trim()) {
+    return item.i18n[targetLang].trim();
+  }
+  return item.text;
 }
 
 function isConversationalReply(text) {
@@ -1201,6 +1265,46 @@ function savePromptHistory(list) {
   try { localStorage.setItem(PROMPT_HISTORY_KEY, JSON.stringify(list.slice(0, 50))); } catch (e) {}
 }
 
+let _localizingPrompts = false;
+async function ensurePromptHistoryLocalized() {
+  if (_localizingPrompts) return;
+  const list = getPromptHistory();
+  const missing = list.filter((item) => {
+    const isStructured = localizeBuiltInPrompt(item.text, "en") !== item.text
+      || localizeBuiltInPrompt(item.text, "ko") !== item.text
+      || localizeBuiltInPrompt(item.text, "ja") !== item.text;
+    if (isStructured) return false;
+    return !item.i18n || !item.i18n.en || !item.i18n.ko || !item.i18n.ja;
+  });
+  if (missing.length === 0) return;
+  _localizingPrompts = true;
+  try {
+    const res = await api("/api/prompts/localize", {texts: missing.map((m) => m.text)});
+    const map = (res && res.translations) || {};
+    let changed = false;
+    const updated = getPromptHistory();
+    for (const item of updated) {
+      const tr = map[item.text];
+      if (tr && typeof tr === "object" && (tr.en || tr.ko || tr.ja)) {
+        item.i18n = {
+          en: tr.en || item.text,
+          ko: tr.ko || item.text,
+          ja: tr.ja || item.text,
+        };
+        changed = true;
+      }
+    }
+    if (changed) {
+      savePromptHistory(updated);
+      renderPromptChips();
+      if ($("promptsModal") && $("promptsModal").open) renderPromptsModal();
+    }
+  } catch (e) {
+  } finally {
+    _localizingPrompts = false;
+  }
+}
+
 function recordPromptUsage(text) {
   const clean = text.trim();
   if (!clean || isConversationalReply(clean)) return;
@@ -1216,6 +1320,7 @@ function recordPromptUsage(text) {
   }
   savePromptHistory(list);
   renderPromptChips();
+  ensurePromptHistoryLocalized();
 }
 
 function deletePromptHistoryItem(text) {
@@ -1238,7 +1343,7 @@ function getTopPromptChips(limit = 3) {
   const lang = currentUiLang || "en";
   const essentials = ESSENTIAL_PROMPTS_BY_LANG[lang] || ESSENTIAL_PROMPTS_BY_LANG.en;
   const defaults = DEFAULT_QUICK_INDICES.map((i) => essentials[i]);
-  const history = getPromptHistory().map((item) => localizeBuiltInPrompt(item.text, lang));
+  const history = getPromptHistory().map((item) => localizePromptItem(item, lang));
   const picked = [];
   for (const h of history) {
     if (picked.length >= limit) break;
@@ -1283,7 +1388,7 @@ function renderPromptsModal() {
       historyBox.replaceChildren(el("span", {class: "muted small"}, t.noHistoryText || "No custom prompts sent yet."));
     } else {
       historyBox.replaceChildren(...history.map((item) => {
-        const shownText = localizeBuiltInPrompt(item.text, lang);
+        const shownText = localizePromptItem(item, lang);
         return el("div", {class: "prompt-modal-item"},
           el("button", {type: "button", class: "prompt-fill", onclick: () => fillPromptInput(shownText)}, shownText),
           el("span", {class: "badge", style: "font-size:11px"}, `×${item.count || 1}`),
