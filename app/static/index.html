@@ -307,7 +307,7 @@
 
 <dialog id="settingsModal" aria-labelledby="settingsTitle">
   <div class="body">
-    <div style="margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--line)">
+    <div style="margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">
       <label class="field" style="margin-bottom:4px; font-weight:600" for="uiLanguageSelect"><span data-i18n="langSettingLabel">Interface language</span></label>
       <p class="muted small" style="margin:0 0 8px" data-i18n="langSettingHint">Choose the display language for this web page.</p>
       <select id="uiLanguageSelect" style="width:100%; max-width:240px">
@@ -316,8 +316,11 @@
         <option value="ja">日本語 (Japanese)</option>
       </select>
     </div>
-    <h2 id="settingsTitle" data-i18n="settingsTitle">Publishing platforms</h2>
-    <p class="muted small" style="margin:0" id="settingsPlatformsHint" data-i18n="settingsHint">Each language goes to one platform. This is fixed; what is set up on this server is shown next to it.</p>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px">
+      <h2 id="settingsTitle" data-i18n="settingsTitle">Platforms &amp; integrations</h2>
+      <a href="https://github.com/agenthekim/trilingual-blog-agent/blob/main/SETUP.md" target="_blank" rel="noopener" class="small" data-i18n="setupGuideLink">Setup guide</a>
+    </div>
+    <p class="muted small" style="margin:0" id="settingsPlatformsHint" data-i18n="settingsHint">Blog platforms per language and Google Slides integration status.</p>
     <div id="settingsRows"></div>
     <p class="muted small" id="settingsNote" style="margin:0"></p>
   </div>
@@ -352,8 +355,19 @@ const UI_TRANSLATIONS = {
     askPlaceholder: "Ask the agent for a change (e.g. replace examples, adjust tone)...",
     sendBtn: "Send",
     logTitle: "Agent activity log",
-    settingsTitle: "Publishing platforms",
-    settingsHint: "Each language goes to one platform. This is fixed; what is set up on this server is shown next to it.",
+    settingsTitle: "Platforms & integrations",
+    settingsHint: "Blog platforms per language and Google Slides integration status.",
+    setupGuideLink: "Setup guide",
+    settingsNoteText: "Credentials stay on the server; this page never sees them.",
+    howApi: "Posted through the API",
+    howHtml: "Paste-ready HTML export",
+    statusReady: "✓ Ready",
+    statusConnected: "✓ Connected",
+    statusNoCred: "No credential · Setup",
+    statusSlidesOk: "✓ Access granted",
+    statusSlidesNo: "Not set up · Setup",
+    diagramsOn: "Diagrams drawn",
+    diagramsOff: "Diagrams off",
     langSettingLabel: "Interface language",
     langSettingHint: "Choose the display language for this web page.",
     doneBtn: "Done",
@@ -400,8 +414,19 @@ const UI_TRANSLATIONS = {
     askPlaceholder: "에이전트에 변경을 요청하세요 (예: 예시 교체, 톤 조정)...",
     sendBtn: "전송",
     logTitle: "에이전트 실행 로그",
-    settingsTitle: "발행 플랫폼 설정",
-    settingsHint: "각 언어는 지정된 플랫폼으로 전달됩니다. 서버에 구성된 인증 상태가 아래에 표시됩니다.",
+    settingsTitle: "연동 플랫폼 및 서비스",
+    settingsHint: "언어별 블로그 플랫폼 및 Google Slides 연동 상태입니다.",
+    setupGuideLink: "설정 가이드",
+    settingsNoteText: "인증 정보는 서버에만 안전하게 보관되며 이 페이지로 노출되지 않습니다.",
+    howApi: "REST API 연동",
+    howHtml: "붙여넣기용 HTML 내보내기",
+    statusReady: "✓ 사용 가능",
+    statusConnected: "✓ 인증됨",
+    statusNoCred: "미설정 · 가이드",
+    statusSlidesOk: "✓ 권한 부여됨",
+    statusSlidesNo: "미설정 · 가이드",
+    diagramsOn: "다이어그램 렌더링 켜짐",
+    diagramsOff: "다이어그램 렌더링 꺼짐",
     langSettingLabel: "페이지 표시 언어",
     langSettingHint: "웹 UI에서 사용할 언어를 선택하세요.",
     doneBtn: "완료",
@@ -448,32 +473,19 @@ const UI_TRANSLATIONS = {
     askPlaceholder: "エージェントに変更を依頼してください（例: 例示の変更、トーン調整など）...",
     sendBtn: "送信",
     logTitle: "エージェント実行ログ",
-    settingsTitle: "投稿プラットフォーム",
-    settingsHint: "各言語は特定のプラットフォームに対応しています。サーバーの設定状況が右側に表示されます。",
-    langSettingLabel: "表示言語",
-    langSettingHint: "このページの表示言語を選択してください。",
-    doneBtn: "完了",
-    colLang: "言語",
-    colTitle: "タイトル",
-    colFiles: "ファイル",
-    colSlides: "スライド",
-    colNext: "次のステップ",
-    createSlidesBtn: "スライド作成…",
-    createDeckBtn: "デッキ作成…",
-    recreateDeckBtn: "スライド再作成…",
-    speakerNotes: "発表者ノート",
-    morePromptsBtn: "すべてのプロンプト…",
-    promptsModalTitle: "プロンプトライブラリ＆履歴",
-    promptsModalHint: "項目をクリックして入力欄に入れ、必要に応じて編集し送信します。",
-    essentialPromptsLabel: "必須アクション",
-    historyPromptsLabel: "よく使うプロンプト（人気順）",
-    clearHistoryBtn: "履歴をクリア",
-    noHistoryText: "まだ送信されたカスタムプロンプトはありません。",
-    recentSourcesBtn: "最近のソース…",
-    sourcesModalTitle: "最近のソースドキュメント",
-    sourcesModalHint: "項目をクリックして入力欄に入れるか、前回の実行結果を開きます。",
-    noSourceHistoryText: "まだ記録されたソースドキュメントはありません。",
-    openRunBtn: "結果を開く",
+    settingsTitle: "連携プラットフォームとサービス",
+    settingsHint: "言語別のブログプラットフォームとGoogle Slidesの連携状況です。",
+    setupGuideLink: "セットアップガイド",
+    settingsNoteText: "認証情報はサーバーに保持され、このページには公開されません。",
+    howApi: "REST API 連携",
+    howHtml: "貼り付け用 HTML 出力",
+    statusReady: "✓ 利用可能",
+    statusConnected: "✓ 認証済み",
+    statusNoCred: "未設定 · ガイド",
+    statusSlidesOk: "✓ 権限付与済み",
+    statusSlidesNo: "未設定 · ガイド",
+    diagramsOn: "図表描画オン",
+    diagramsOff: "図表描画オフ",
   }
 };
 const UI_LANG_KEY = "tba.ui_lang";
@@ -503,6 +515,9 @@ function applyUiLanguage(lang) {
     ths[2].textContent = t.colFiles;
     ths[3].textContent = t.colSlides;
     ths[4].textContent = t.colNext;
+  }
+  if (typeof renderSettingsRows === "function" && config && $("settingsModal") && $("settingsModal").open) {
+    renderSettingsRows();
   }
 }
 
@@ -894,6 +909,52 @@ async function loadFile(file) {
   reader.readAsText(file, "utf-8");
 }
 
+const SETUP_URL = "https://github.com/agenthekim/trilingual-blog-agent/blob/main/SETUP.md";
+
+function renderSettingsRows() {
+  if (!config) return;
+  const t = UI_TRANSLATIONS[currentUiLang] || UI_TRANSLATIONS.en;
+  const tag = (text, tone) => el("span", {class: "platform-tag " + (tone || "")}, text);
+  const setupLink = (text, anchor) => el("a", {
+    href: `${SETUP_URL}#${anchor}`,
+    target: "_blank",
+    rel: "noopener",
+    class: "platform-tag warn",
+    style: "text-decoration:none",
+  }, text);
+  const row = (language, name, subtext, badgeNode) => el("div", {class: "platform-row"},
+    el("div", {class: "platform-meta"},
+      el("span", {class: "platform-lang"}, language),
+      el("span", {class: "platform-name"}, name),
+      subtext ? el("span", {class: "muted small", style: "font-size:11.5px"}, subtext) : null),
+    el("div", {class: "platform-tags"}, badgeNode));
+
+  $("settingsRows").replaceChildren(
+    ...config.platforms.map((p) => {
+      const sub = p.how === "api" ? (t.howApi || "Posted through the API") : (t.howHtml || "Paste-ready HTML export");
+      let badge;
+      if (p.how !== "api") {
+        badge = tag(t.statusReady || "✓ Ready", "ok");
+      } else if (p.configured) {
+        badge = tag(t.statusConnected || "✓ Connected", "ok");
+      } else {
+        const anchor = p.platform.toLowerCase().includes("qiita") ? "3-qiita-access-token" : "2-dev-community-api-key";
+        badge = setupLink(t.statusNoCred || "No credential · Setup", anchor);
+      }
+      return row(p.language, p.platform, sub, badge);
+    }),
+    row(
+      "Slides",
+      "Google Slides",
+      `${config.slides_account ? config.slides_account + " · " : ""}${config.diagrams ? (t.diagramsOn || "Diagrams drawn") : (t.diagramsOff || "Diagrams off")}`,
+      config.google_slides
+        ? tag(t.statusSlidesOk || "✓ Access granted", "ok")
+        : setupLink(t.statusSlidesNo || "Not set up · Setup", "4-google-slides-oauth")
+    )
+  );
+  $("settingsNote").textContent = t.settingsNoteText || "Credentials stay on the server; this page never sees them.";
+}
+
 // Settings: the fixed mapping, and what the server says is set up right now.
 async function openSettings() {
   $("settingsRows").replaceChildren(el("span", {class: "muted small"}, "Checking…"));
@@ -901,17 +962,7 @@ async function openSettings() {
   $("settingsModal").showModal();
   try {
     config = await api("/api/config");
-    const tag = (text, tone) => el("span", {class: "platform-tag " + (tone || "")}, text);
-    const row = (language, name, ...tags) => el("div", {class: "platform-row"},
-      el("div", {class: "platform-meta"}, el("span", {class: "platform-lang"}, language), el("span", {class: "platform-name"}, name)),
-      el("div", {class: "platform-tags"}, ...tags));
-    $("settingsRows").replaceChildren(
-      ...config.platforms.map((p) => row(p.language, p.platform,
-        tag(p.how === "api" ? "Posted through the API" : "Paste-ready HTML"),
-        p.how === "api" ? tag(p.configured ? "Credential configured" : "No credential", p.configured ? "ok" : "warn") : null)),
-      row("Slides", config.slides_account ? `Google Slides · ${config.slides_account}` : "Google Slides", tag(config.google_slides ? "Access granted" : "Not set up", config.google_slides ? "ok" : "warn"),
-        tag(config.diagrams ? "Diagrams drawn" : "Diagrams off")));
-    $("settingsNote").textContent = "Credentials stay on the server; this page never sees them.";
+    renderSettingsRows();
   } catch (error) {
     $("settingsRows").replaceChildren(el("span", {class: "muted small"}, "The settings could not be read: " + error.message));
   }
