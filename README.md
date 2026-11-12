@@ -335,7 +335,11 @@ app/
   memory.py             background memory consolidation
   app_utils/            scaffolded service wiring, A2A, Agent Runtime adapter
 deployment/terraform/   infrastructure
-docs/                   SPEC.md (specification), kr-SPEC.md (Korean companion)
+docs/                   SPEC.md (specification), kr-SPEC.md (Korean companion);
+                        SETUP.md, kr-SETUP.md, ja-SETUP.md (setup guides);
+                        kr-AS-BUILT.md (the design and code as they are at
+                        b5e1793, and where they differ from SPEC.md) and
+                        kr-DESIGN-v1.md (the proposed version 1), in Korean
 scripts/                run_pipeline.py: all stages in one command;
                         authorize_google_slides.py: one-time Slides grant
 tests/                  unit, integration, eval

@@ -10,6 +10,16 @@ this file wins.
 Requirement ids (`INV-1`, `PUB-3`, ...) are stable. A requirement that is not
 built yet says so in its own text and is listed again in section 8.
 
+> **Status, 2026-11-12.** The code has moved ahead of this document. What
+> follows is accurate up to commit `58c2dc1`. The 21 commits after it changed
+> behaviour without changing this text. The fifteen differences are listed in
+> [kr-AS-BUILT.md](./kr-AS-BUILT.md), section 11 (in Korean), together with
+> the defects found while recording them; four of the differences touch
+> invariants as they are written here (INV-6, INV-7, INV-8, INV-11).
+> [kr-DESIGN-v1.md](./kr-DESIGN-v1.md) (in Korean) proposes how code, tests
+> and this document are brought back in step as version 1.0. Until that is
+> done, read this document together with that list.
+
 ---
 
 ## 1. Purpose
