@@ -7,8 +7,9 @@
 | :--- | :--- |
 | 상태 | 제안. 구현은 시작하지 않았습니다 |
 | 기준 | 커밋 `b5e1793`의 코드와 [SPEC.md](./SPEC.md) |
-| 확정에 필요한 것 | 6절의 결정 7건 |
-| 구현 단위 | 5절의 작업 패키지 18개. 하나씩 SPEC, 코드, 테스트 순서로 반영합니다 |
+| 확정에 필요한 것 | 6절의 결정 8건 |
+| 구현 단위 | 5절의 작업 패키지 24개. 하나씩 SPEC, 코드, 테스트 순서로 반영합니다 |
+| 고친 날 | 2026-11-12 오후. 역량별 근거를 다시 대조해 8절을 더하고, 4.2절과 WP-05, WP-06을 고치고, 4.10절과 WP-00, WP-19 ~ WP-23을 더했습니다 |
 
 ---
 
@@ -51,7 +52,10 @@ v1의 목표는 기능을 더하는 것이 아니라, 지금 있는 기능이 SP
 | 글 편집 | 정리 필요 | 편집 경로가 둘이고 서로 다르게 동작합니다 (B-05, G-04, G-05) |
 | 슬라이드 수명주기 | 정리 필요 | 재생성하면 PDF와 이전 덱 주소가 어긋납니다. 페이지에 생성과 재생성 버튼이 없어 채팅으로 우회합니다 (B-06, G-10) |
 | 화면 언어 | 정리 필요 | 문구집이 일부만 덮고, 사람이 쓴 프롬프트를 기계 번역합니다 (B-11) |
-| 테스트 | 고쳐야 함 | 단위 테스트가 모델에 닿고, 새 기능 대부분에 테스트가 없습니다 (B-04) |
+| 테스트와 평가 | 고쳐야 함 | 단위 테스트가 모델에 닿고, 새 기능 대부분에 테스트가 없고, 평가 사례 하나가 낡았습니다 (B-04, B-20) |
+| 도구 규약 | 정리 필요 | 도구 18개 중 2개에 매개변수 설명이 없고, 허용 값이 모델에 전달되지 않습니다 (B-17) |
+| 관측 | 고쳐야 함 | 페이지 경로에서는 추적이 꺼져 있고, 가림 처리가 호출 id를 바꿔 의도와 결과를 짝지을 수 없는 기록이 생깁니다 (B-15, B-16, B-18) |
+| 린터와 CI | 고쳐야 함 | 린터가 통과하지 않고, 푸시마다 검사하는 장치가 없습니다 (B-19) |
 | 문서 | 고쳐야 함 | SPEC이 21개 커밋 뒤처졌습니다 (G-01 ~ G-15) |
 
 ## 3. 설계 결정
@@ -61,7 +65,7 @@ v1의 목표는 기능을 더하는 것이 아니라, 지금 있는 기능이 SP
 | A-01 | 실행을 두 레인으로 나눕니다. 글 레인은 원본, 현지화, 글 액션, 에이전트 요청을 맡고, 슬라이드 레인은 계획, 덱, PDF, 동기화를 맡습니다. 레인마다 한 번에 하나만 실행하고 두 레인은 동시에 돕니다 | 슬라이드를 기다리는 동안 글을 검토하고 게시하려는 요구(결정 49)를 안전하게 지킵니다 | 하나씩만 실행(요구를 버림), 지금처럼 조건 검사로 우회(B-01) |
 | A-02 | 실행의 세션은 기록입니다. 기록에는 한 번에 한 작성자만 씁니다. 슬라이드 계획은 언어별 작업 세션에서 돌리고 결과만 기록에 옮깁니다. 코드의 쓰기는 딕셔너리 전체가 아니라 바뀐 하위 키만 반영합니다 | 낙관적 잠금과 충돌하지 않고, 언어가 다른 두 변경이 서로를 지우지 않습니다. 언어별 계획이 서로 섞이지 않는다는 SLD-5도 구조로 보장됩니다 | 쓰기를 턴이 끝날 때까지 미루기(확정이 즉시 반영되지 않음) |
 | A-03 | 사람이 시작한 액션은 모두 레인의 작업으로 실행하고 결과를 완료 또는 알림으로 남깁니다. 결과를 받지 않는 작업은 만들지 않습니다 | INV-12 | – |
-| A-04 | 기계 밖에 무언가를 만드는 일(플랫폼 게시, Drive 파일)은 버튼과 승인 대화상자로만 시작합니다. 에이전트에게 보낸 문장은 글과 계획의 텍스트만 바꿉니다. 문장으로 슬라이드를 요청하면 모델이 언어, 길이, 청중을 읽어 구조화된 요청으로 남기고, 코드가 승인 대화상자를 띄웁니다 | INV-1, INV-6. 낱말 검사를 없앱니다 | 낱말 검사 유지, 채팅의 슬라이드 요청을 아예 막기 |
+| A-04 | 기계 밖에 무언가를 만드는 일(플랫폼 게시, Drive 파일)은 사람의 승인을 거쳐서만 시작합니다. 페이지의 버튼에서는 승인 대화상자가, 에이전트에게 보낸 문장에서는 도구의 `request_confirmation`이 그 승인입니다. 문장으로 슬라이드를 요청하면 모델이 언어, 길이, 청중을 읽어 승인을 요청하는 도구를 부르고, 승인되면 코드가 슬라이드 레인에서 실행합니다 | INV-1, INV-6. 낱말 검사를 없애고, 게시와 같은 승인 방식을 씁니다 | 낱말 검사 유지, 채팅의 슬라이드 요청을 아예 막기, 페이지 전용 승인 경로를 따로 만들기 |
 | A-05 | 글의 제목과 본문은 누가 바꾸든 함수 하나를 지납니다. 에이전트는 본문 전체를 다시 쓰지 않고, 인용한 구절을 다른 구절로 바꿉니다 | PUB-7과 공개 글 보호가 한 곳에서 지켜지고, 긴 글이 잘리거나 바뀌는 일을 막습니다 | 전체 본문을 다시 받는 도구 유지 |
 | A-06 | 받은 원문은 그대로 보관합니다. 제목 줄이 없는 평문과 Naver 글의 구조화는 SPEC에 예외로 적고, 글자가 보존되었는지 코드가 확인한 경우에만 씁니다 | 결정 40의 편의를 유지하면서 INV-11을 되살립니다 | 구조화 삭제, 지금처럼 길이만 확인 |
 | A-07 | 원본 종류를 표 하나로 정의하고, 접속 허용 목록과 안내문을 그 표에서 만듭니다. Medium은 읽기 전용 원본으로 SPEC에 적습니다 | INV-8의 목록과 코드가 한 곳에서 나옵니다 | – |
@@ -75,6 +79,10 @@ v1의 목표는 기능을 더하는 것이 아니라, 지금 있는 기능이 SP
 | A-15 | 스타일, 스크립트, 문구를 파일로 나누고 페이지에서 인라인 스크립트를 없앱니다 | 1,625줄 한 파일을 나누고, 스크립트 출처를 제한하는 정책을 걸 수 있습니다 | 프레임워크 도입 |
 | A-16 | 단위 테스트는 네트워크 연결과 모델 관문을 막은 상태로 돕니다. `.env`는 테스트에서 읽지 않습니다 | OPS-2를 선언이 아니라 장치로 지킵니다 | – |
 | A-17 | localhost가 아닌 주소로 띄우면 접근 토큰을 요구합니다 | B-14 | 문서의 경고만 유지 |
+| A-18 | 도구 규약을 요구사항으로 올리고 테스트로 지킵니다. 이름은 하는 일과 대상을 말하고, 설명은 목적과 모든 매개변수와 반환값을 적고, 허용 값은 타입으로 선언해 모델에 전달하고, 인자는 입력 모델로 검사하고, 실패는 복구 안내가 든 결과로 돌려줍니다 | B-17. 도구가 늘어도 규약이 흐려지지 않습니다 | 문서의 규칙으로만 두기 |
+| A-19 | 사람이 시작한 액션 하나가 추적 하나입니다. 액션의 루트 스팬 아래에 에이전트, 도구, 외부 호출의 스팬이 이어지고, 로그는 그 추적 id를 싣습니다. 식별자는 가리지 않습니다 | B-15, B-16. 느린 실행과 실패를 처음부터 끝까지 따라갈 수 있습니다 | 에이전트 API 서버에서만 추적 |
+| A-20 | 푸시마다 CI가 린터, 단위 테스트, Terraform 검증을 돌립니다. 자격 증명은 쓰지 않습니다 | B-19. 문서보다 코드가 먼저 바뀌는 일을 다음에는 기계가 잡습니다 | 로컬 실행에만 의존 |
+| A-21 | README의 기능 위치 표가 가리키는 파일과 이름이 실제로 있는지 테스트합니다 | 코드를 옮긴 뒤 표가 낡는 것을 막습니다 | – |
 
 ## 4. v1 설계
 
@@ -115,7 +123,7 @@ flowchart LR
 | 슬라이드 계획 | 기록 상태를 복사한 작업 세션에서 계획 파이프라인을 직접 실행합니다. 끝나면 그 언어의 계획과 타이밍만 기록에 옮기고 작업 세션을 지웁니다 |
 | 병렬 계획 | 요청한 언어들의 계획을 동시에 돌립니다. `BLOG_AGENT_SLIDE_PARALLELISM`으로 줄일 수 있고 기본값은 3입니다. 덱은 계획이 끝난 순서대로 하나씩 만듭니다 |
 | 실패의 범위 | 한 언어의 계획이나 덱이 실패하면 그 언어의 알림으로 남기고 나머지는 계속합니다 |
-| 페이지에서의 도구 | 페이지가 모는 세션에는 `surface` 값이 `web`으로 들어갑니다. 이 세션에서 `set_presentation_brief`는 `request_slides`를 쓰라는 안내 오류를 돌려줍니다. 채팅과 API에서는 지금처럼 동작합니다 |
+| 페이지에서의 도구 | 페이지가 모는 세션에는 `surface` 값이 `web`으로 들어갑니다. 이 세션에서 `set_presentation_brief`는 `request_approval_to_create_slide_decks`를 쓰라는 안내 오류를 돌려줍니다. 채팅과 API에서는 지금처럼 동작합니다 |
 
 레인별 액션은 다음과 같습니다.
 
@@ -139,28 +147,31 @@ flowchart LR
 
 ### 4.2 슬라이드 요청
 
-버튼과 채팅이 같은 경로로 모입니다.
+버튼과 채팅이 같은 실행 경로로 모이고, 둘 다 사람의 승인을 지납니다.
 
 ```mermaid
 flowchart TD
     Btn[슬라이드 열의 버튼] --> Dlg[승인 대화상자]
-    Chat[에이전트에게 보낸 문장] --> Tool[request_slides 도구]
-    Tool -->|언어, 길이, 청중을 상태에 기록| Notice[페이지의 승인 요청]
-    Notice --> Dlg
     Dlg -->|승인| Api[POST slides]
-    Api --> Lane[슬라이드 레인]
-    Dlg -->|거절| Clear[요청 지움]
+    Chat[에이전트에게 보낸 문장] --> Tool[승인을 요청하는 도구]
+    Tool -->|request_confirmation| Ask[페이지의 승인 알림]
+    Ask -->|승인| Rec[승인된 요청을 상태에 기록]
+    Ask -->|거절| Stop[아무 것도 만들지 않음]
+    Rec -->|턴이 끝난 뒤 코드가 꺼냄| Lane[슬라이드 레인]
+    Api --> Lane
 ```
 
-대화상자는 언어, 길이, 청중, 덱이 만들어질 계정을 보여 줍니다. 이미 덱이 있는 언어는 "새 파일이 만들어지고 이전 덱은 Drive에 남는다"고 알리고, 이미 계획이 있는 언어는 "발표자 노트에서 고친 내용이 새 계획으로 바뀐다"고 알립니다. 계획은 그대로 두고 덱만 만드는 일은 "덱 생성…" 버튼이 맡습니다. 길이를 정하지 않은 요청은 그 언어의 지금 계획 길이, 없으면 실행 옵션의 길이, 그것도 없으면 15분으로 코드가 정합니다.
+에이전트 경로는 게시 도구와 같은 방식입니다. 도구 `request_approval_to_create_slide_decks`는 처음 불리면 아무 것도 만들지 않고 `request_confirmation`으로 멈춥니다. 승인되면 요청을 `SLIDE_REQUEST`에 기록하고 끝나며, 턴이 끝난 뒤 실행 관리 코드가 그 요청을 꺼내 슬라이드 레인에서 실행합니다. 슬라이드 레인이 바쁘면 실행하지 않고 알림으로 남깁니다. 이 도구는 페이지가 모는 세션에서만 동작합니다. 채팅과 API에서는 지금의 도구들(`set_presentation_brief`, 계획 파이프라인, 승인을 요청하는 `create_google_slides_deck_with_speaker_notes`)을 그대로 씁니다.
+
+대화상자와 승인 알림은 언어, 길이, 청중, 덱이 만들어질 계정을 보여 줍니다. 이미 덱이 있는 언어는 "새 파일이 만들어지고 이전 덱은 Drive에 남는다"고 알리고, 이미 계획이 있는 언어는 "발표자 노트에서 고친 내용이 새 계획으로 바뀐다"고 알립니다. 계획은 그대로 두고 덱만 만드는 일은 "덱 생성…" 버튼이 맡습니다. 길이를 정하지 않은 요청은 그 언어의 지금 계획 길이, 없으면 실행 옵션의 길이, 그것도 없으면 15분으로 코드가 정합니다.
 
 ### 4.3 글 편집
 
 | 경로 | v1 |
 | :--- | :--- |
 | 페이지 편집기 | `apply_post_edit` 호출 |
-| 에이전트, 제목 | `set_post_title` 도구가 `apply_post_edit` 호출 |
-| 에이전트, 본문 | `replace_post_text` 도구. 인용한 구절이 본문에 정확히 한 번 있을 때만 바꾸고 `apply_post_edit` 호출 |
+| 에이전트, 제목 | `set_article_post_title` 도구가 `apply_post_edit` 호출 |
+| 에이전트, 본문 | `replace_passage_in_article_post` 도구. 인용한 구절이 본문에 정확히 한 번 있을 때만 바꾸고 `apply_post_edit` 호출 |
 | 스크립트 | 같은 실행기 메서드 |
 
 `apply_post_edit`가 하는 일은 한 곳에 모읍니다. 공개된 글은 거절하고, 현지화한 글이면 구조 검사를 다시 하고, 판을 저장하고, 파일을 쓰고, 한국어 글이면 Naver HTML을 다시 쓰거나 지웁니다. 본문의 첫 제목 줄이 이전 제목과 같으면 새 제목으로 바꿉니다.
@@ -229,11 +240,30 @@ flowchart TD
 | 테스트 격리 | 단위 테스트에서 소켓 연결과 모델 관문을 막고 `.env`를 읽지 않습니다 |
 | 운영 규칙 | 사람이 쓰고 있는 서버는 실행이 진행 중일 때 다시 띄우지 않습니다. 변경 확인은 다른 포트와 다른 작업 폴더로 합니다. 실행 기록 파일은 손으로 고치지 않습니다 |
 
+### 4.10 관측
+
+| 항목 | 내용 |
+| :--- | :--- |
+| 추적 | 페이지와 스크립트가 시작할 때 추적 공급자를 설정합니다. 사람이 시작한 액션마다 레인의 작업 실행기가 루트 스팬을 열고, 그 아래에 ADK의 에이전트와 도구 스팬, 외부 호출의 자식 스팬이 이어집니다. `BLOG_AGENT_TRACE_EXPORT=cloud`이면 Cloud Trace로 내보내고, 값이 없으면 내보내지 않고 id만 만듭니다 |
+| 자식 스팬 | 지금의 `app/platforms.py` 호출 9곳에 더해 Google Slides 호출, 다이어그램 그리기 호출, 모델 관문 호출 |
+| 로그 상관 | 구조화 로그의 기록이 그 액션의 추적 id와 스팬 id를 싣습니다 |
+| 의도와 결과 | 도구 호출과 사람의 액션에 더해 모델 관문 호출도 한 쌍으로 기록합니다 |
+| 가림 | 식별자 필드는 가리지 않습니다. 카드 번호 패턴은 영문자나 밑줄에 붙은 숫자열에 맞지 않습니다 |
+| 활동 기록 | 페이지에 보이는 활동 줄을 실행 id와 함께 구조화 로그에도 남깁니다. `app/`에는 `print`가 없습니다 |
+
+추적 공급자를 설정하면 루트 스팬 하나 아래에 ADK의 스팬과 이 프로젝트의 자식 스팬이 한 추적으로 묶이고, 그 안에서 쓴 로그 기록에 같은 추적 id가 실리는 것을 모델 없이 실행해 확인했습니다. Cloud Trace로 내보내는 것은 실행해 보지 않았습니다.
+
 ## 5. 작업 패키지
 
-순서대로 진행합니다. 규모는 변경 범위의 어림입니다. S는 한두 파일의 국소 변경, M은 여러 파일과 새 테스트, L은 구조가 바뀌는 변경입니다. 테스트 이름은 저장소의 관례대로 문장으로 적었고, SPEC.md 부록 B에 그대로 올립니다.
+실행 순서는 이 절 끝의 규칙 6번에 있습니다. 규모는 변경 범위의 어림입니다. S는 한두 파일의 국소 변경, M은 여러 파일과 새 테스트, L은 구조가 바뀌는 변경입니다. 테스트 이름은 저장소의 관례대로 문장으로 적었고, SPEC.md 부록 B에 그대로 올립니다.
 
 ### 묶음 1. 안전과 정합성
+
+#### WP-00 서식 정리 (S, B-19)
+
+- SPEC: 없음.
+- 코드: `uv run ruff format .`을 한 번 돌립니다. 코드 파일 6개의 서식만 바뀌고 동작은 바뀌지 않습니다. 다른 변경을 섞지 않습니다.
+- 완료 기준: `uv run ruff format --check .`가 통과하고 단위 테스트가 그대로 통과합니다. `ruff check`가 지적하는 RUF006 두 건은 WP-03에서 그 코드가 지워질 때 없어집니다.
 
 #### WP-01 단위 테스트 격리 (S, B-04, G-13)
 
@@ -267,20 +297,20 @@ flowchart TD
 #### WP-05 슬라이드 요청의 구조화와 승인 (M, B-03, B-08, G-06)
 
 - SPEC: INV-6 개정, WEB-9 개정.
-- 코드: `POST /api/jobs/{id}/slides`를 더하고 `/deck`의 `replan`을 없앱니다. `send_message`의 후처리, `_requested_slide_languages`, `_LANG_MENTIONS`, `hasattr` 검사를 지웁니다. `request_slides(languages, minutes, audience)` 도구와 상태 키 `SLIDE_REQUEST`, `SURFACE`를 더합니다. 상태 응답에 `slide_request`를 싣고 승인과 거절 경로를 둡니다. `set_presentation_brief`의 기본 인자를 없애고, 0과 빈 문자열을 "지금 값 유지"로 정의합니다. 코디네이터 지시문의 슬라이드 문단을 새 도구에 맞춥니다. 페이지에는 4.2의 승인 대화상자와, 계획이 없는 언어의 "슬라이드 생성…" 버튼, 에이전트가 남긴 요청의 승인 알림을 이 작업에서 함께 넣습니다. 채팅으로 덱을 만들던 길을 없애는 작업이므로 대체 수단이 같은 커밋에 있어야 합니다.
-- 테스트: `test_a_message_to_the_agent_creates_no_deck`, `test_a_slide_request_from_the_agent_waits_for_a_persons_approval`, `test_slides_for_several_languages_are_one_request`, `test_on_the_page_the_brief_tool_points_to_request_slides`.
+- 코드: `POST /api/jobs/{id}/slides`를 더하고 `/deck`의 `replan`을 없앱니다. `send_message`의 후처리, `_requested_slide_languages`, `_LANG_MENTIONS`, `hasattr` 검사를 지웁니다. 도구 `request_approval_to_create_slide_decks(languages, minutes, audience)`와 상태 키 `SLIDE_REQUEST`, `SURFACE`를 더합니다. 이 도구는 게시 도구처럼 `request_confirmation`으로 멈추고, 승인되면 요청을 상태에 기록하고 `status`가 `success`인 결과를 돌려줍니다. 실행 관리 코드는 에이전트 턴이 끝날 때마다 기록된 요청을 꺼내 슬라이드 레인에 시작시키고, 레인이 바쁘면 알림으로 남깁니다. 승인 알림은 지금의 승인 요청 표시와 `/approval` 경로를 그대로 씁니다. `set_presentation_brief`의 기본 인자를 없애고, 0과 빈 문자열을 "지금 값 유지"로 정의합니다. 코디네이터 지시문의 슬라이드 문단을 새 도구에 맞춥니다. 평가의 `publish_requires_approval`이 보는 도구 목록에 새 도구를 더합니다. 페이지에는 4.2의 승인 대화상자와 계획이 없는 언어의 "슬라이드 생성…" 버튼을 이 작업에서 함께 넣습니다. 채팅으로 덱을 만들던 길을 없애는 작업이므로 대체 수단이 같은 커밋에 있어야 합니다.
+- 테스트: `test_a_message_to_the_agent_creates_no_deck`, `test_a_slide_request_from_the_agent_waits_for_a_persons_approval`, `test_an_approved_slide_request_runs_in_the_slides_lane`, `test_slides_for_several_languages_are_one_request`, `test_on_the_page_the_brief_tool_points_to_the_request_tool`. 승인 테스트는 `tests/unit/test_approvals.py`처럼 실제 ADK 실행기와 대본으로 움직이는 모델을 씁니다.
 - 완료 기준: `web_ui.py`에 요청문을 들여다보는 코드가 없습니다.
 
 #### WP-06 글 편집 단일 경로 (M, B-05, G-04, G-05)
 
 - SPEC: PUB-7 개정, PUB-11 신설, SRC-6 개정, WEB-15 신설, 7절의 편집 한계 문단 개정.
-- 코드: `app/tools/articles.py`에 `apply_post_edit`를 두고 `save_edit`의 글 부분과 에이전트 도구가 이것을 부릅니다. `update_article_post`를 `set_post_title`과 `replace_post_text`로 바꿉니다. 현지화 보고 단계에서 `LOCALIZED_FROM`(언어별 원본 다이제스트)을 기록하고 행에 `older_than_source`를 싣습니다. 제목 길이 상수를 한 곳에 둡니다. `save_edit` 설명문과 편집기의 안내 문장을 고칩니다. 코디네이터 지시문의 글 수정 문단을 새 도구 두 개에 맞추고 `tests/unit/test_prompts.py`에서 그 문장을 고정합니다. `replace_post_text`가 거절할 때는 구절이 몇 번 나왔는지와, 한 번만 나오도록 더 길게 인용하라는 안내를 돌려줍니다.
+- 코드: `app/tools/articles.py`에 `apply_post_edit`를 두고 `save_edit`의 글 부분과 에이전트 도구가 이것을 부릅니다. `update_article_post`를 `set_article_post_title`과 `replace_passage_in_article_post`로 바꿉니다. 두 도구는 WP-19의 규약을 처음부터 따릅니다. 현지화 보고 단계에서 `LOCALIZED_FROM`(언어별 원본 다이제스트)을 기록하고 행에 `older_than_source`를 싣습니다. 제목 길이 상수를 한 곳에 둡니다. `save_edit` 설명문과 편집기의 안내 문장을 고칩니다. 코디네이터 지시문의 글 수정 문단을 새 도구 두 개에 맞추고 `tests/unit/test_prompts.py`에서 그 문장을 고정합니다. `replace_passage_in_article_post`가 거절할 때는 구절이 몇 번 나왔는지와, 한 번만 나오도록 더 길게 인용하라는 안내를 돌려줍니다.
 - 테스트: `test_a_post_is_changed_through_one_function_whoever_changes_it`, `test_the_agent_replaces_a_quoted_passage_and_nothing_else`, `test_a_passage_that_is_missing_or_repeated_is_refused`, `test_a_public_post_is_not_changed_by_the_agent`, `test_the_naver_file_follows_an_edit_by_the_agent`, `test_a_localization_older_than_the_source_is_marked`.
 
 #### WP-07 원문 보관, 구조화 검증, 모델 관문 (M, G-02, G-03, B-07)
 
 - SPEC: INV-11 개정, SRC-7 신설, SRC-3 개정, OPS-4 신설.
-- 코드: `app/llm.py`에 관문을 둡니다. 작업 종류로 모델을 고르고, 재시도 설정을 에이전트와 맞추고, 크기만 로그에 남기고, 본문을 `prompts.fenced`로 감쌉니다. `structurer.py`는 관문을 쓰고 `same_letters(original, structured)`로 검증합니다. 코드 펜스의 언어 표시는 비교에서 뺍니다. 원문을 `source.original.md`와 저장소의 첫 판으로 남깁니다. `app/models.py`에 작업 종류 `structure_source`를 더합니다(모델 이름은 바꾸지 않습니다).
+- 코드: `app/llm.py`에 관문을 둡니다. 작업 종류로 모델을 고르고, 재시도 설정을 에이전트와 맞추고, 크기만 로그에 남기고, 본문을 `prompts.fenced`로 감쌉니다. `structurer.py`는 관문을 쓰고 `same_letters(original, structured)`로 검증합니다. 코드 펜스의 언어 표시는 비교에서 뺍니다. 원문을 `source.original.md`와 저장소의 첫 판으로 남깁니다. `app/models.py`에 작업 종류 `structure_source`를 더합니다(모델 이름은 바꾸지 않습니다). 관문 호출은 도구 호출처럼 의도와 결과를 한 쌍으로 기록합니다.
 - 테스트: `test_the_text_as_supplied_is_kept_beside_the_seed`, `test_a_structured_copy_is_used_only_when_its_letters_are_the_same`, `test_text_for_structuring_goes_to_the_model_between_markers`.
 
 #### WP-08 원본 종류 표와 Medium (S ~ M, G-01)
@@ -349,13 +379,56 @@ flowchart TD
 
 #### WP-18 SPEC v1.0 마감 (M, G-15)
 
-- 문서: SPEC.md 머리에 버전을 적고, 부록 A에 결정 37 ~ 51과 이 문서의 A-01 ~ A-17을 올리고, 7절과 8절을 고칩니다. kr-SPEC.md를 맞춥니다. README의 구조 그림, 상태 표, 파일 목록과 AGENTS.md의 프로젝트 규칙(레인, 단일 편집 경로, 웹 계층의 금지 사항, 문구집, 운영 규칙)을 고칩니다. 이 문서와 kr-AS-BUILT.md 머리에 "v1.0에 반영됨"을 적습니다.
-- 완료 기준: kr-AS-BUILT.md의 G-01 ~ G-15와 B-01 ~ B-14가 모두 아래 표의 작업으로 닫혔습니다.
+- 문서: SPEC.md 머리에 버전을 적고, 부록 A에 결정 37 ~ 51과 이 문서의 A-01 ~ A-21을 올리고, 7절과 8절을 고칩니다. kr-SPEC.md를 맞춥니다. AGENTS.md의 프로젝트 규칙(레인, 단일 편집 경로, 웹 계층의 금지 사항, 문구집, 도구 규약, 운영 규칙)을 고칩니다. 이 문서와 kr-AS-BUILT.md 머리에 "v1.0에 반영됨"을 적습니다.
+- README: 구조 그림에서 도구 개수를 지우고 레인과 원본 종류를 반영합니다. 1단계 설명을 SRC-7, SRC-8에 맞춥니다. 기능 위치 표를 8절의 근거 위치로 고칩니다. 상태 표에는 실제로 실행된 것만 올립니다. 2026-11-12에 페이지에서 DEV Community와 Qiita 게시, Naver URL 등록, 세 언어의 덱 생성이 실행되었고(kr-AS-BUILT.md 10절), 평가 결과는 WP-23의 것을 날짜와 함께 적습니다. 파일 목록을 맞춥니다.
+- 설정 파일: `.env.example`에 새 환경 변수를 더하고, 시크릿 이름 목록에 `GOOGLE_SLIDES_OAUTH`를 더하고, 로컬 시크릿 파일의 형식 설명을 코드와 맞춥니다. `agents-cli-manifest.yaml`의 `session_type` 옆에 코드의 실제 기본값이 SQLite 파일임을 주석으로 적습니다.
+- 테스트: `test_every_place_the_readme_points_to_exists`. README 기능 위치 표의 파일 경로와 백틱 안의 이름이 저장소에 있는지 확인합니다.
+- 완료 기준: kr-AS-BUILT.md의 G-01 ~ G-15와 B-01 ~ B-20이 모두 아래 표의 작업으로 닫혔습니다.
+
+### 묶음 4. 역량 근거 보강
+
+8절의 점검에서 나온 작업입니다. 번호는 뒤에 붙였지만 실행 순서는 "구현할 때의 규칙" 6번을 따릅니다.
+
+#### WP-19 도구 규약 (S ~ M, B-17)
+
+- SPEC: OPS-5 신설.
+- 코드: 도구 시그니처의 언어, 플랫폼, 코드 방식 매개변수를 `app/schemas.py`의 `LanguageCode`, `PlatformName`, `CodeMode`로 선언합니다. 언어 값을 직접 비교로 검사하는 도구 7개는 입력 모델로, `record_manually_posted_url`은 플랫폼과 주소를 함께 담는 입력 모델로 검사하고, 실패는 `validation_error`로 돌려줍니다. `read_article_post`와 `update_article_post`의 설명에 목적, `Args`, `Returns`를 채웁니다. 이후에 더하는 도구(WP-05, WP-06)는 처음부터 이 규약을 따릅니다.
+- 테스트: `test_every_tool_says_what_it_does_what_each_argument_is_and_what_it_returns`, `test_tools_take_typed_arguments_and_no_defaults`, `test_the_model_is_shown_the_allowed_languages_platforms_and_code_modes`, `test_a_wrong_argument_comes_back_as_a_guided_error_from_every_tool`. 대상 도구는 테스트에 적지 않고 `app/agent.py`의 에이전트 트리에서 읽습니다. `set_presentation_brief`의 기본 인자는 WP-05에서 없어지므로 그때까지 둘째 테스트에 예외로 적어 둡니다.
+- 완료 기준: 도구를 더하면서 매개변수 설명을 빼면 테스트가 실패합니다.
+
+#### WP-20 추적과 로그 상관 (M, B-15, B-16)
+
+- SPEC: OPS-1 개정, SEC-4 개정.
+- 코드: `app/observability.py`에 `setup_tracing()`을 둡니다. 추적 공급자가 이미 있으면 아무 것도 하지 않고, 없으면 서비스 이름을 단 공급자를 만듭니다. `BLOG_AGENT_TRACE_EXPORT=cloud`이면 ADK가 쓰는 것과 같은 `CloudTraceSpanExporter`를 붙입니다. `app/web_ui.py`의 `main()`과 `scripts/run_pipeline.py`가 시작할 때 부릅니다. 레인의 작업 실행기(WP-03)가 액션마다 루트 스팬(`run.<lane>.<action>`, 실행 id와 레인 속성)을 엽니다. Google Slides 호출(덱 생성, 읽기, 갱신, PDF), 다이어그램 그리기 호출, 모델 관문 호출(WP-07)에 `traced_span`을 답니다. 가림 필터는 식별자 필드(`function_call_id`, `invocation_id`, 실행 id)를 건너뛰고, 카드 번호 패턴은 영문자나 밑줄에 붙은 숫자열에 맞지 않게 고칩니다.
+- 테스트: `test_an_action_and_what_runs_under_it_share_one_trace`, `test_log_records_carry_the_trace_of_the_action`, `test_identifiers_are_not_taken_for_card_numbers`, `test_a_card_number_in_a_message_is_still_redacted`, `test_cloud_dlp_is_called_only_when_enabled_and_a_failure_keeps_the_regex_result`. 추적 테스트는 메모리에 모으는 내보내기를 세션 범위로 한 번만 설정합니다. 전역 공급자는 프로세스에서 한 번만 정할 수 있습니다. DLP 테스트는 대역 클라이언트를 씁니다.
+- 완료 기준: 액션 하나를 실행한 뒤의 구조화 로그에 빈 추적 id가 없고, 의도 기록과 결과 기록의 호출 id가 모두 짝이 맞습니다.
+- 사람이 확인할 것: `BLOG_AGENT_TRACE_EXPORT=cloud`로 한 번 실행해 Cloud Trace에서 추적 하나를 열어 봅니다. `BLOG_AGENT_ENABLE_DLP=true`로 한 번 실행해 DLP 경로가 오류 없이 도는지 봅니다. 둘 다 프로젝트의 API 사용 설정과 권한이 필요합니다.
+
+#### WP-21 활동 기록의 구조화 (S, B-18)
+
+- SPEC: OPS-1 개정에 포함.
+- 코드: `ArticlePipeline`의 기본 기록 함수를 `print`에서 구조화 로그(`event_phase`가 `ACTIVITY`)로 바꿉니다. 페이지의 `Job.add_log`도 같은 줄을 실행 id와 함께 구조화 로그에 남깁니다. 긴 줄은 가림 필터가 자릅니다. `scripts/`의 터미널 출력은 로그가 아니라 프로그램의 출력이므로 유지하되, 스크립트마다 출력 함수 하나로 모읍니다.
+- 테스트: `test_the_application_never_logs_with_print`, `test_activity_lines_are_also_structured_records`.
+
+#### WP-22 CI (S ~ M, B-19)
+
+- SPEC: OPS-6 신설, 8절의 열린 항목 3번 개정.
+- 코드: `.github/workflows/ci.yml`을 더합니다. 푸시와 풀 리퀘스트에서 `uv sync --extra lint`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run pytest tests/unit -q`를 돌리고, 별도 작업에서 `terraform fmt -check -recursive deployment/terraform`과 `deployment/terraform/single-project`의 `terraform init -backend=false`, `terraform validate`를 돌립니다. 시크릿은 쓰지 않습니다. SPEC 부록 B의 OPS-6 칸은 단위 테스트가 없으므로 `No unit test: ...` 형식으로 이유를 적습니다.
+- 완료 기준: `main`의 최신 커밋에서 CI가 통과합니다.
+- 사람이 확인할 것: Terraform 검증은 한 번도 돌려 본 적이 없습니다. CI에서 실패하면 그 오류를 고치는 것까지가 이 작업입니다.
+
+#### WP-23 평가 데이터셋 갱신 (S, B-20)
+
+- SPEC: 없음. README의 평가 설명을 고칩니다.
+- 코드: `unsupported_source_url` 사례의 주소를 계속 지원하지 않을 호스트로 바꿉니다. 사례 둘을 더합니다. 글이 없는 세션에서 슬라이드 덱을 요청하는 사례와, 초안을 건너뛰고 바로 공개 게시하라는 사례입니다. 둘 다 아무 것도 만들거나 보내지 않아야 통과합니다. `tests/eval/response_quality.py`의 판정 모델 이름을 `FAST_MODEL_NAME`에서 읽습니다.
+- 확인: `agents-cli eval run`의 결과 줄을 README의 상태 표에 날짜와 함께 적습니다. 작업 전 기준선은 6개 사례 `RESULT: PASS`이고(kr-AS-BUILT.md 10절), 결과 파일은 이 머신의 `artifacts/grade_results/results_20261112_123304.json`입니다. `agents-cli eval compare`로 기준선과 비교합니다.
+- 사람이 확인할 것: 평가는 실제 모델을 부릅니다. 실행 전에 알립니다.
 
 ### 추적표
 
 | 작업 | 닫는 항목 |
 | :--- | :--- |
+| WP-00 | B-19 |
 | WP-01 | B-04, G-13 |
 | WP-02 | B-01, B-02 |
 | WP-03 | B-02, G-07 |
@@ -374,16 +447,22 @@ flowchart TD
 | WP-16 | B-13 |
 | WP-17 | B-14 |
 | WP-18 | G-12, G-15 |
+| WP-19 | B-17 |
+| WP-20 | B-15, B-16 |
+| WP-21 | B-18 |
+| WP-22 | B-19 |
+| WP-23 | B-20 |
 
 ### 구현할 때의 규칙
 
-1. 작업 하나를 SPEC 문구, 코드, 테스트 순서로 끝내고 `uv run pytest tests/unit -q`가 통과한 뒤 커밋합니다. 작업 하나가 커밋 하나입니다.
+1. 작업 하나를 SPEC 문구, 코드, 테스트 순서로 끝내고 `uv run pytest tests/unit -q`, `uv run ruff check .`, `uv run ruff format --check .`가 통과한 뒤 커밋합니다. `ruff check`의 RUF006 두 건만 WP-03까지 예외입니다. 작업 하나가 커밋 하나입니다.
 2. SPEC.md와 kr-SPEC.md는 같은 커밋에서 함께 고칩니다. 영어 문구는 부록 2의 문장을 씁니다.
 3. 모델 이름, 사실과 예시에 관한 지시문, 게시 정책은 해당 작업에 적힌 범위 밖에서는 건드리지 않습니다.
 4. 실제 플랫폼 게시와 Drive 파일 생성이 따르는 확인은 사람이 합니다. 구현 중에는 단위 테스트와 대역으로만 확인합니다.
-5. 사람이 쓰고 있는 서버를 다시 띄우지 않습니다. 확인이 필요하면 `--port 8503`, 별도의 `BLOG_AGENT_WORKSPACE_DIR`과 `LOCAL_SESSION_DB`로 띄웁니다. 실행 기록 파일은 고치지 않습니다.
-6. 묶음 1은 순서를 지킵니다(WP-01, 02, 03, 04, 05). WP-06 ~ 09는 WP-02 뒤라면 순서가 자유롭습니다. 묶음 2는 WP-10, WP-11을 먼저 합니다.
+5. 사람이 쓰고 있는 서버를 다시 띄우지 않습니다. 확인이 필요하면 `--port 8503`, 별도의 `BLOG_AGENT_WORKSPACE_DIR`과 `LOCAL_SESSION_DB`로 띄웁니다. 평가를 돌릴 때도 이 두 값을 임시 폴더로 줍니다. 실행 기록 파일은 고치지 않습니다.
+6. 순서는 WP-00, 01, 19, 02, 03, 22, 04, 05이고 여기까지는 바꾸지 않습니다. WP-06 ~ 09는 그 뒤에 순서가 자유롭습니다. 이어서 WP-20, 21, 묶음 2(WP-10, 11 먼저), 묶음 3의 WP-16, 17 순서로 하고, WP-23과 WP-18이 마지막입니다.
 7. 작업 하나가 끝날 때마다 페이지에서 그 전에 되던 일이 계속 되어야 합니다. 기능을 없애는 작업은 대체 수단을 같은 작업에 넣습니다.
+8. 8절 표의 근거(파일과 이름)를 없애거나 옮기는 변경은 같은 커밋에서 8절 표를 고칩니다. 근거를 없애기만 하는 변경은 하지 않습니다.
 
 ## 6. 결정이 필요한 항목
 
@@ -392,12 +471,13 @@ flowchart TD
 | 번호 | 질문 | 권장 | 다른 선택 | 영향 |
 | :--- | :--- | :--- | :--- | :--- |
 | Q1 | 직접 입력한 프롬프트를 칩에 계속 보여 줄까요 | 칩은 제안만, 직접 입력한 것은 모달의 "내 기록"에 입력한 그대로 | 지금처럼 칩에 섞고 화면 언어로 번역 | WP-13. 다른 선택이면 번역 호출을 관문 모듈로 옮겨 유지합니다 |
-| Q2 | 문장으로 슬라이드를 요청했을 때 승인 대화상자를 거칠까요 | 거칩니다. 클릭 한 번이 늘지만 Drive에 파일이 생기는 일은 항상 승인을 지납니다 | 지금처럼 바로 생성. 또는 채팅에서는 버튼을 쓰라고 안내만 하기(가장 단순하고 `request_slides` 도구가 필요 없음) | WP-05. 바로 생성을 고르면 INV-6을 "문장으로 요청해도 된다"로 고쳐야 합니다 |
+| Q2 | 문장으로 슬라이드를 요청했을 때 승인을 거칠까요 | 거칩니다. 게시할 때와 같은 승인 알림이 뜨고, 한 번 눌러야 시작합니다 | 지금처럼 바로 생성. 또는 채팅에서는 버튼을 쓰라고 안내만 하기(가장 단순하고 새 도구가 필요 없음) | WP-05. 바로 생성을 고르면 INV-6을 "문장으로 요청해도 된다"로 고쳐야 합니다 |
 | Q3 | 평문 자동 구조화를 어떻게 할까요 | 유지하되 글자 보존 검사를 통과한 경우에만 적용 | 기능 삭제, 또는 실행 옵션의 체크박스로 | WP-07. 검사가 엄격해서 모델이 낱말을 더하거나 뺀 구조화본은 버려집니다. 그때는 원문으로 진행하고 알림에 그렇게 적습니다 |
 | Q4 | 글 확정 때 PDF를 자동으로 내보내던 동작을 없애도 될까요 | 없애고 버튼으로만 | 유지 | WP-09. 유지하면 글 레인의 확정이 슬라이드 레인의 덱 기록을 고치게 되어 레인의 경계가 흐려집니다 |
 | Q5 | 접근 토큰을 v1에 넣을까요 | 넣습니다. 다른 주소로 띄워 쓰는 경우 게시 권한이 열려 있습니다 | v1 뒤로 미룸 | WP-17 |
 | Q6 | 세 언어의 슬라이드 계획을 동시에 돌릴까요 | 동시에(기본 3). 할당량 오류가 나면 1로 낮춥니다 | 차례로(기본 1) | WP-04의 기본값 |
 | Q7 | `LICENSE` 파일을 추가할까요 | README와 파일 머리말대로 Apache-2.0을 추가 | 다른 라이선스, 또는 보류 | WP-18. SPEC 8절의 열린 항목입니다 |
+| Q8 | CI를 추가할까요 | GitHub Actions로 린터, 단위 테스트, Terraform 검증. 시크릿이 필요 없습니다 | 추가하지 않음 | WP-22 |
 
 ## 7. v1에 넣지 않는 것
 
@@ -409,7 +489,51 @@ flowchart TD
 | ADK `Workflow`로 이전 | `Workflow`를 LLM 에이전트의 하위에 둘 수 없는 동안은 유지합니다 (README에 기록됨) |
 | 에이전트의 답과 플랫폼 오류 문장의 번역 | 모델과 외부 서비스가 만든 문장입니다 |
 | 로그인과 여러 사용자 | SPEC의 범위 밖입니다 |
-| 배포, Terraform 적용, CI | SPEC 8절 그대로입니다 |
+| 배포, Terraform 적용 | SPEC 8절 그대로입니다. CI는 WP-22로 들어옵니다 |
+| 평가를 CI에서 돌리기 | 실제 모델과 자격 증명이 필요합니다. 평가는 사람이 돌리고 결과를 README에 적습니다 |
+
+## 8. 역량별 근거 점검
+
+README의 기능 위치 표가 다루는 역량을 19개로 나누어, 지금 코드에 있는 근거와 약한 곳을 다시 대조했습니다. 약한 곳은 모두 5절의 작업으로 닫습니다.
+
+| 번호 | 역량 | 지금의 근거 | 약한 곳 | 닫는 작업 |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | 도구 설명 | 도구 18개 중 16개에 목적, `Args`, `Returns` | 2개에 매개변수 설명이 없음 (B-17) | WP-19, 06 |
+| 2 | 도구 이름 | 하는 일과 대상이 이름에 있음. 예: `publish_qiita_article_draft` | `update_article_post`는 무엇을 어떻게 바꾸는지 이름에 없음 | WP-06 |
+| 3 | 명시적 스키마 | `app/schemas.py`의 입력, 출력 모델. `output_schema` 3개 | 허용 값이 모델에 전달되지 않음. 7개 도구는 직접 비교로 검사 (B-17) | WP-19 |
+| 4 | 복구를 안내하는 오류 | 18개 모두 `error_code`와 `recovery_instruction`을 돌려줌 | 없음. 새 도구도 같아야 함 | WP-19의 테스트 |
+| 5 | 시스템 지시문 | `COORDINATOR_INSTRUCTION`의 역할, 도메인 지식, 세션 상태, 작업 흐름, 제약 구획 | 없음. WP-05, 06이 문단을 고칠 때 구획을 유지 | – |
+| 6 | 대화 이력 압축 | `EventsCompactionConfig`, `ContextCacheConfig` | 없음 | – |
+| 7 | 영구 세션 상태 | SQLite 세션, Agent Runtime 세션, 글 저장소, 실행 기록 | 매니페스트의 `session_type` 값이 실제 기본값과 달라 보임 | WP-18 |
+| 8 | 비동기 기억 작업 | `schedule_memory_consolidation`의 백그라운드 작업, `PreloadMemoryTool` | 없음 | – |
+| 9 | 멀티 에이전트 패턴 | 코디네이터, `ParallelAgent` 2개, `LoopAgent` 2개, `SequentialAgent` 4개, 코드 게이트 | 없음. WP-04가 계획 파이프라인을 한 벌 더 만들어도 구성은 같음 | – |
+| 10 | 모델 배정 | `app/models.py`의 `MODEL_ROUTES` 표 | 표 밖의 직접 호출 2곳. 평가의 판정 모델 이름이 코드에 있음 (B-07, B-20) | WP-07, 13, 23 |
+| 11 | 가드레일과 정책 | `ContentPolicyPlugin`, `app/policy.py`, 구조 검사와 검토 루프, 무작위 표식 | 직접 호출 2곳이 플러그인과 표식을 지나지 않음 (B-07, G-03) | WP-07, 13 |
+| 12 | 사람의 승인 | 게시 2개, 덱, 확정 도구의 `request_confirmation`과 `ResumabilityConfig` | 채팅 문장이 승인 없이 덱을 만드는 길 (B-03) | WP-05 |
+| 13 | 구조화 로그 | `StructuredLogHandler`, 가림 필터, `log_event` | 활동 기록의 기본 출력이 `print` (B-18) | WP-21 |
+| 14 | 의도와 결과 기록 | `ObservabilityPlugin`, `ArticlePipeline.act`. 실제 로그에 의도 241건, 결과 240건 | 호출 id가 가려져 짝이 안 맞는 기록이 360건 중 24건 (B-16) | WP-20 |
+| 15 | 분산 추적 | `traced_span` 9곳, ADK의 스팬, API 서버의 내보내기 설정 | 페이지와 스크립트에서는 꺼져 있음. 로그 710건의 추적 id가 모두 비어 있음 (B-15) | WP-20 |
+| 16 | 개인정보 가림 | 정규식은 항상, Cloud DLP는 설정으로. 로그와 기억에 적용 | DLP 경로를 실행해 본 적이 없음. 식별자를 카드 번호로 오인 (B-16) | WP-20 |
+| 17 | 자동 평가 | 평가 6개 사례와 지표 2개, 단위 테스트 431건, SPEC 추적 검사 | 평가 사례 하나가 낡음. 단위 테스트 한 건이 모델에 닿음 (B-04, B-20) | WP-01, 23 |
+| 18 | 코드형 인프라 | Terraform(스캐폴드와 `blog_agent.tf`), README의 `agents-cli` 명령 표 | 검증한 적이 없음. CI가 없음. 린터가 통과하지 않음 (B-19) | WP-00, 22 |
+| 19 | 시크릿 관리 | `get_secret`의 환경 변수, Secret Manager, 저장소 밖 파일 순서. Terraform의 시크릿 컨테이너와 최소 권한 | 없음 | – |
+
+9개(4, 5, 6, 7, 8, 9, 10, 11, 19)는 지금 근거로 충분하고, 그중 셋(7, 10, 11)에 다듬을 곳이 있습니다. 나머지 10개에는 코드를 꼼꼼히 읽는 사람이 지적할 만한 약한 곳이 있습니다.
+
+### 점검하면서 실행한 것
+
+| 확인 | 결과 |
+| :--- | :--- |
+| 에이전트에 등록된 도구 18개의 설명, 타입, 기본 인자, 오류 반환을 소스에서 기계로 검사 | 위 1, 3, 4번의 수치 |
+| 모델에 전달되는 도구 선언을 출력 | 언어, 플랫폼, 코드 방식이 값 목록 없는 문자열. 타입을 `LanguageCode` 등으로 바꾸면 선언에 값 목록이 생김 |
+| 타입과 입력 모델을 그렇게 바꾼 시험용 도구를 값 목록 밖의 인자로 호출 | 입력 모델이 복구 안내가 든 오류를 돌려줌. 예외는 나지 않음 |
+| 추적 공급자를 설정하고, 루트 스팬 안에서 모델을 부르지 않는 에이전트 턴과 자식 스팬 하나를 실행 | 4.10절의 결과 |
+| 개발 서버의 구조화 로그 710건의 필드 집계 | 위 14, 15번의 수치 |
+| 추적되는 파일 88개를 저장소의 자격 증명 패턴으로 훑음 | 걸린 2건은 탐지기 테스트에 넣은 가짜 값. 그 밖에 걸린 것은 없음 |
+| `ruff check`, `ruff format --check` | 오류 2건, 코드 파일 6개. 커밋 `58c2dc1`에서는 둘 다 통과 |
+| `agents-cli eval run` 1회 | 6개 사례, `RESULT: PASS` |
+
+이 표는 근거가 코드에 있는지와 약한 곳이 닫히는지만 말합니다. 바깥의 검토자가 각 역량을 어떻게 평가할지는 이 점검으로 알 수 없습니다.
 
 ---
 
@@ -419,15 +543,22 @@ flowchart TD
 
 ```python
 MERGED = {  # 언어나 플랫폼이 하위 키인 딕셔너리
-    state.LOCALIZED_TITLES, state.FIDELITY_REPORT, state.FINALIZED_POSTS,
-    state.FINALIZATIONS_ASKED, state.PUBLICATIONS, state.SLIDE_PLANS,
-    state.SLIDE_TIMING, state.GOOGLE_SLIDES_DECKS, state.DECK_TEXT_BASELINE,
+    state.LOCALIZED_TITLES,
+    state.FIDELITY_REPORT,
+    state.FINALIZED_POSTS,
+    state.FINALIZATIONS_ASKED,
+    state.PUBLICATIONS,
+    state.SLIDE_PLANS,
+    state.SLIDE_TIMING,
+    state.GOOGLE_SLIDES_DECKS,
+    state.DECK_TEXT_BASELINE,
 }
+
 
 async def commit(self, base: dict, delta: dict) -> None:
     for attempt in (1, 2):
-        async with self._write_lock:          # 에이전트 턴은 턴 내내 이 잠금을 쥔다
-            fresh = await self._session()      # 잠금 안에서 새로 읽는다
+        async with self._write_lock:  # 에이전트 턴은 턴 내내 이 잠금을 쥔다
+            fresh = await self._session()  # 잠금 안에서 새로 읽는다
             merged = {}
             for key, value in delta.items():
                 if key in MERGED and isinstance(value, dict):
@@ -436,13 +567,13 @@ async def commit(self, base: dict, delta: dict) -> None:
                     now.update({k: v for k, v in value.items() if before.get(k) != v})
                     for gone in before.keys() - value.keys():
                         now.pop(gone, None)
-                    merged[key] = now          # 도구가 바꾼 하위 키만 반영
+                    merged[key] = now  # 도구가 바꾼 하위 키만 반영
                 else:
                     merged[key] = value
             try:
                 await self._sessions.append_event(fresh, _edit_event(merged))
                 return
-            except StaleSessionError:          # 잠금 밖의 작성자가 있었을 때 한 번 더
+            except StaleSessionError:  # 잠금 밖의 작성자가 있었을 때 한 번 더
                 if attempt == 2:
                     raise
 ```
@@ -453,7 +584,7 @@ SPEC.md에 들어갈 영어 문장입니다. 개정은 지금 문장을 이것�
 
 | id | 종류 | 문장 |
 | :--- | :--- | :--- |
-| INV-6 | 개정 | New Google Slides files are created only after a person approved them: with the run options (a slide length and at least one language), or in the approval dialog of a slide request, which names the languages, the length, the audience and the account. A message typed to the agent never creates a file in Drive by itself |
+| INV-6 | 개정 | New Google Slides files are created only after a person approved them: with the run options (a slide length and at least one language), or in the approval of a slide request, which names the languages, the length, the audience and the account. That approval is the dialog of the page's button, or the confirmation the agent's request tool pauses for. A message typed to the agent never creates a file in Drive without it |
 | INV-8 | 개정 | 접속 대상 목록에 "the public RSS feed of a Medium author (`medium.com/feed/...`)"를 더합니다 |
 | INV-11 | 개정 | The text an author supplied is kept exactly as supplied, as `source.original.md` and as the first version in the article store. The seed is that text; the one exception is SRC-7 |
 | SRC-1 | 개정 | 원본 목록에 "or one https URL of a Medium post (`medium.com/@author/slug`)"를 더합니다 |
@@ -473,7 +604,7 @@ SPEC.md에 들어갈 영어 문장입니다. 개정은 지금 문장을 이것�
 | RUN-4 | 신설 | A run that a server stop interrupted says which lane was interrupted and offers to make the slides that were asked for and are missing, with the options of that run |
 | WEB-3 | 개정 | 진행 표시 설명을 3행 배치와 "the slides step shows each language asked for as waiting, planning, creating the deck, done or failed"로 바꿉니다 |
 | WEB-5 | 개정 | Slides: per language, what its state allows and nothing else: "Create slides…" without a plan; "Speaker notes" and "Create deck…" with a plan; with a deck also "Google Slides", "PDF" with its export time or "Export PDF", and "Re-create…"; "Update deck…" when the speaker notes changed after the deck was made |
-| WEB-9 | 개정 | 끝에 더합니다. "Under the box are suggestions from the page's own texts, in the interface language, ordered by how often they were used. What a person typed is kept in the browser as typed, listed under its own heading, and never translated. A request for slides is shown for approval before anything is made (INV-6)" |
+| WEB-9 | 개정 | 끝에 더합니다. "Under the box are suggestions from the page's own texts, in the interface language, ordered by how often they were used. What a person typed is kept in the browser as typed, listed under its own heading, and never translated. A request for slides typed to the agent is shown as an approval request, like a post, before anything is made (INV-6)" |
 | WEB-11 | 개정 | While a lane works, nothing else can be started in that lane; one sentence says so and names the lane. The other lane stays usable (RUN-1). A lost connection is shown. When an action ends without doing what was asked, a notice says what did not happen (INV-12) |
 | WEB-13 | 신설 | The page, the editor and the previews are shown in English, Korean or Japanese, chosen in Settings and remembered in the browser. Every text the page itself shows comes from one catalog per language with the same keys; a text that is missing falls back to English. Notices from the server carry a code so the page can show them in that language. What the author wrote or typed, what the agent answered and what a platform returned are shown as they are |
 | WEB-14 | 신설 | "Recent sources" lists the runs on this server, newest first, with title, kind and length, from the run records alone. An entry opens its run or fills the source box; hiding an entry removes it from the list and leaves its files |
@@ -482,5 +613,9 @@ SPEC.md에 들어갈 영어 문장입니다. 개정은 지금 문장을 이것�
 | SEC-1 | 개정 | 둘째 문장을 "Started with another `--host`, it answers under any name and requires the access token of SEC-7"로 바꿉니다 |
 | SEC-7 | 신설 | On an address other than localhost every route requires an access token: `BLOG_AGENT_UI_TOKEN`, or one made at start and shown once in the server's log as part of the address to open. The first visit exchanges it for a cookie. It is never written to the activity log or returned by a route |
 | SEC-8 | 신설 | The page and the editor run script from this server's own files only; a policy header forbids inline script |
+| SEC-4 | 개정 | 끝에 더합니다. "Identifiers (function call ids, invocation ids, run ids, trace ids) are not redacted, and a run of digits inside an identifier is not taken for a card number" |
+| OPS-1 | 개정 | Every tool call is logged as intent and outcome in structured JSON with redaction, and so is every direct model call. Every action a person starts on the page or with the script runs inside one trace: a root span for the action, the spans of the agents and tools under it, and a child span for every outbound call (platforms, Google Slides, the diagram service, models). Log records carry the trace and span ids. Spans are exported to Cloud Trace when `BLOG_AGENT_TRACE_EXPORT=cloud`. Activity lines shown on the page are also written as structured records with the run id; nothing in `app/` writes a log with `print` |
 | OPS-2 | 개정 | 끝에 더합니다. "A fixture makes this so: it refuses network connections and the model gateway, and `.env` is not read" |
 | OPS-4 | 신설 | Models are called from two places: the agents in `app/agent.py` and the gateway in `app/llm.py`. The web layer calls no model and no platform; it starts actions of the pipeline |
+| OPS-5 | 신설 | Every function an agent can call as a tool has a name that says what it does and to what; a docstring with its purpose, each argument and what it returns; typed arguments without defaults, where the allowed languages, platforms and code modes are enumerations the model is shown; arguments checked through a Pydantic model before anything happens; and, when it cannot do what was asked, a result with `error_code` and `recovery_instruction` instead of an exception |
+| OPS-6 | 신설 | Every push runs the linter, the unit tests and a Terraform validation in CI (`.github/workflows/ci.yml`). None of them needs a credential |
