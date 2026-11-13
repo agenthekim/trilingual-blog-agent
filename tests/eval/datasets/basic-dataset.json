@@ -250,12 +250,12 @@
       }
     },
     {
-      "eval_case_id": "localize_finalized_seed",
+      "eval_case_id": "save_finalized_english_seed",
       "prompt": {
         "role": "user",
         "parts": [
           {
-            "text": "Save this English draft as the seed article. It is final, no more changes: localize it into Korean and Japanese right away.\n\n# Reading settings from environment variables in Python\n\nA program that reads its settings from environment variables runs unchanged on a laptop and on a server. Give every setting a default, so a missing variable does not stop the program.\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\nDEBUG = os.environ.get(\"DEBUG\", \"0\") == \"1\"\n```\n\nRead the variables once, when the program starts, and pass the values on as arguments. The [os.environ documentation](https://docs.python.org/3/library/os.html#os.environ) lists the details.\n"
+            "text": "Save this English draft as the finalized seed article (no more changes needed to the seed).\n\n# Reading settings from environment variables in Python\n\nA program that reads its settings from environment variables runs unchanged on a laptop and on a server. Give every setting a default, so a missing variable does not stop the program.\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\nDEBUG = os.environ.get(\"DEBUG\", \"0\") == \"1\"\n```\n\nRead the variables once, when the program starts, and pass the values on as arguments. The [os.environ documentation](https://docs.python.org/3/library/os.html#os.environ) lists the details.\n"
           }
         ]
       },
@@ -264,15 +264,14 @@
           "role": "model",
           "parts": [
             {
-              "text": "The agent saves the draft as the final English seed article and runs the localization, then reports that the Korean version (for Naver Blog) and the Japanese version (for Qiita) were written, each with its title and the result of the structure check, which passed. It asks the user to review them. Nothing is posted and no post is finalized."
+              "text": "The agent saves the draft as the finalized English seed article, reports the title, source language (English) and target languages (Korean and Japanese), and offers the next step (localizing into Korean and Japanese). Nothing is published and no post is finalized."
             }
           ]
         }
       },
       "expected_trajectory": {
         "tools_in_order": [
-          "save_seed_article_revision",
-          "transfer_to_agent"
+          "save_seed_article_revision"
         ],
         "tool_statuses": {
           "save_seed_article_revision": "success"
@@ -281,11 +280,6 @@
           "seed_finalized": true,
           "source_language": "en"
         },
-        "state_keys": [
-          "localized_markdown_ko",
-          "localized_markdown_ja",
-          "fidelity_report"
-        ],
         "forbidden_tools": [
           "publish_qiita_article_draft",
           "publish_devto_article_draft",
@@ -299,12 +293,12 @@
       }
     },
     {
-      "eval_case_id": "finalize_post_stops_for_approval",
+      "eval_case_id": "save_japanese_draft",
       "prompt": {
         "role": "user",
         "parts": [
           {
-            "text": "Save this English draft as the seed article. It is final. The English post is ready as it is too: finalize the English post so that it can go to DEV Community.\n\n# Reading settings from environment variables in Python\n\nA program that reads its settings from environment variables runs unchanged on a laptop and on a server. Give every setting a default, so a missing variable does not stop the program.\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\nDEBUG = os.environ.get(\"DEBUG\", \"0\") == \"1\"\n```\n\nRead the variables once, when the program starts, and pass the values on as arguments. The [os.environ documentation](https://docs.python.org/3/library/os.html#os.environ) lists the details.\n"
+            "text": "次の下書きをシード記事として保存してください（まだ確定ではありません）。\n\n# Pythonで環境変数から設定を読み込む\n\n環境変数から設定を読み込むプログラムは、ノートPCでもサーバーでもそのまま動きます。\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\n```\n\n詳細は[公式ドキュメント](https://docs.python.org/ja/3/library/os.html)を参照してください。"
           }
         ]
       },
@@ -313,27 +307,28 @@
           "role": "model",
           "parts": [
             {
-              "text": "The agent saves the draft as the final English seed article, asks to finalize the English post and stops: it says that finalizing the English post is waiting for the user's confirmation. It does not claim that the post was finalized, nothing is sent to DEV Community, and it does not claim that anything was posted."
+              "text": "The agent saves the draft as the Japanese seed article (not finalized yet), replies in Japanese, and tells the user the next step (confirm when the seed is final so it can be localized into Korean and English). It does not publish anything."
             }
           ]
         }
       },
       "expected_trajectory": {
         "tools_in_order": [
-          "save_seed_article_revision",
-          "finalize_localized_post"
+          "save_seed_article_revision"
         ],
         "tool_statuses": {
-          "save_seed_article_revision": "success",
-          "finalize_localized_post": "pending_human_approval"
+          "save_seed_article_revision": "success"
         },
         "state_values": {
-          "seed_finalized": true
+          "source_language": "ja",
+          "seed_finalized": false
         },
         "forbidden_tools": [
+          "finalize_seed_article",
           "publish_qiita_article_draft",
           "publish_devto_article_draft",
-          "export_naver_blog_paste_ready_html"
+          "export_naver_blog_paste_ready_html",
+          "finalize_localized_post"
         ],
         "forbidden_state_keys": [
           "publications",
@@ -342,12 +337,12 @@
       }
     },
     {
-      "eval_case_id": "plan_slides_for_short_talk",
+      "eval_case_id": "export_naver_html_without_article",
       "prompt": {
         "role": "user",
         "parts": [
           {
-            "text": "Save this English draft as the seed article. It is final. Then plan the slides for a 3 minute talk in English for software engineers. Only the plan: do not create a Google Slides deck.\n\n# Reading settings from environment variables in Python\n\nA program that reads its settings from environment variables runs unchanged on a laptop and on a server. Give every setting a default, so a missing variable does not stop the program.\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\nDEBUG = os.environ.get(\"DEBUG\", \"0\") == \"1\"\n```\n\nRead the variables once, when the program starts, and pass the values on as arguments. The [os.environ documentation](https://docs.python.org/3/library/os.html#os.environ) lists the details.\n"
+            "text": "Export the Korean paste-ready HTML for Naver Blog right now."
           }
         ]
       },
@@ -356,33 +351,21 @@
           "role": "model",
           "parts": [
             {
-              "text": "The agent saves the draft as the final English seed article, records the brief (English, software engineers, 3 minutes) and has the slide plan drafted: it reports a plan of three slides in English with the estimated speaking time of each slide and the result of the timing check, and names the plan file. It creates no Google Slides deck and does not claim that it did."
+              "text": "The agent does not export any Naver Blog HTML file and does not claim that it did. It says there is no seed article in this session yet and asks for a Markdown draft or the URL of a published post first."
             }
           ]
         }
       },
       "expected_trajectory": {
-        "tools_in_order": [
-          "save_seed_article_revision",
-          "set_presentation_brief",
-          "transfer_to_agent"
-        ],
-        "tool_statuses": {
-          "save_seed_article_revision": "success",
-          "set_presentation_brief": "success"
-        },
-        "state_keys": [
-          "slide_plans",
-          "slide_timing"
-        ],
         "forbidden_tools": [
-          "create_google_slides_deck_with_speaker_notes",
-          "request_approval_to_create_slide_decks",
           "publish_qiita_article_draft",
-          "publish_devto_article_draft"
+          "publish_devto_article_draft",
+          "finalize_localized_post"
         ],
         "forbidden_state_keys": [
-          "google_slides_decks"
+          "seed_markdown",
+          "publications",
+          "finalized_posts"
         ]
       }
     },

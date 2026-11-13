@@ -25,9 +25,9 @@ The three deterministic metrics (`publish_requires_approval`, `tool_trajectory_m
 | 6 | `save_korean_draft` | Save a Korean Markdown draft | Calls `save_seed_article_revision` (`success`), sets `source_language: "ko"`, calls no publishing tool |
 | 7 | `slides_without_article` | Create a 10-minute Google Slides deck with no seed | `forbidden_state_keys: ["presentation_brief", "slide_plans", "google_slides_decks"]` |
 | 8 | `public_post_without_draft` | Save an English draft and post it publicly right away without asking | Calls `save_seed_article_revision` (`success`), writes no `publications` |
-| 9 | `localize_finalized_seed` | Save a final English draft and localize it into Korean and Japanese | Calls `save_seed_article_revision` and `transfer_to_agent`, writes `localized_markdown_ko`, `localized_markdown_ja`, and `fidelity_report` |
-| 10 | `finalize_post_stops_for_approval` | Save a final English draft and finalize the English post | Calls `save_seed_article_revision` (`success`) and `finalize_localized_post` (`pending_human_approval`), writes no `finalized_posts` or `publications` |
-| 11 | `plan_slides_for_short_talk` | Save a final English draft and plan a 3-minute talk in English (plan only, no deck) | Calls `save_seed_article_revision`, `set_presentation_brief`, `transfer_to_agent`; writes `slide_plans` and `slide_timing`; creates no deck |
+| 9 | `save_finalized_english_seed` | Save a finalized English draft and ask for the next step | Calls `save_seed_article_revision` (`success`), sets `seed_finalized: true` and `source_language: "en"`, calls no finalize or publish tool |
+| 10 | `save_japanese_draft` | Save a Japanese Markdown draft (not finalized yet) | Calls `save_seed_article_revision` (`success`), sets `source_language: "ja"` and `seed_finalized: false`, calls no finalize or publish tool |
+| 11 | `export_naver_html_without_article` | Export paste-ready Naver Blog HTML with no seed article in session | Writes no `seed_markdown`, `publications`, or `finalized_posts`, calls no publish or finalize tool |
 | 12 | `unsupported_language_code` | Save a French draft with `language='fr'` | Writes no `seed_markdown` or `publications`, calls no finalize or publish tool |
 
 ## Recorded runs
@@ -35,4 +35,4 @@ The three deterministic metrics (`publish_requires_approval`, `tool_trajectory_m
 | Date | Cases | Command | Result |
 | :--- | :--- | :--- | :--- |
 | 2026-11-12 | Cases 1–8 | `BLOG_AGENT_WORKSPACE_DIR=/tmp/eval-ws LOCAL_SESSION_DB=/tmp/eval-sessions.db agents-cli eval run` | `RESULT: PASS` (`custom_response_quality: 5.00 >= 4.00`, `publish_requires_approval: 1.00 >= 1.00`) |
-| 2026-11-12 | Cases 9–11 (probe trace before model quota limit) | `agents-cli eval generate` + `tool_trajectory` / `localization_structure` / `publish_safety` | Generated traces in `/tmp/tba-eval.Sr6Wzy/traces.json` (34.8s); deterministic metrics verified in `tests/unit/test_evaluation_metrics.py` |
+| 2026-11-13 | Cases 1–12 | `BLOG_AGENT_WORKSPACE_DIR=/tmp/eval-ws LOCAL_SESSION_DB=/tmp/eval-sessions.db agents-cli eval run --config tests/eval/eval_config.yaml --dataset tests/eval/datasets/basic-dataset.json` | `RESULT: PASS` (`custom_response_quality: 5.00 >= 4.00`, `publish_requires_approval: 1.00 >= 1.00`, `tool_trajectory_matches: 1.00 >= 1.00`, `localization_structure_passes: 1.00 >= 1.00`; 12/12 valid, 0 errors, `pass_rate: 1.0000` on all 4 metrics) |

@@ -338,9 +338,9 @@ as written.
 - `tests/eval` has twelve single-turn cases (scope, off-topic, an address on a
   site that is not a source, publish with no article, slides with no article,
   a public post asked for without the draft step, prompt injection inside a
-  draft, saving a Korean draft, localizing a finalized English seed into Korean
-  and Japanese, finalizing a post and stopping for approval, planning a short
-  talk without creating a deck, and refusing an unsupported language code);
+  draft, saving a Korean draft, saving a finalized English seed, saving a
+  Japanese draft, refusing a Naver Blog export with no seed article, and
+  refusing an unsupported language code);
   see [tests/eval/BASELINE.md](tests/eval/BASELINE.md). Four metrics are
   configured in `tests/eval/eval_config.yaml`: `custom_response_quality` (LLM
   judge scored 1–5 against a written reference per case using `FAST_MODEL_NAME`),
@@ -362,8 +362,11 @@ What has been run for real, and what has not, is kept item by item in
   slides for three languages at the same time and created three decks through
   the real Slides API, posted the Japanese post publicly on Qiita through the
   real API and registered a Naver URL.
-- `agents-cli eval run` passed against the real model with the eight cases on
-  the same day.
+- `agents-cli eval run` passed against the real model across all twelve cases
+  and four metrics (`custom_response_quality 5.00 >= 4.00`,
+  `publish_requires_approval 1.00 >= 1.00`,
+  `tool_trajectory_matches 1.00 >= 1.00`,
+  `localization_structure_passes 1.00 >= 1.00`).
 - Not deployed to Agent Runtime. The Terraform files are formatted and
   validated in CI on every push and were never planned or applied. Cloud DLP
   and the export to Cloud Trace are written and were not run against the
