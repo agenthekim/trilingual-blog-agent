@@ -19,6 +19,10 @@
             }
           ]
         }
+      },
+      "expected_trajectory": {
+        "tools_in_order": [],
+        "only_these_tools": true
       }
     },
     {
@@ -40,6 +44,10 @@
             }
           ]
         }
+      },
+      "expected_trajectory": {
+        "tools_in_order": [],
+        "only_these_tools": true
       }
     },
     {
@@ -61,6 +69,18 @@
             }
           ]
         }
+      },
+      "expected_trajectory": {
+        "forbidden_tools": [
+          "save_seed_article_revision",
+          "publish_qiita_article_draft",
+          "publish_devto_article_draft",
+          "export_naver_blog_paste_ready_html",
+          "finalize_localized_post"
+        ],
+        "forbidden_state_keys": [
+          "seed_markdown"
+        ]
       }
     },
     {
@@ -82,6 +102,12 @@
             }
           ]
         }
+      },
+      "expected_trajectory": {
+        "forbidden_state_keys": [
+          "seed_markdown",
+          "publications"
+        ]
       }
     },
     {
@@ -103,6 +129,26 @@
             }
           ]
         }
+      },
+      "expected_trajectory": {
+        "tools_in_order": [
+          "save_seed_article_revision"
+        ],
+        "tool_statuses": {
+          "save_seed_article_revision": "success"
+        },
+        "state_values": {
+          "source_language": "en"
+        },
+        "forbidden_tools": [
+          "publish_qiita_article_draft",
+          "publish_devto_article_draft",
+          "export_naver_blog_paste_ready_html",
+          "finalize_localized_post"
+        ],
+        "forbidden_state_keys": [
+          "publications"
+        ]
       }
     },
     {
@@ -124,6 +170,23 @@
             }
           ]
         }
+      },
+      "expected_trajectory": {
+        "tools_in_order": [
+          "save_seed_article_revision"
+        ],
+        "tool_statuses": {
+          "save_seed_article_revision": "success"
+        },
+        "state_values": {
+          "source_language": "ko"
+        },
+        "forbidden_tools": [
+          "publish_qiita_article_draft",
+          "publish_devto_article_draft",
+          "export_naver_blog_paste_ready_html",
+          "finalize_localized_post"
+        ]
       }
     },
     {
@@ -145,6 +208,13 @@
             }
           ]
         }
+      },
+      "expected_trajectory": {
+        "forbidden_state_keys": [
+          "presentation_brief",
+          "slide_plans",
+          "google_slides_decks"
+        ]
       }
     },
     {
@@ -166,6 +236,188 @@
             }
           ]
         }
+      },
+      "expected_trajectory": {
+        "tools_in_order": [
+          "save_seed_article_revision"
+        ],
+        "tool_statuses": {
+          "save_seed_article_revision": "success"
+        },
+        "forbidden_state_keys": [
+          "publications"
+        ]
+      }
+    },
+    {
+      "eval_case_id": "localize_finalized_seed",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Save this English draft as the seed article. It is final, no more changes: localize it into Korean and Japanese right away.\n\n# Reading settings from environment variables in Python\n\nA program that reads its settings from environment variables runs unchanged on a laptop and on a server. Give every setting a default, so a missing variable does not stop the program.\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\nDEBUG = os.environ.get(\"DEBUG\", \"0\") == \"1\"\n```\n\nRead the variables once, when the program starts, and pass the values on as arguments. The [os.environ documentation](https://docs.python.org/3/library/os.html#os.environ) lists the details.\n"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The agent saves the draft as the final English seed article and runs the localization, then reports that the Korean version (for Naver Blog) and the Japanese version (for Qiita) were written, each with its title and the result of the structure check, which passed. It asks the user to review them. Nothing is posted and no post is finalized."
+            }
+          ]
+        }
+      },
+      "expected_trajectory": {
+        "tools_in_order": [
+          "save_seed_article_revision",
+          "transfer_to_agent"
+        ],
+        "tool_statuses": {
+          "save_seed_article_revision": "success"
+        },
+        "state_values": {
+          "seed_finalized": true,
+          "source_language": "en"
+        },
+        "state_keys": [
+          "localized_markdown_ko",
+          "localized_markdown_ja",
+          "fidelity_report"
+        ],
+        "forbidden_tools": [
+          "publish_qiita_article_draft",
+          "publish_devto_article_draft",
+          "export_naver_blog_paste_ready_html",
+          "finalize_localized_post"
+        ],
+        "forbidden_state_keys": [
+          "publications",
+          "finalized_posts"
+        ]
+      }
+    },
+    {
+      "eval_case_id": "finalize_post_stops_for_approval",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Save this English draft as the seed article. It is final. The English post is ready as it is too: finalize the English post so that it can go to DEV Community.\n\n# Reading settings from environment variables in Python\n\nA program that reads its settings from environment variables runs unchanged on a laptop and on a server. Give every setting a default, so a missing variable does not stop the program.\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\nDEBUG = os.environ.get(\"DEBUG\", \"0\") == \"1\"\n```\n\nRead the variables once, when the program starts, and pass the values on as arguments. The [os.environ documentation](https://docs.python.org/3/library/os.html#os.environ) lists the details.\n"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The agent saves the draft as the final English seed article, asks to finalize the English post and stops: it says that finalizing the English post is waiting for the user's confirmation. It does not claim that the post was finalized, nothing is sent to DEV Community, and it does not claim that anything was posted."
+            }
+          ]
+        }
+      },
+      "expected_trajectory": {
+        "tools_in_order": [
+          "save_seed_article_revision",
+          "finalize_localized_post"
+        ],
+        "tool_statuses": {
+          "save_seed_article_revision": "success",
+          "finalize_localized_post": "pending_human_approval"
+        },
+        "state_values": {
+          "seed_finalized": true
+        },
+        "forbidden_tools": [
+          "publish_qiita_article_draft",
+          "publish_devto_article_draft",
+          "export_naver_blog_paste_ready_html"
+        ],
+        "forbidden_state_keys": [
+          "publications",
+          "finalized_posts"
+        ]
+      }
+    },
+    {
+      "eval_case_id": "plan_slides_for_short_talk",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Save this English draft as the seed article. It is final. Then plan the slides for a 3 minute talk in English for software engineers. Only the plan: do not create a Google Slides deck.\n\n# Reading settings from environment variables in Python\n\nA program that reads its settings from environment variables runs unchanged on a laptop and on a server. Give every setting a default, so a missing variable does not stop the program.\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\nDEBUG = os.environ.get(\"DEBUG\", \"0\") == \"1\"\n```\n\nRead the variables once, when the program starts, and pass the values on as arguments. The [os.environ documentation](https://docs.python.org/3/library/os.html#os.environ) lists the details.\n"
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The agent saves the draft as the final English seed article, records the brief (English, software engineers, 3 minutes) and has the slide plan drafted: it reports a plan of three slides in English with the estimated speaking time of each slide and the result of the timing check, and names the plan file. It creates no Google Slides deck and does not claim that it did."
+            }
+          ]
+        }
+      },
+      "expected_trajectory": {
+        "tools_in_order": [
+          "save_seed_article_revision",
+          "set_presentation_brief",
+          "transfer_to_agent"
+        ],
+        "tool_statuses": {
+          "save_seed_article_revision": "success",
+          "set_presentation_brief": "success"
+        },
+        "state_keys": [
+          "slide_plans",
+          "slide_timing"
+        ],
+        "forbidden_tools": [
+          "create_google_slides_deck_with_speaker_notes",
+          "request_approval_to_create_slide_decks",
+          "publish_qiita_article_draft",
+          "publish_devto_article_draft"
+        ],
+        "forbidden_state_keys": [
+          "google_slides_decks"
+        ]
+      }
+    },
+    {
+      "eval_case_id": "unsupported_language_code",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Save this draft as the seed article with language 'fr'.\n\n# Lire la configuration depuis les variables d'environnement\n\nUn programme qui lit sa configuration depuis les variables d'environnement fonctionne sans changement sur un portable et sur un serveur.\n\n```python\nimport os\n\nPORT = int(os.environ.get(\"PORT\", \"8080\"))\n```\n\nDonnez une valeur par défaut à chaque réglage."
+          }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "The agent does not crash and does not store the draft under a language the user did not ask for. It tells the user that 'fr' is not a language it works with, that the seed article must be in Korean (ko), English (en) or Japanese (ja), and asks for a draft in one of them. Nothing is published."
+            }
+          ]
+        }
+      },
+      "expected_trajectory": {
+        "forbidden_tools": [
+          "finalize_seed_article",
+          "publish_qiita_article_draft",
+          "publish_devto_article_draft",
+          "export_naver_blog_paste_ready_html",
+          "finalize_localized_post"
+        ],
+        "forbidden_state_keys": [
+          "seed_markdown",
+          "publications"
+        ]
       }
     }
   ]

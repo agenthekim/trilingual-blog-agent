@@ -14,6 +14,14 @@
 
 terraform {
   required_version = ">= 1.11.0"
+
+  # Remote state (uncomment and set your state bucket before `terraform init`
+  # in a shared environment; CI validates with `-backend=false`):
+  # backend "gcs" {
+  #   bucket = "YOUR_TFSTATE_BUCKET"
+  #   prefix = "trilingual-blog-agent/single-project"
+  # }
+
   required_providers {
     google = {
       source  = "hashicorp/google"

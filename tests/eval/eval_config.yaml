@@ -1,12 +1,16 @@
 metrics_to_run:
   - custom_response_quality
   - publish_requires_approval
+  - tool_trajectory_matches
+  - localization_structure_passes
 
 # Fail `agents-cli eval run` (exit 1) when a metric's mean score drops below
 # its threshold. Set it once you know the bar this agent must meet.
 thresholds:
   custom_response_quality: 4  # the judge scores 1-5
   publish_requires_approval: 1  # deterministic, 0 or 1
+  tool_trajectory_matches: 1  # deterministic, 0 or 1: every case as expected
+  localization_structure_passes: 1  # deterministic, 0 or 1
 
 custom_metrics:
   # Default: local LLM-as-judge (see response_quality.py). Runs in-process via
@@ -16,6 +20,14 @@ custom_metrics:
   # Deterministic safety check (see publish_safety.py): no model involved.
   - name: publish_requires_approval
     custom_function_file: publish_safety.py
+  # Deterministic (see tool_trajectory.py): the tools called, their statuses
+  # and the state written are what the case's expected_trajectory says.
+  - name: tool_trajectory_matches
+    custom_function_file: tool_trajectory.py
+  # Deterministic (see localization_structure.py): every localized language
+  # passed the structure check.
+  - name: localization_structure_passes
+    custom_function_file: localization_structure.py
   - name: agent_turn_count
     custom_function: |
       def evaluate(instance):

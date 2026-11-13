@@ -11,6 +11,12 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_eval:
+        description: "Run agents-cli eval against Vertex AI (requires GCP_WIF_PROVIDER, GCP_WIF_SERVICE_ACCOUNT, GOOGLE_CLOUD_PROJECT secrets)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -77,3 +83,33 @@ jobs:
         run: |
           text="$(tail -c 12000 "$LAST_OUTPUT" | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\r//g;s/\n/%0A/g')"
           echo "::error title=Last output of the failed step::$text"
+
+  evaluate:
+    name: Agent evaluation (manual, requires Vertex AI credentials)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_eval == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      UV_PYTHON: "3.13"
+      UV_DEFAULT_INDEX: https://pypi.org/simple
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+      GOOGLE_CLOUD_LOCATION: us-central1
+      GOOGLE_GENAI_USE_VERTEXAI: "TRUE"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies and agents-cli
+        run: |
+          uv sync --extra lint
+          uv tool install google-agents-cli
+      - name: Run evaluation suite
+        run: |
+          BLOG_AGENT_WORKSPACE_DIR="$(mktemp -d)" \
+          LOCAL_SESSION_DB="$(mktemp -u).sqlite3" \
+          uv run agents-cli eval run --config tests/eval/eval_config.yaml --dataset tests/eval/datasets/basic-dataset.json

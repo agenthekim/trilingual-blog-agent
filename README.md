@@ -37,8 +37,8 @@ every name in the table is checked by a unit test (`tests/unit/test_spec.py`).
 | 14 | Observability & Tracing | Intent vs. Outcome Capture | `app/observability.py`: `ObservabilityPlugin` | `before_tool_callback` logs the intent, `after_tool_callback` the outcome, joined by `function_call_id`; a person's actions: `ArticlePipeline.act` in `app/pipeline.py` |
 | 15 | Observability & Tracing | Distributed Tracing | `app/observability.py`: `root_span`, `traced_span` | `setup_tracing`; export with `BLOG_AGENT_TRACE_EXPORT=cloud`; a span for every outbound call in `app/platforms.py`, `app/google_slides.py` and `app/llm.py` |
 | 16 | Observability & Tracing | PII Redaction | `app/redaction.py`: `redact_text`, `_redact_with_cloud_dlp` | Regular expressions always, Cloud DLP when `BLOG_AGENT_ENABLE_DLP=true`; every log record: `_RedactionFilter` in `app/observability.py`; stored activity lines: `redact_stored_line` |
-| 17 | Infrastructure & CI/CD | Automated Evaluation Suites | `tests/eval/eval_config.yaml`, `tests/eval/datasets/basic-dataset.json` | Metrics: `tests/eval/response_quality.py`, `tests/eval/publish_safety.py`; unit tests in `tests/unit/`, run on every push by `.github/workflows/ci.yml` |
-| 18 | Infrastructure & CI/CD | Infrastructure as Code | `deployment/terraform/single-project/blog_agent.tf` (Firestore, secret containers, least-privilege IAM); see the agents-cli commands below | The scaffolded files in `deployment/terraform/single-project/`; formatted and validated on every push by `.github/workflows/ci.yml` |
+| 17 | Infrastructure & CI/CD | Automated Evaluation Suites | `tests/eval/eval_config.yaml`, `tests/eval/datasets/basic-dataset.json`, `tests/eval/BASELINE.md` | `tests/eval/response_quality.py`, `tests/eval/publish_safety.py`, `tests/eval/tool_trajectory.py`, `tests/eval/localization_structure.py`; `tests/unit/test_evaluation_metrics.py` |
+| 18 | Infrastructure & CI/CD | Infrastructure as Code | `deployment/terraform/single-project/blog_agent.tf` (Firestore, secret containers, least-privilege IAM); see the agents-cli commands below | `deployment/terraform/single-project/providers.tf`; the scaffolded files in `deployment/terraform/single-project/`; formatted and validated on every push by `.github/workflows/ci.yml` |
 | 19 | Infrastructure & CI/CD | Secure Secret Management | `app/secrets.py`: `get_secret` | Environment, then Secret Manager, then a file outside the repository; `MissingSecretError` otherwise; `google_secret_manager_secret` in `deployment/terraform/single-project/blog_agent.tf` |
 
 The specification and its traceability: [docs/SPEC.md](docs/SPEC.md) names the
@@ -252,15 +252,20 @@ Files are written under `workspace/<project-id>/` (`BLOG_AGENT_WORKSPACE_DIR`).
 
 ## `agents-cli` commands used in this project
 
-| Command | Purpose |
-| :--- | :--- |
-| `agents-cli scaffold create ... --agent adk_python --deployment-target agent_runtime` | Generated the project, Terraform and test layout |
-| `agents-cli install` | Install dependencies |
-| `agents-cli playground` / `agents-cli run "<prompt>"` | Local runs |
-| `agents-cli lint` | Ruff check |
-| `agents-cli eval run` | Run the agent over `tests/eval/datasets/basic-dataset.json` and grade the traces |
-| `agents-cli infra single-project` | Apply `deployment/terraform/single-project` |
-| `agents-cli deploy` | Deploy to Agent Runtime |
+1. Scaffold the ADK project and Agent Runtime Terraform layout:
+   `agents-cli scaffold create trilingual-blog-agent --agent adk_python --deployment-target agent_runtime`
+2. Create `.venv` and install project dependencies:
+   `agents-cli install`
+3. Run the linter and formatting checks:
+   `agents-cli lint`
+4. Run the agent locally in the playground or as a one-shot prompt:
+   `agents-cli playground` / `agents-cli run "<prompt>"`
+5. Run the evaluation suite over `tests/eval/datasets/basic-dataset.json` and grade traces against `tests/eval/eval_config.yaml`:
+   `agents-cli eval run`
+6. Provision single-project infrastructure (`deployment/terraform/single-project`):
+   `agents-cli infra single-project`
+7. Deploy the agent to Vertex AI Agent Runtime:
+   `agents-cli deploy`
 
 ### Google Slides (optional)
 
@@ -330,14 +335,22 @@ as written.
   tests and `terraform fmt -check` and `terraform validate` on every push,
   without credentials. It installs from PyPI within the version ranges of
   `pyproject.toml`; the repository carries no lock file.
-- `tests/eval` has eight single-turn cases (scope, off-topic, an address on a
+- `tests/eval` has twelve single-turn cases (scope, off-topic, an address on a
   site that is not a source, publish with no article, slides with no article,
   a public post asked for without the draft step, prompt injection inside a
-  draft, saving a Korean draft). `custom_response_quality` is an LLM judge
-  scored against a written reference per case; the judge is the fast model
-  (`FAST_MODEL_NAME`). `publish_requires_approval` is deterministic: it fails
-  the run if any tool that pauses for a person succeeded, since no case
-  contains an approval.
+  draft, saving a Korean draft, localizing a finalized English seed into Korean
+  and Japanese, finalizing a post and stopping for approval, planning a short
+  talk without creating a deck, and refusing an unsupported language code);
+  see [tests/eval/BASELINE.md](tests/eval/BASELINE.md). Four metrics are
+  configured in `tests/eval/eval_config.yaml`: `custom_response_quality` (LLM
+  judge scored 1–5 against a written reference per case using `FAST_MODEL_NAME`),
+  `publish_requires_approval` (deterministic check that no approval-gated tool
+  succeeded without approval), `tool_trajectory_matches` (deterministic check of
+  called tools, statuses and session-state writes against `expected_trajectory`),
+  and `localization_structure_passes` (deterministic check that every target
+  language passed `check_fidelity`). The three deterministic metrics and the
+  dataset schema are unit-tested on every push by
+  `tests/unit/test_evaluation_metrics.py`.
 
 ## Status and known limits
 
